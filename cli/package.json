@@ -1,0 +1,38 @@
+{
+  "name": "@sahan-sac/create-admin",
+  "description": "Scaffold a new project from the admin-template (auth, RBAC, CMS, blog, media, leads, chatbot on Next.js). Run with `npm create @sahan-sac/admin@latest`.",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "bin": {
+    "create-admin": "./index.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "lib"
+  ],
+  "engines": {
+    "node": ">=20.9"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "giget": "^3.3.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ks-official-Sahan/admin-template.git",
+    "directory": "cli"
+  },
+  "keywords": [
+    "admin",
+    "nextjs",
+    "cms",
+    "starter",
+    "create-app"
+  ]
+}

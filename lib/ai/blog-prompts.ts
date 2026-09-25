@@ -37,7 +37,7 @@ export function contentImageToken(index: number): string {
   return `ai-image://${index + 1}`;
 }
 
-const INTERNAL_LINKS = ["/", "/works", "/about", "/contact", "/updates"];
+const INTERNAL_LINKS = ["/", "/contact", "/updates"];
 
 const STRUCTURE_RULES = [
   "Structure the body exactly like a well-edited technical article, in this order:",
@@ -51,7 +51,7 @@ const STRUCTURE_RULES = [
   `(8) Where relevant, link to this site's own pages using these exact paths, written as normal Markdown links with real, on-topic anchor text (never invent a path beyond this list): ${INTERNAL_LINKS.join(", ")}.`,
   "(9) Include 2-4 external links, and only to well-known, canonical domains you are confident are real and stable (official docs, MDN, W3C, GitHub, Wikipedia, a language/framework's own site, a well-known standards body). If you are not confident a URL is real, omit the link entirely rather than guess — a missing link is fine, a fabricated one is not.",
   '(10) A "## FAQ" section near the end with 3-5 "###" questions (phrased the way someone would actually search or ask an assistant) and a concise 1-3 sentence answer under each.',
-  '(11) A closing "## Conclusion" section: a short wrap-up and one clear call to action, normally linking to /contact or /works.',
+  '(11) A closing "## Conclusion" section: a short wrap-up and one clear call to action, normally linking to /contact.',
   "(12) Place each supplied content image on its own line at the point in the body it best illustrates, exactly as \"![ALT](TOKEN \\\"CAPTION\\\")\" using one of the tokens supplied below — never invent a token or use a real URL.",
   '(13) Optionally, at most one fenced block with the info string "chart" containing ONLY strict JSON (no comments, no trailing commas) of the shape {"type":"bar"|"line"|"pie","title":string,"labels":string[] (<=12, categories or a time axis),"series":[{"name":string,"data":number[] (plain numbers, no units or currency symbols, one per label)}] (<=4 series; a pie chart takes exactly one series)} — use "bar" to compare categories, "line" for a trend over an ordered axis (e.g. time), "pie" for a single share-of-whole breakdown. Include a chart only when real, plausible numbers genuinely help; omit it entirely rather than invent implausible data.',
   "Never repeat the title as a heading. Never use a level-1 heading (\"#\").",

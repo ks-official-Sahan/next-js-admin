@@ -1,0 +1,885 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* .light re-applies the light tokens inside a dark page (the admin live
+     preview's theme toggle); .dark below does the reverse. */
+  :root,
+  .light {
+    --color-1: 0 100% 63%;
+    --color-2: 270 100% 63%;
+    --color-3: 210 100% 63%;
+    --color-4: 195 100% 63%;
+    --color-5: 90 100% 63%;
+
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 10% 3.9%;
+    --radius: 0.5rem;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --border-subtle: #0000001f;
+    --gradient-border: linear-gradient(
+      to right,
+      #0085ff 0%,
+      #ff3370 52%,
+      #ffaa33 100%
+    );
+    --text-secondary: #9c9c9c;
+    --ct-shadow: inset 0px -6px 8px 0px rgba(0, 0, 0, 0.112);
+
+    /* Surface tokens (ported from neth, with real light-mode values). */
+    --b-bg: #ffffff;
+    --b-card: #f7f7f7;
+    --b-fcard: #fafafa;
+    --b-bento-card: #f7f7f7;
+    --b-bento-chip: #efefef;
+    --b-border-fade: #00000014;
+    --b-border-shade: #0000000f;
+    --b-chip: #ececec;
+    --b-frame: #ececec;
+    --b-placeholder: #e9e9e9;
+    --b-linkholder: #e6e6e6;
+    --b-icon-holder: #e2e2e2;
+    --b-card-shade: #f2f2f2;
+    --b-card-shade-bold: #ebebeb;
+    --b-chip-selected: #15803d;
+    /* #166534 on the tinted chip is 6.3:1; the old #15803d was 4.19:1 and
+       failed WCAG AA for 14px text. */
+    --b-icon: #166534;
+    --b-icon-fade: #1665341f;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --border-subtle: #ffffff1f;
+    --gradient-border: linear-gradient(
+      to right,
+      #0085ff 0%,
+      #ff3370 52%,
+      #ffaa33 100%
+    );
+    --text-secondary: #9c9c9c;
+    --ct-shadow: inset 0px -12px 14px 0px rgba(0, 0, 0, 0.3);
+
+    --b-bg: #111111;
+    --b-card: #1a1a1a;
+    --b-fcard: #181818;
+    --b-bento-card: #171717;
+    --b-bento-chip: #161616;
+    --b-border-fade: #ffffff14;
+    --b-border-shade: #ffffff0f;
+    --b-chip: #232323;
+    --b-frame: #1f1f1f;
+    --b-placeholder: #1e1e1e;
+    --b-linkholder: #1b1b1b;
+    --b-icon-holder: #272727;
+    --b-card-shade: #141414;
+    --b-card-shade-bold: #121212;
+    --b-chip-selected: #91ff00;
+    --b-icon: #6bff60;
+    --b-icon-fade: #6bff601f;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .hidden-sm-flex-lg {
+    @apply flex xs:hidden sm:hidden;
+  }
+
+  .hidden-md-flex-lg {
+    @apply flex xs:hidden sm:hidden md:hidden;
+  }
+
+  .flex-sm-hidden-lg {
+    @apply hidden xs:flex sm:flex;
+  }
+
+  .flex-md-hidden-lg {
+    @apply hidden xs:flex sm:flex md:flex;
+  }
+
+  .responsive-container {
+    @apply w-full px-3 xs:w-full xs:px-3 sm:px-4 sm:box-border sm:w-[90%] md:w-[85%] lg:w-[80%] xl:w-[70%] portrait:w-[95%] landscape:w-[85%];
+  }
+}
+
+/* Home motion + interaction primitives.
+   Rules: only transform/opacity, UI under 300ms (entrances are the exception,
+   they run once), strong ease-out, hover gated to real pointers, and reduced
+   motion swaps movement for a plain fade instead of removing feedback. */
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1); /* shared by home, about and marquees */
+}
+
+html {
+  /* Keep focused and anchored content clear of the sticky nav (WCAG 2.4.11). */
+  scroll-padding-top: 6rem;
+}
+
+@keyframes home-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes home-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes home-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  80%,
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+@layer utilities {
+  /* Hero entrance: staggered by --i, plays once on load. `both` keeps the
+     element visible if the animation never runs. */
+  .hero-rise {
+    animation: home-rise 600ms var(--ease-out) both;
+    animation-delay: calc(var(--i, 0) * 70ms);
+  }
+
+  /* Availability dot: a soft ring that says "live" without moving layout. */
+  .status-ping::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: currentColor;
+    animation: home-ping 2.2s var(--ease-out) infinite;
+  }
+
+  /* Press feedback for every tappable card and button. */
+  .press {
+    transition: transform 160ms var(--ease-out);
+  }
+  .press:active {
+    transform: scale(0.97);
+  }
+
+  /* Hover lift, only on devices that can actually hover. */
+  @media (hover: hover) and (pointer: fine) {
+    .lift {
+      transition:
+        transform 200ms var(--ease-out),
+        border-color 200ms ease;
+    }
+    .lift:hover {
+      transform: translateY(-3px);
+      border-color: var(--b-icon);
+    }
+    .arrow-nudge:hover .arrow-nudge-icon,
+    .arrow-nudge:focus-visible .arrow-nudge-icon {
+      transform: translate(2px, -2px);
+    }
+  }
+  .arrow-nudge-icon {
+    transition: transform 200ms var(--ease-out);
+  }
+
+  /* Scroll reveal, driven by the compositor where supported. Content is fully
+     visible by default, so browsers without scroll timelines lose nothing. */
+  @supports (animation-timeline: view()) {
+    .reveal {
+      animation: home-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 25%;
+    }
+  }
+}
+
+/* Hero atmosphere. Three quiet layers: an accent glow, a masked grid, and a
+   pointer spotlight that only exists on devices with a real hover pointer. */
+.hero-glow {
+  background:
+    radial-gradient(
+      50% 60% at 82% 18%,
+      color-mix(in srgb, var(--b-icon) 22%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      40% 50% at 8% 88%,
+      color-mix(in srgb, var(--b-icon) 10%, transparent),
+      transparent 70%
+    );
+  animation: glow-drift 22s var(--ease-out) infinite alternate;
+}
+
+.hero-grid {
+  background-image:
+    linear-gradient(to right, var(--b-border-fade) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--b-border-fade) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(70% 60% at 60% 35%, #000 20%, transparent 75%);
+  -webkit-mask-image: radial-gradient(
+    70% 60% at 60% 35%,
+    #000 20%,
+    transparent 75%
+  );
+}
+
+.hero-spotlight {
+  opacity: 0;
+  background: radial-gradient(
+    460px circle at var(--mx, 50%) var(--my, 30%),
+    color-mix(in srgb, var(--b-icon) 14%, transparent),
+    transparent 65%
+  );
+  transition: opacity 300ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .hero-root:hover .hero-spotlight {
+    opacity: 1;
+  }
+}
+
+/* About hero runner: one lap across the banner, then again. Container units
+   (the banner is `container-type: inline-size`) keep the distance in step with
+   the banner width at every breakpoint. */
+@keyframes runner-travel {
+  from {
+    transform: translateX(-4rem);
+  }
+  to {
+    transform: translateX(calc(100cqw + 1rem));
+  }
+}
+.runner-travel {
+  animation: runner-travel 22s linear infinite;
+}
+
+@keyframes glow-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(-2%, 3%, 0) scale(1.06);
+  }
+}
+
+/* Word swap in the "I'm a ..." card. A touch of blur hides the seam between
+   the old and new word (Emil: blur bridges a crossfade). */
+@keyframes home-swap {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+.swap-in {
+  animation: home-swap 240ms var(--ease-out) both;
+}
+
+/* Detail dialogs (works page): lock the page behind an open modal. */
+body:has(dialog[open]) {
+  overflow: hidden;
+}
+.project-dialog {
+  overscroll-behavior: contain;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Site header: slides in on first paint (no JS needed), then follows the
+   inline transform Navigation sets to hide on scroll down. `backwards` fill
+   only, so once the entrance ends the inline transform (and its transition)
+   is what applies. */
+@keyframes site-header-in {
+  from {
+    transform: translateY(-100%);
+  }
+}
+.site-header {
+  animation: site-header-in 400ms var(--ease-out) backwards;
+  transition: transform 400ms var(--ease-out);
+}
+
+/* Floating audio switch: the inner glow pulses while audio plays. */
+@keyframes audio-glow {
+  to {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+}
+.audio-glow {
+  opacity: 0.4;
+}
+.audio-glow[data-playing="true"] {
+  animation: audio-glow 500ms ease-in-out infinite alternate;
+}
+
+/* Footer wordmark: the outline draws itself in once. */
+@keyframes stroke-draw {
+  from {
+    stroke-dashoffset: 1000;
+  }
+}
+.stroke-draw {
+  stroke-dasharray: 1000;
+  animation: stroke-draw 4s ease-in-out backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-glow {
+    animation: none;
+  }
+  .swap-in {
+    animation-name: home-fade;
+  }
+  .hero-rise {
+    animation-name: home-fade;
+    animation-duration: 300ms;
+    animation-delay: 0ms;
+  }
+  .reveal {
+    animation-name: home-fade;
+  }
+  .status-ping::after,
+  .animate-border-beam,
+  .audio-glow[data-playing="true"],
+  .stroke-draw {
+    animation: none;
+  }
+  .site-header {
+    animation: none;
+    transition: none;
+  }
+  .press:active {
+    transform: none;
+  }
+  .lift:hover {
+    transform: none;
+  }
+}
+
+/* @layer utilities {
+  .hidden-sm-flex-lg {
+    @apply flex xs:hidden mobile:hidden mobileH:hidden sm:hidden;
+  }
+
+  .flex-sm-hidden-lg {
+    @apply hidden xs:flex mobile:flex mobileH:flex sm:flex;
+  }
+
+  .responsive-container {
+    @apply w-full px-3 xs:w-full xs:px-2 mobile:w-full mobile:px-4 mobile:box-border mobileH:w-full mobileH:px-4 mobileH:box-border sm:w-[90%] md:w-[85%] lg:w-[80%] xl:w-[75%] xxl:w-[70%] portrait:w-[95%] landscape:w-[85%];
+  }
+
+  .hidden-md-flex-lg {
+    @apply flex xs:hidden mobile:hidden mobileH:hidden sm:hidden md:hidden;
+  }
+
+  .flex-md-hidden-lg {
+    @apply hidden xs:flex mobile:flex mobileH:flex sm:flex md:flex;
+  }
+
+  .hidden-lg-flex-xl {
+    @apply flex xs:hidden mobile:hidden mobileH:hidden sm:hidden md:hidden lg:hidden;
+  }
+
+  .flex-lg-hidden-xl {
+    @apply hidden xs:flex mobile:flex mobileH:flex sm:flex md:flex lg:flex;
+  }
+
+  .hidden-xl-flex-xxl {
+    @apply flex xs:hidden mobile:hidden mobileH:hidden sm:hidden md:hidden lg:hidden xl:hidden;
+  }
+
+  .flex-xl-hidden-xxl {
+    @apply hidden xs:flex mobile:flex mobileH:flex sm:flex md:flex lg:flex xl:flex;
+  }
+} */
+
+.ct-box {
+  box-shadow: var(--ct-shadow);
+}
+
+.stroke-animation path {
+  stroke: white;
+  stroke-width: 2;
+  fill: none;
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: draw-fill-reverse 1s ease-in-out infinite;
+}
+
+/* .stroke-animation path {
+  stroke: white;
+  stroke-width: 2;
+  fill: none;
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: draw-fill-reverse 1s ease-in-out infinite;
+} */
+
+@keyframes draw {
+  0% {
+    stroke-dashoffset: 1000;
+    fill: none;
+  }
+  50% {
+    stroke-dashoffset: 0;
+    fill: none;
+  }
+  55% {
+    fill: white;
+  }
+  90% {
+    stroke-dashoffset: 0;
+    fill: white;
+  }
+  100% {
+    stroke-dashoffset: 1000;
+    fill: none;
+  }
+}
+
+@keyframes draw-fill-reverse {
+  0%,
+  100% {
+    stroke-dashoffset: 1000;
+    fill: none;
+  }
+  50% {
+    stroke-dashoffset: 0;
+    fill: none;
+  }
+  55%,
+  95% {
+    fill: white;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* .stroke-loading path {
+  stroke: black;
+  stroke-width: 2;
+  fill: none;
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: draw-erase 4s linear infinite;
+}
+
+@keyframes draw-erase {
+  0% {
+    stroke-dashoffset: 1000;
+  }
+  50% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -1000;
+  }
+} */
+
+.stroke-loading path {
+  stroke: white;
+  stroke-width: 2;
+  fill: none;
+  stroke-dasharray: 300;
+  stroke-dashoffset: 300;
+  animation: draw-erase 4s linear infinite;
+}
+
+/* .stroke-loading path {
+  stroke: white;
+  stroke-width: 2;
+  fill: none;
+  stroke-dasharray: 300;
+  stroke-dashoffset: 300;
+  animation: draw-erase 4s linear infinite;
+} */
+
+@keyframes draw-erase {
+  0% {
+    stroke-dashoffset: 300;
+  }
+  50% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -300;
+  }
+}
+
+@keyframes bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.transition-transform {
+  transition: transform 2s ease-in-out;
+}
+
+/* Blog post body: sanitized CMS HTML (lib/cms/rich-text.ts) after
+   lib/blog/render.ts. One layer shared by /updates/[slug] and the admin live
+   preview, so the preview is the real thing. Colours come from the site
+   tokens, which .dark re-scopes, so both themes work in both places.
+   Deliberately outside @layer: Tailwind purges layered rules whose classes
+   it cannot find, and .post-table/.post-chart-svg are only written by
+   lib/blog (not in tailwind.config.ts's content globs). */
+@media all {
+  .post-content {
+    font-weight: 400;
+    line-height: 1.75;
+    overflow-wrap: break-word;
+  }
+  .post-content > * + * {
+    margin-top: 1.25em;
+  }
+  .post-content > :first-child {
+    margin-top: 0;
+  }
+  .post-content p {
+    text-wrap: pretty;
+  }
+  .post-content :where(h2, h3, h4) {
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    scroll-margin-top: 6rem;
+  }
+  .post-content h2 {
+    margin-top: 2.25em;
+    font-size: 1.5em;
+  }
+  .post-content h3 {
+    margin-top: 1.75em;
+    font-size: 1.2em;
+  }
+  .post-content h4 {
+    margin-top: 1.5em;
+    font-size: 1.05em;
+  }
+  .post-content :where(h2, h3, h4) + :where(p, ul, ol) {
+    margin-top: 0.6em;
+  }
+  .post-content a {
+    color: var(--b-icon);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+  .post-content a:hover {
+    text-decoration-thickness: 2px;
+  }
+  .post-content :where(strong, b) {
+    font-weight: 650;
+  }
+  .post-content :where(ul, ol) {
+    padding-left: 1.4em;
+  }
+  .post-content ul {
+    list-style: disc;
+  }
+  .post-content ol {
+    list-style: decimal;
+  }
+  .post-content li + li,
+  .post-content li > :where(ul, ol) {
+    margin-top: 0.4em;
+  }
+  .post-content li::marker {
+    color: var(--b-icon);
+  }
+  .post-content blockquote {
+    border-left: 3px solid var(--b-icon);
+    padding: 0.2em 0 0.2em 1em;
+    font-style: italic;
+  }
+  .post-content hr {
+    margin-block: 2.5em;
+    border: 0;
+    border-top: 1px solid var(--b-border-fade);
+  }
+  .post-content code {
+    border-radius: 6px;
+    background: var(--b-chip);
+    padding: 0.15em 0.4em;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.875em;
+  }
+  .post-content pre {
+    overflow-x: auto;
+    border: 1px solid var(--b-border-fade);
+    border-radius: 14px;
+    background: var(--b-fcard);
+    padding: 1em 1.2em;
+    font-size: 0.875em;
+    line-height: 1.65;
+  }
+  .post-content pre code {
+    background: none;
+    padding: 0;
+    font-size: inherit;
+  }
+  .post-content img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border: 1px solid var(--b-border-fade);
+    border-radius: 14px;
+  }
+  .post-content figure {
+    /* Full shorthand: the browser default adds 40px side margins. */
+    margin: 2em 0;
+  }
+  .post-content figcaption {
+    margin-top: 0.6em;
+    text-align: center;
+    text-wrap: balance;
+    font-size: 0.85em;
+    opacity: 0.7;
+  }
+
+  /* Tables scroll inside their own region (lib/blog/render.ts adds it). */
+  .post-content .post-table {
+    overflow-x: auto;
+    border: 1px solid var(--b-border-fade);
+    border-radius: 14px;
+  }
+  .post-content .post-table:focus-visible {
+    outline: 2px solid var(--b-icon);
+    outline-offset: 2px;
+  }
+  .post-content table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9em;
+    line-height: 1.55;
+  }
+  .post-content :where(th, td) {
+    border-bottom: 1px solid var(--b-border-fade);
+    padding: 0.65em 0.9em;
+    text-align: left;
+    vertical-align: top;
+  }
+  .post-content thead th {
+    background: var(--b-fcard);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .post-content tbody th {
+    font-weight: 600;
+  }
+  .post-content tbody tr:last-child > * {
+    border-bottom: 0;
+  }
+
+  /* Callouts: "> [!NOTE]" / "[!TIP]" / "[!WARNING]" (lib/blog/markdown.ts). */
+  .post-content aside[data-callout] {
+    --callout: hsl(var(--color-3));
+    border: 1px solid color-mix(in oklab, var(--callout) 35%, transparent);
+    border-left: 4px solid var(--callout);
+    border-radius: 12px;
+    background: color-mix(in oklab, var(--callout) 8%, transparent);
+    padding: 0.9em 1.1em;
+  }
+  .post-content aside[data-callout="tip"] {
+    --callout: var(--b-icon);
+  }
+  .post-content aside[data-callout="warning"] {
+    --callout: hsl(38 92% 50%);
+  }
+  .post-content aside[data-callout]::before {
+    content: "Note";
+    display: block;
+    margin-bottom: 0.3em;
+    color: var(--callout);
+    font-size: 0.75em;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .post-content aside[data-callout="tip"]::before {
+    content: "Tip";
+  }
+  .post-content aside[data-callout="warning"]::before {
+    content: "Warning";
+  }
+  .post-content aside > * + * {
+    margin-top: 0.6em;
+  }
+
+  /* Charts: a caption, the computed SVG, then the data table on demand. */
+  .post-content figure[data-chart] {
+    border: 1px solid var(--b-border-fade);
+    border-radius: 16px;
+    background: var(--b-fcard);
+    padding: 1em 1.1em;
+  }
+  .post-content figure[data-chart] figcaption {
+    margin: 0 0 0.75em;
+    text-align: left;
+    font-size: 0.95em;
+    font-weight: 600;
+    opacity: 1;
+  }
+  .post-content .post-chart-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .post-content details {
+    margin-top: 0.75em;
+  }
+  .post-content summary {
+    width: fit-content;
+    cursor: pointer;
+    font-size: 0.85em;
+    opacity: 0.75;
+  }
+  .post-content summary:hover {
+    opacity: 1;
+  }
+  .post-content details[open] > .post-table {
+    margin-top: 0.6em;
+  }
+
+  /* Visual editor: a block kept whole by components/admin/blog/PreservedBlock.ts. */
+  .post-content .preserved-block {
+    position: relative;
+    margin-top: 1.25em;
+    border: 1px dashed var(--b-border-fade);
+    border-radius: 14px;
+    padding: 1.6em 0.75em 0.75em;
+    cursor: grab;
+  }
+  .post-content .preserved-block::before {
+    content: attr(data-label);
+    position: absolute;
+    top: 0.45em;
+    left: 0.9em;
+    font-size: 0.7em;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    opacity: 0.6;
+  }
+  .post-content .preserved-block > * {
+    margin-block: 0;
+  }
+  .post-content .ProseMirror-selectednode.preserved-block {
+    outline: 2px solid var(--b-icon);
+    outline-offset: 2px;
+  }
+}
+
+/* services-container */
+/* align-items: stretch; */
+/* Ensures all cards stretch to the same height */
+
+/* services-card */
+/* align-self: stretch */
+/* to adjust height to full */
+/* flex: 1 1 288px; */
+/* Grow and shrink as needed, with a min width of 288px */
+
+/* .services-container {
+  display: flex;
+  gap: 28px;
+  padding: 8px;
+  justify-content: center;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.service-card {
+  align-self: stretch
+  flex: 1 1 288px;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px;
+  border: 1px solid #ccc;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  background-color: white;
+} */

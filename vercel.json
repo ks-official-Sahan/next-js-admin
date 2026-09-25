@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/blog-publish",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/session-cleanup",
+      "schedule": "5 2 * * *"
+    },
+    {
+      "path": "/api/cron/audit-prune",
+      "schedule": "10 2 * * *"
+    }
+  ]
+}

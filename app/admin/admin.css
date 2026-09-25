@@ -1,0 +1,34 @@
+/* The public site hides every scrollbar (style/globals.css). Admin screens hold
+   long tables and forms, so they get the bars back. The page scrollbar belongs
+   to the root element, hence the :has() selector. */
+:root:has(.admin-root),
+.admin-root,
+.admin-root * {
+  scrollbar-width: thin;
+  -ms-overflow-style: auto;
+}
+
+:root:has(.admin-root)::-webkit-scrollbar,
+.admin-root *::-webkit-scrollbar {
+  display: block;
+  width: 10px;
+  height: 10px;
+}
+
+:root:has(.admin-root)::-webkit-scrollbar-thumb,
+.admin-root *::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.45);
+  background-clip: content-box;
+  border: 2px solid transparent;
+  border-radius: 9999px;
+}
+
+/* The root not-found renders the public site chrome, so its Mantine stylesheet
+   reaches every route under the root layout, admin included. Mantine paints the body from its own variables,
+   which would show white behind the dark theme and change the line height.
+   Repaint the body from the site tokens. */
+:root:has(.admin-root) body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  line-height: 1.5;
+}

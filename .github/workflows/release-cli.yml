@@ -1,0 +1,41 @@
+name: Release CLI
+
+# Tag vX.Y.Z = the CLI's version (cli/package.json). Publishes
+# @sahan-sac/create-admin to npm using Trusted Publishing (OIDC) — no
+# NPM_TOKEN secret needed. Configure this repo/workflow as a trusted
+# publisher for the package on npmjs.com before the first release.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    name: Test and publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install CLI dependencies
+        working-directory: cli
+        run: npm install
+
+      - name: Run CLI tests
+        working-directory: cli
+        run: node --test test/*.test.mjs
+
+      - name: Publish to npm
+        working-directory: cli
+        run: npm publish --provenance --access public

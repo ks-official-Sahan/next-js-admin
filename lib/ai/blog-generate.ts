@@ -53,7 +53,7 @@ export interface AiDeps {
 
 /** The chain built from configured environment keys, for the routes to pass in. */
 export function defaultAiDeps(): AiDeps {
-  return { providers: realProviders(getEnv()) };
+  return { providers: realProviders(getEnv(), "blog") };
 }
 
 /**

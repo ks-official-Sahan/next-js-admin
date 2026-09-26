@@ -3,10 +3,11 @@ import "server-only";
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText } from "ai";
 
-import { DEFAULT_AI_MODELS, type AppEnv } from "@/lib/env";
+import type { AppEnv } from "@/lib/env";
 import { log } from "@/lib/log";
 
 import type { ModelPrompt } from "./guard";
+import { DEFAULT_TEXT_MODELS, paidAllowed, textModels, thinkingConfigFor, type TextPurpose } from "./models";
 import { getVertexAccessToken } from "./vertex";
 
 // An injectable, ordered provider chain, in the style of lib/email/service.ts
@@ -268,7 +269,7 @@ export function openRouterProvider(config: {
   fetch?: typeof fetch;
   name?: string;
 }): AiProvider {
-  const model = config.model || DEFAULT_AI_MODELS.OPENROUTER_MODEL;
+  const model = config.model || DEFAULT_TEXT_MODELS.blog.openrouter;
   const client = createOpenAI({
     apiKey: config.apiKey,
     baseURL: config.baseUrl || "https://openrouter.ai/api/v1",
@@ -309,7 +310,7 @@ async function sdkGenerate(model: Parameters<typeof generateText>[0]["model"], p
 
 /** NVIDIA NIM, OpenAI-compatible. */
 export function nvidiaProvider(config: { apiKey: string; model?: string; fetch?: typeof fetch }): AiProvider {
-  const model = config.model || DEFAULT_AI_MODELS.NVIDIA_MODEL;
+  const model = config.model || DEFAULT_TEXT_MODELS.blog.nvidia;
   const client = createOpenAI({
     apiKey: config.apiKey,
     baseURL: "https://integrate.api.nvidia.com/v1",
@@ -320,16 +321,6 @@ export function nvidiaProvider(config: { apiKey: string; model?: string; fetch?:
     name: "nvidia",
     generate: (prompt, options) => sdkGenerate(client.chat(model), prompt, options),
   };
-}
-
-/**
- * Thinking tokens count against maxOutputTokens. On a short reply (the chat
- * widget asks for 500) any budget can use up the whole cap and return no text,
- * so short outputs get none; long structured outputs (blog JSON) get a modest
- * share.
- */
-export function thinkingBudgetFor(maxOutputTokens: number): number {
-  return maxOutputTokens >= 2000 ? Math.min(800, Math.floor(maxOutputTokens / 5)) : 0;
 }
 
 type GeminiResponse = { candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string; thought?: boolean }> } }> };
@@ -345,7 +336,7 @@ export function geminiOutcome(data: unknown): AiOutcome {
 
 /** Gemini's own REST API (not OpenAI-compatible), called directly so no extra SDK is added for one provider. */
 export function geminiProvider(config: { apiKey: string; model?: string; fetchImpl?: typeof fetch }): AiProvider {
-  const model = config.model || DEFAULT_AI_MODELS.GEMINI_MODEL;
+  const model = config.model || DEFAULT_TEXT_MODELS.blog.gemini;
   const fetchImpl = config.fetchImpl ?? fetch;
 
   return {
@@ -355,7 +346,7 @@ export function geminiProvider(config: { apiKey: string; model?: string; fetchIm
         const maxOutputTokens = options?.maxTokens ?? 2400;
         const generationConfig: Record<string, unknown> = {
           maxOutputTokens,
-          thinkingConfig: { thinkingBudget: thinkingBudgetFor(maxOutputTokens) },
+          thinkingConfig: thinkingConfigFor(model, maxOutputTokens),
         };
         // When JSON mode is requested, ask the model to respond with valid JSON.
         // This dramatically improves structured output reliability for blog generation.
@@ -417,8 +408,10 @@ export function vertexProvider(config: {
   model?: string;
   fetchImpl?: typeof fetch;
 }): AiProvider {
-  const location = config.location ?? "us-central1";
-  const model = config.model || DEFAULT_AI_MODELS.VERTEX_MODEL;
+  const model = config.model || DEFAULT_TEXT_MODELS.blog.vertex;
+  // Gemini 3.x is served from the global endpoint only.
+  const location = config.location ?? (/^gemini-[3-9]/.test(model) ? "global" : "us-central1");
+  const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
   const fetchImpl = config.fetchImpl ?? fetch;
 
   return {
@@ -431,7 +424,7 @@ export function vertexProvider(config: {
           fetchImpl
         );
         const response = await fetchImpl(
-          `https://${location}-aiplatform.googleapis.com/v1/projects/${config.project}/locations/${location}/publishers/google/models/${model}:generateContent`,
+          `https://${host}/v1/projects/${config.project}/locations/${location}/publishers/google/models/${model}:generateContent`,
           {
             method: "POST",
             headers: { "content-type": "application/json", authorization: `Bearer ${accessToken}` },
@@ -441,7 +434,7 @@ export function vertexProvider(config: {
               contents: [{ role: "user", parts: [{ text: prompt.user }] }],
               generationConfig: {
                 maxOutputTokens: options?.maxTokens ?? 1800,
-                thinkingConfig: { thinkingBudget: thinkingBudgetFor(options?.maxTokens ?? 1800) },
+                thinkingConfig: thinkingConfigFor(model, options?.maxTokens ?? 1800),
                 ...(options?.jsonMode ? { responseMimeType: "application/json" } : {}),
               },
             }),
@@ -460,19 +453,21 @@ export function vertexProvider(config: {
  * The chain from decision D15, free tiers first and paid last:
  * 1. Gemini (free API key, fast)
  * 2. OpenRouter (free-tier models, heavily rate-limited)
- * 3. NVIDIA (key may be dead or model retired)
- * 4. Vertex (pay-as-you-go on the Cloud project: only when the free ones fail)
+ * 3. NVIDIA (free developer API; key may be dead or model retired)
+ * 4. Vertex (pay-as-you-go): only with AI_ALLOW_PAID, and only after the free ones
+ * Models per purpose come from lib/ai/models.ts (env override, else a verified free default).
  */
-export function realProviders(env: AppEnv, fetchImpl?: typeof fetch): AiProvider[] {
+export function realProviders(env: AppEnv, purpose: TextPurpose, fetchImpl?: typeof fetch): AiProvider[] {
   const providers: AiProvider[] = [];
+  const models = textModels(env, purpose);
 
   // 1. Gemini direct — fastest, most reliable, supports JSON mode
   if (env.GEMINI_API_KEY) {
-    providers.push(geminiProvider({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL || DEFAULT_AI_MODELS.GEMINI_MODEL, fetchImpl }));
+    providers.push(geminiProvider({ apiKey: env.GEMINI_API_KEY, model: models.gemini, fetchImpl }));
   }
 
   // 2. OpenRouter — free-tier models are heavily rate-limited (429 common)
-  const openRouterModel = env.OPENROUTER_MODEL || DEFAULT_AI_MODELS.OPENROUTER_MODEL;
+  const openRouterModel = models.openrouter;
   if (env.OPENROUTER_API_KEY) {
     providers.push(
       openRouterProvider({
@@ -502,22 +497,22 @@ export function realProviders(env: AppEnv, fetchImpl?: typeof fetch): AiProvider
     providers.push(
       nvidiaProvider({
         apiKey: env.NVIDIA_API_KEY,
-        model: env.NVIDIA_MODEL || DEFAULT_AI_MODELS.NVIDIA_MODEL,
+        model: models.nvidia,
         fetch: fetchImpl,
       })
     );
   }
 
-  // 4. Vertex AI — last resort: it bills pay-as-you-go on the Cloud project,
-  // while the others are free tiers.
-  if (env.GOOGLE_CLIENT_EMAIL && env.GOOGLE_PRIVATE_KEY && env.GOOGLE_CLOUD_PROJECT && env.GOOGLE_TOKEN_URI) {
+  // 4. Vertex AI — bills pay-as-you-go on the Cloud project, so it runs only
+  // when the owner opted in (AI_ALLOW_PAID), and then after the free ones.
+  if (paidAllowed(env) && env.GOOGLE_CLIENT_EMAIL && env.GOOGLE_PRIVATE_KEY && env.GOOGLE_CLOUD_PROJECT && env.GOOGLE_TOKEN_URI) {
     providers.push(
       vertexProvider({
         clientEmail: env.GOOGLE_CLIENT_EMAIL,
         privateKey: env.GOOGLE_PRIVATE_KEY,
         tokenUri: env.GOOGLE_TOKEN_URI,
         project: env.GOOGLE_CLOUD_PROJECT,
-        model: env.VERTEX_MODEL || DEFAULT_AI_MODELS.VERTEX_MODEL,
+        model: models.vertex,
         fetchImpl,
       })
     );

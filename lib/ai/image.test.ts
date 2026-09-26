@@ -1,9 +1,19 @@
 import assert from "node:assert/strict";
 import { test, beforeEach } from "node:test";
 
-import { DEFAULT_IMAGE_MODELS, generateImageVertex, imageGenerationAvailable, imageModelChain, vertexImageConfigFromEnv } from "./image";
+import {
+  DEFAULT_IMAGE_MODELS,
+  extractNvidiaImage,
+  generateImage,
+  generateImageVertex,
+  imageConfigFromEnv,
+  imageModelChain,
+  nvidiaImageRequest,
+  vertexImageAvailable,
+} from "./image";
+import { DEFAULT_IMAGE_MODELS as MODEL_DEFAULTS } from "./models";
 import { resetVertexTokenCache } from "./vertex";
-import { DEFAULT_AI_MODELS, type AppEnv } from "@/lib/env";
+import type { AppEnv } from "@/lib/env";
 
 // A syntactically valid RSA private key is required for crypto.createSign to
 // succeed (same fixture as lib/ai/vertex.test.ts).
@@ -135,39 +145,74 @@ test("imageModelChain puts a configured model first and never repeats one", () =
 // ─── env wiring ────────────────────────────────────────────────────────────
 
 const BASE_ENV = {} as AppEnv;
-
-test("imageGenerationAvailable is false when the Vertex service account is not configured", () => {
-  assert.equal(imageGenerationAvailable(BASE_ENV), false);
-});
-
-test("imageGenerationAvailable is true once all four Vertex variables are set", () => {
-  const env = {
-    ...BASE_ENV,
+const VERTEX = {
     GOOGLE_CLIENT_EMAIL: "a@b.iam.gserviceaccount.com",
     GOOGLE_PRIVATE_KEY: "key",
     GOOGLE_CLOUD_PROJECT: "proj",
     GOOGLE_TOKEN_URI: "https://oauth2.googleapis.com/token",
-  } as AppEnv;
-  assert.equal(imageGenerationAvailable(env), true);
+} as Partial<AppEnv>;
+
+test("vertexImageAvailable needs all four service-account variables", () => {
+  assert.equal(vertexImageAvailable(BASE_ENV), false);
+  assert.equal(vertexImageAvailable({ ...BASE_ENV, ...VERTEX } as AppEnv), true);
 });
 
-test("vertexImageConfigFromEnv returns null when not configured, and a config object when it is", () => {
-  assert.equal(vertexImageConfigFromEnv(BASE_ENV), null);
-  const env = {
-    ...BASE_ENV,
-    GOOGLE_CLIENT_EMAIL: "a@b.iam.gserviceaccount.com",
-    GOOGLE_PRIVATE_KEY: "key",
-    GOOGLE_CLOUD_PROJECT: "proj",
-    GOOGLE_TOKEN_URI: "https://oauth2.googleapis.com/token",
-  } as AppEnv;
-  const config = vertexImageConfigFromEnv(env);
-  assert.ok(config);
-  assert.equal(config?.project, "proj");
-  assert.equal(config?.model, DEFAULT_AI_MODELS.IMAGEN_MODEL);
+test("imageConfigFromEnv is free-only by default: NVIDIA in, Gemini and Vertex out", () => {
+  assert.equal(imageConfigFromEnv(BASE_ENV), null);
+  const env = { ...VERTEX, NVIDIA_API_KEY: "nv", GEMINI_API_KEY: "gm" } as AppEnv;
+  assert.deepEqual(imageConfigFromEnv(env), { nvidia: { apiKey: "nv", model: MODEL_DEFAULTS.nvidia } });
+  // Paid-only providers alone configure nothing without AI_ALLOW_PAID.
+  assert.equal(imageConfigFromEnv({ ...VERTEX, GEMINI_API_KEY: "gm" } as AppEnv), null);
+});
 
-  const customEnv = {
-    ...env,
-    IMAGEN_MODEL: "custom-imagen-model",
+test("imageConfigFromEnv adds Gemini and Vertex with AI_ALLOW_PAID, honouring IMAGE_* and the older IMAGEN_MODEL", () => {
+  const env = {
+    ...VERTEX,
+    NVIDIA_API_KEY: "nv",
+    GEMINI_API_KEY: "gm",
+    AI_ALLOW_PAID: true,
+    IMAGE_NVIDIA_MODEL: "black-forest-labs/flux.1-schnell",
+    IMAGEN_MODEL: "imagen-4.0-generate-001",
   } as AppEnv;
-  assert.equal(vertexImageConfigFromEnv(customEnv)?.model, "custom-imagen-model");
+  const config = imageConfigFromEnv(env);
+  assert.equal(config?.nvidia?.model, "black-forest-labs/flux.1-schnell");
+  assert.equal(config?.gemini?.model, MODEL_DEFAULTS.gemini);
+  assert.equal(config?.vertex?.model, "imagen-4.0-generate-001");
+  assert.equal(imageConfigFromEnv({ ...env, IMAGE_VERTEX_MODEL: "gemini-2.5-flash-image" } as AppEnv)?.vertex?.model, "gemini-2.5-flash-image");
+});
+
+// ─── NVIDIA ────────────────────────────────────────────────────────────────
+
+test("nvidiaImageRequest uses sizes FLUX accepts, and fewer steps for schnell", () => {
+  assert.deepEqual(nvidiaImageRequest("black-forest-labs/flux.1-dev", "p", "16:9", 7), { prompt: "p", width: 1344, height: 768, steps: 30, cfg_scale: 3.5, mode: "base", seed: 7 });
+  assert.deepEqual(nvidiaImageRequest("black-forest-labs/flux.1-schnell", "p", "4:3", 7), { prompt: "p", width: 1024, height: 768, steps: 4, seed: 7 });
+});
+
+test("extractNvidiaImage sniffs the type and rejects filtered artifacts", () => {
+  assert.deepEqual(extractNvidiaImage({ artifacts: [{ base64: "/9j/abc", finishReason: "SUCCESS" }] }), { base64: "/9j/abc", mimeType: "image/jpeg" });
+  assert.equal(extractNvidiaImage({ artifacts: [{ base64: "iVBOR", finishReason: "CONTENT_FILTERED" }] }), null);
+  assert.equal(extractNvidiaImage({}), null);
+});
+
+test("generateImage returns NVIDIA's image and never calls a paid provider after it", async () => {
+  const calls: string[] = [];
+  const fetchImpl = (async (url: string | URL | Request) => {
+    calls.push(String(url));
+    return new Response(JSON.stringify({ artifacts: [{ base64: "iVBORw0K", finishReason: "SUCCESS" }] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const result = await generateImage("a desk", { nvidia: { apiKey: "nv", model: "black-forest-labs/flux.1-dev" }, gemini: { apiKey: "gm", model: "g" } }, { fetchImpl });
+  assert.deepEqual(result, { ok: true, base64: "iVBORw0K", mimeType: "image/png" });
+  assert.deepEqual(calls, ["https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-dev"]);
+});
+
+test("generateImage falls through to the next provider and reports every failure", async () => {
+  const fetchImpl = (async (url: string | URL | Request) =>
+    String(url).includes("nvidia")
+      ? new Response("{}", { status: 503 })
+      : new Response(JSON.stringify({ candidates: [{ content: { parts: [{ inlineData: { data: "img", mimeType: "image/png" } }] } }] }), { status: 200 })) as unknown as typeof fetch;
+  const ok = await generateImage("x", { nvidia: { apiKey: "nv", model: "m" }, gemini: { apiKey: "gm", model: "g" } }, { fetchImpl });
+  assert.equal(ok.ok, true);
+  const failing = (async () => new Response("{}", { status: 429 })) as unknown as typeof fetch;
+  const failed = await generateImage("x", { nvidia: { apiKey: "nv", model: "m" }, gemini: { apiKey: "gm", model: "g" } }, { fetchImpl: failing });
+  assert.deepEqual(failed, { ok: false, error: "Image generation failed (m: HTTP 429; g: HTTP 429)." });
 });

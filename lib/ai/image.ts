@@ -1,20 +1,24 @@
 import "server-only";
 
-import { DEFAULT_AI_MODELS, type AppEnv } from "@/lib/env";
+import type { AppEnv } from "@/lib/env";
 
+import { imageModels, paidAllowed } from "./models";
 import { getVertexAccessToken } from "./vertex";
 
 // AI image generation for the blog generator (featured image + inline
-// content images), through the Vertex AI service account already wired for
-// text generation (lib/ai/vertex.ts). Gemini image models are the default:
-// verified 2026-09-25, this project gets HTTP 404 for every Imagen model
-// (no access) and the Gemini API key is on the free tier, whose image quota
-// is 0 requests a day. Vertex serves gemini-3.1-flash-image (global
-// endpoint) and gemini-2.5-flash-image (regional) on the same account.
+// content images) and the featured-image card. Providers, in order:
 //
-// Models are tried in order until one returns an image, so a model that is
-// retired, rate limited or briefly down falls through to the next one.
-// Never throws: every failure comes back as { ok: false }.
+// 1. NVIDIA (free developer API): FLUX.1-dev by default, 1344x768 in ~6 s
+//    (verified 2026-09-26). The only free image source available: OpenRouter
+//    has no free image-output model, and the Gemini API free tier has an image
+//    quota of 0 (HTTP 429).
+// 2. Gemini API image models, and 3. Vertex AI image models (below, which
+//    fall back across Vertex models): both billed, so they join only when
+//    AI_ALLOW_PAID is set (lib/ai/models.ts).
+//
+// Models per provider come from IMAGE_*_MODEL env vars or lib/ai/models.ts
+// defaults. Providers are tried in order until one returns an image. Never
+// throws: every failure comes back as { ok: false }.
 
 export interface VertexImageConfig {
   clientEmail: string;
@@ -133,18 +137,132 @@ export async function generateImageVertex(
   return { ok: false, error: `Image generation failed (${failures.join("; ")}).` };
 }
 
-/** True when the Vertex service account needed for image generation is configured. */
-export function imageGenerationAvailable(env: AppEnv): boolean {
+/** True when the Vertex service account needed for Vertex image generation is configured. */
+export function vertexImageAvailable(env: AppEnv): boolean {
   return Boolean(env.GOOGLE_CLIENT_EMAIL && env.GOOGLE_PRIVATE_KEY && env.GOOGLE_CLOUD_PROJECT && env.GOOGLE_TOKEN_URI);
 }
 
-export function vertexImageConfigFromEnv(env: AppEnv): VertexImageConfig | null {
-  if (!imageGenerationAvailable(env)) return null;
-  return {
-    clientEmail: env.GOOGLE_CLIENT_EMAIL!,
-    privateKey: env.GOOGLE_PRIVATE_KEY!,
-    tokenUri: env.GOOGLE_TOKEN_URI!,
-    project: env.GOOGLE_CLOUD_PROJECT!,
-    model: env.IMAGEN_MODEL || DEFAULT_AI_MODELS.IMAGEN_MODEL,
-  };
+// ─── NVIDIA (free) ──────────────────────────────────────────────────────────
+
+/** FLUX on NVIDIA accepts only these edge lengths (768..1344 in steps of 64). */
+const FLUX_SIZE: Record<AspectRatio, { width: number; height: number }> = {
+  "16:9": { width: 1344, height: 768 },
+  "4:3": { width: 1024, height: 768 },
+  "1:1": { width: 1024, height: 1024 },
+};
+
+/** The request body for an NVIDIA genai image model: FLUX.1-dev settings, fewer steps for schnell. */
+export function nvidiaImageRequest(model: string, prompt: string, aspectRatio: AspectRatio, seed: number): Record<string, unknown> {
+  const size = FLUX_SIZE[aspectRatio];
+  if (/schnell/.test(model)) return { prompt, ...size, steps: 4, seed };
+  return { prompt, ...size, steps: 30, cfg_scale: 3.5, mode: "base", seed };
+}
+
+/** The image in an NVIDIA genai reply (`artifacts[0].base64`), with its type sniffed from the bytes. */
+export function extractNvidiaImage(data: unknown): { base64: string; mimeType: string } | null {
+  const artifact = (data as { artifacts?: Array<{ base64?: string; finishReason?: string }> })?.artifacts?.[0];
+  if (!artifact?.base64 || (artifact.finishReason && artifact.finishReason !== "SUCCESS")) return null;
+  const mimeType = artifact.base64.startsWith("/9j/") ? "image/jpeg" : artifact.base64.startsWith("UklG") ? "image/webp" : "image/png";
+  return { base64: artifact.base64, mimeType };
+}
+
+type ProviderOptions = { signal?: AbortSignal; fetchImpl?: typeof fetch };
+
+async function postForImage(
+  model: string,
+  url: string,
+  init: { headers: Record<string, string>; body: unknown },
+  extract: (data: unknown) => { base64: string; mimeType: string } | null,
+  options: ProviderOptions
+): Promise<ImageOutcome> {
+  try {
+    const response = await (options.fetchImpl ?? fetch)(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...init.headers },
+      signal: options.signal,
+      body: JSON.stringify(init.body),
+    });
+    if (!response.ok) return { ok: false, error: `${model}: HTTP ${response.status}` };
+    const image = extract(await response.json());
+    return image ? { ok: true, ...image } : { ok: false, error: `${model}: no image (filtered or empty)` };
+  } catch (error) {
+    if (options.signal?.aborted) return { ok: false, error: "Image generation timed out." };
+    return { ok: false, error: `${model}: ${error instanceof Error ? error.message : "transport error"}` };
+  }
+}
+
+function generateImageNvidia(prompt: string, config: { apiKey: string; model: string }, aspectRatio: AspectRatio, options: ProviderOptions) {
+  return postForImage(
+    config.model,
+    `https://ai.api.nvidia.com/v1/genai/${config.model}`,
+    {
+      headers: { authorization: `Bearer ${config.apiKey}`, accept: "application/json" },
+      body: nvidiaImageRequest(config.model, prompt, aspectRatio, Math.floor(Math.random() * 2 ** 31)),
+    },
+    extractNvidiaImage,
+    options
+  );
+}
+
+// ─── Gemini API (paid: no free image quota) ─────────────────────────────────
+
+function generateImageGemini(prompt: string, config: { apiKey: string; model: string }, aspectRatio: AspectRatio, options: ProviderOptions) {
+  return postForImage(
+    config.model,
+    `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent`,
+    {
+      headers: { "x-goog-api-key": config.apiKey },
+      body: { contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio } } },
+    },
+    extractImage,
+    options
+  );
+}
+
+// ─── The chain ──────────────────────────────────────────────────────────────
+
+export interface ImageConfig {
+  nvidia?: { apiKey: string; model: string };
+  gemini?: { apiKey: string; model: string };
+  vertex?: VertexImageConfig;
+}
+
+/** The configured image providers, free first; null when there is none. Paid ones only with AI_ALLOW_PAID. */
+export function imageConfigFromEnv(env: AppEnv): ImageConfig | null {
+  const models = imageModels(env);
+  const paid = paidAllowed(env);
+  const config: ImageConfig = {};
+  if (env.NVIDIA_API_KEY) config.nvidia = { apiKey: env.NVIDIA_API_KEY, model: models.nvidia };
+  if (paid && env.GEMINI_API_KEY) config.gemini = { apiKey: env.GEMINI_API_KEY, model: models.gemini };
+  if (paid && vertexImageAvailable(env)) {
+    config.vertex = {
+      clientEmail: env.GOOGLE_CLIENT_EMAIL!,
+      privateKey: env.GOOGLE_PRIVATE_KEY!,
+      tokenUri: env.GOOGLE_TOKEN_URI!,
+      project: env.GOOGLE_CLOUD_PROJECT!,
+      model: models.vertex,
+    };
+  }
+  return config.nvidia || config.gemini || config.vertex ? config : null;
+}
+
+/** Tries NVIDIA, then Gemini, then Vertex (whichever are configured) until one returns an image. */
+export async function generateImage(
+  prompt: string,
+  config: ImageConfig,
+  options: { aspectRatio?: AspectRatio } & ProviderOptions = {}
+): Promise<ImageOutcome> {
+  const aspectRatio = options.aspectRatio ?? "16:9";
+  const attempts: Array<() => Promise<ImageOutcome>> = [];
+  if (config.nvidia) attempts.push(() => generateImageNvidia(prompt, config.nvidia!, aspectRatio, options));
+  if (config.gemini) attempts.push(() => generateImageGemini(prompt, config.gemini!, aspectRatio, options));
+  if (config.vertex) attempts.push(() => generateImageVertex(prompt, config.vertex!, options));
+  const failures: string[] = [];
+  for (const run of attempts) {
+    if (options.signal?.aborted) return { ok: false, error: "Image generation timed out." };
+    const outcome = await run();
+    if (outcome.ok) return outcome;
+    failures.push(outcome.error);
+  }
+  return { ok: false, error: failures.length ? `Image generation failed (${failures.join("; ")}).` : "No image provider is configured." };
 }

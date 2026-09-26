@@ -7,7 +7,7 @@ import { rateLimitedResponse } from "@/lib/admin/rate-limited";
 import { checkOrigin } from "@/lib/security/check-origin";
 import { getEnv } from "@/lib/env";
 import { defaultAiDeps, generateBlogPost } from "@/lib/ai/blog-generate";
-import { generateImageVertex, vertexImageConfigFromEnv } from "@/lib/ai/image";
+import { generateImage, imageConfigFromEnv } from "@/lib/ai/image";
 import { removeImageToken } from "@/lib/blog/ai-image-tokens";
 import { registerGeneratedImage } from "@/lib/media/service";
 import { cloudinary } from "@/lib/media/cloudinary";
@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
           provider: result.provider,
         });
 
-        const imageConfig = vertexImageConfigFromEnv(env);
+        const imageConfig = imageConfigFromEnv(env);
         if (!imageConfig) {
           if (input.featuredImage) send("image", { which: "featured", status: "unavailable" });
           for (const image of post.contentImages) send("image", { which: image.token, status: "unavailable" });
@@ -156,7 +156,7 @@ export async function POST(request: NextRequest) {
         if (input.featuredImage) jobs.push(
           (async () => {
             send("image", { which: "featured", status: "start" });
-            const outcome = await generateImageVertex(post.featuredImage.prompt, imageConfig, { aspectRatio: "16:9", signal: imageSignal() });
+            const outcome = await generateImage(post.featuredImage.prompt, imageConfig, { aspectRatio: "16:9", signal: imageSignal() });
             if (!outcome.ok) {
               send("image", { which: "featured", status: "error", error: outcome.error });
               return;
@@ -177,7 +177,7 @@ export async function POST(request: NextRequest) {
           jobs.push(
             (async () => {
               send("image", { which: image.token, status: "start" });
-              const outcome = await generateImageVertex(image.prompt, imageConfig, { aspectRatio: "4:3", signal: imageSignal() });
+              const outcome = await generateImage(image.prompt, imageConfig, { aspectRatio: "4:3", signal: imageSignal() });
               if (!outcome.ok) {
                 send("image", { which: image.token, status: "error", error: outcome.error });
                 return;

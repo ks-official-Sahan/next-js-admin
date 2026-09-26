@@ -6,7 +6,7 @@ import { limit } from "@/lib/cache/ratelimit";
 import { rateLimitedResponse } from "@/lib/admin/rate-limited";
 import { checkOrigin } from "@/lib/security/check-origin";
 import { getEnv } from "@/lib/env";
-import { generateImageVertex, vertexImageConfigFromEnv } from "@/lib/ai/image";
+import { generateImage, imageConfigFromEnv } from "@/lib/ai/image";
 import { registerGeneratedImage } from "@/lib/media/service";
 import { cloudinary } from "@/lib/media/cloudinary";
 import { MEDIA_CONFIG } from "@/lib/media/config";
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "A prompt and alt text are required." }, { status: 400 });
   }
 
-  const imageConfig = vertexImageConfigFromEnv(getEnv());
+  const imageConfig = imageConfigFromEnv(getEnv());
   if (!imageConfig) {
     return NextResponse.json(
       { ok: false, error: "AI image generation is not configured on this server." },
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
 
   // Stops before maxDuration, and when the admin leaves (image calls are billed).
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(100_000)]);
-  const outcome = await generateImageVertex(parsed.data.prompt, imageConfig, { aspectRatio: "16:9", signal });
+  const outcome = await generateImage(parsed.data.prompt, imageConfig, { aspectRatio: "16:9", signal });
   if (!outcome.ok) {
     return NextResponse.json({ ok: false, error: outcome.error }, { status: 502, headers: { "Cache-Control": "no-store" } });
   }

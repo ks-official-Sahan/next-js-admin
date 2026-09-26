@@ -211,7 +211,7 @@ export async function POST(request: NextRequest) {
 
     // A visitor waits on this: fail over fast and give up well before a proxy timeout.
     const aiService = createAiService({
-      providers: realProviders(env),
+      providers: realProviders(env, "chat"),
       timeoutMs: 12_000,
       deadlineMs: 20_000,
       hedgeAfterMs: 5_000,

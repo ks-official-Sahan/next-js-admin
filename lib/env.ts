@@ -40,14 +40,6 @@ const emailProvider = text
   .transform((value) => (value ?? "auto").toLowerCase())
   .pipe(z.enum(["auto", "resend", "brevo-smtp", "capture"]));
 
-export const DEFAULT_AI_MODELS = {
-  OPENROUTER_MODEL: "nvidia/nemotron-3.5-lightning:free",
-  GEMINI_MODEL: "gemini-2.5-flash",
-  VERTEX_MODEL: "gemini-2.5-flash",
-  NVIDIA_MODEL: "deepseek-ai/deepseek-v4.1-flash",
-  IMAGEN_MODEL: "gemini-3.1-flash-image",
-} as const;
-
 const schema = z.object({
   // Auth and signing
   AUTH_SECRET: text,
@@ -91,20 +83,33 @@ const schema = z.object({
   EMAIL_SENDER_USER: text,
   EMAIL_BREVO_API_KEY: text,
 
-  // AI: model overrides with working defaults so all providers function out-of-the-box
+  // AI. Model variables are optional overrides: lib/ai/models.ts resolves
+  // BLOG_*/CHAT_*/IMAGE_* first, then the provider-wide *_MODEL, then its
+  // verified free defaults. AI_ALLOW_PAID lets paid providers (Vertex text and
+  // images, Gemini images) join the chains; off by default, so AI costs $0.
+  AI_ALLOW_PAID: flag,
   OPENROUTER_BASE_URL: text,
   OPENROUTER_API_KEY: text,
   OPENROUTER_API_KEY_2: text,
   OPENROUTER_ALLOW_PAID_MODELS: flag,
-  OPENROUTER_MODEL: text.transform((v) => v || DEFAULT_AI_MODELS.OPENROUTER_MODEL),
   GEMINI_API_KEY: text,
-  GEMINI_MODEL: text.transform((v) => v || DEFAULT_AI_MODELS.GEMINI_MODEL),
   NVIDIA_API_KEY: text,
-  NVIDIA_MODEL: text.transform((v) => v || DEFAULT_AI_MODELS.NVIDIA_MODEL),
-  VERTEX_MODEL: text.transform((v) => v || DEFAULT_AI_MODELS.VERTEX_MODEL),
-  // Vertex AI Imagen model for the blog generator's featured/content images
-  // (lib/ai/image.ts); reuses the same GOOGLE_* service account as VERTEX_MODEL.
-  IMAGEN_MODEL: text.transform((v) => v || DEFAULT_AI_MODELS.IMAGEN_MODEL),
+  OPENROUTER_MODEL: text,
+  GEMINI_MODEL: text,
+  NVIDIA_MODEL: text,
+  VERTEX_MODEL: text,
+  IMAGEN_MODEL: text,
+  BLOG_GEMINI_MODEL: text,
+  BLOG_OPENROUTER_MODEL: text,
+  BLOG_NVIDIA_MODEL: text,
+  BLOG_VERTEX_MODEL: text,
+  CHAT_GEMINI_MODEL: text,
+  CHAT_OPENROUTER_MODEL: text,
+  CHAT_NVIDIA_MODEL: text,
+  CHAT_VERTEX_MODEL: text,
+  IMAGE_NVIDIA_MODEL: text,
+  IMAGE_GEMINI_MODEL: text,
+  IMAGE_VERTEX_MODEL: text,
   GOOGLE_CLIENT_EMAIL: text,
   GOOGLE_PRIVATE_KEY: privateKey,
   GOOGLE_CLOUD_PROJECT: text,

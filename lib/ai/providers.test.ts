@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { createAiHealth, createAiService, geminiOutcome, geminiProvider, realProviders, type AiOutcome, type AiProvider } from "./providers";
-import { DEFAULT_AI_MODELS, type AppEnv } from "@/lib/env";
+import type { AppEnv } from "@/lib/env";
+import { DEFAULT_TEXT_MODELS } from "./models";
 import type { ModelPrompt } from "./guard";
 
 const PROMPT: ModelPrompt = { system: "sys", user: "user" };
@@ -179,7 +180,7 @@ test("the deadline stops the chain before a later provider starts", async () => 
   assert.deepEqual(result.attempts.map((a) => a.provider), ["a"]);
 });
 
-test("geminiProvider uses custom model when provided, DEFAULT_AI_MODELS otherwise", async () => {
+test("geminiProvider uses custom model when provided, the blog default otherwise", async () => {
   let requestedUrl = "";
   const dummyFetch = (async (url: string | URL | Request) => {
     requestedUrl = String(url);
@@ -188,7 +189,7 @@ test("geminiProvider uses custom model when provided, DEFAULT_AI_MODELS otherwis
 
   const defaultGemini = geminiProvider({ apiKey: "test-key", fetchImpl: dummyFetch });
   await defaultGemini.generate(PROMPT);
-  assert.ok(requestedUrl.includes(DEFAULT_AI_MODELS.GEMINI_MODEL));
+  assert.ok(requestedUrl.includes(DEFAULT_TEXT_MODELS.blog.gemini));
 
   const customGemini = geminiProvider({ apiKey: "test-key", model: "custom-gemini-pro", fetchImpl: dummyFetch });
   await customGemini.generate(PROMPT);
@@ -202,7 +203,35 @@ test("realProviders instantiates configured providers and defaults missing model
     OPENROUTER_API_KEY: "dummy-openrouter-key",
   } as unknown as AppEnv;
 
-  const providers = realProviders(dummyEnv);
+  const providers = realProviders(dummyEnv, "blog");
   assert.equal(providers.length, 3);
   assert.deepEqual(providers.map((p) => p.name), ["gemini", "openrouter", "nvidia"]);
+});
+
+test("realProviders leaves paid Vertex out unless AI_ALLOW_PAID is set", () => {
+  const env = {
+    GEMINI_API_KEY: "g",
+    GOOGLE_CLIENT_EMAIL: "a@b.iam.gserviceaccount.com",
+    GOOGLE_PRIVATE_KEY: "key",
+    GOOGLE_CLOUD_PROJECT: "proj",
+    GOOGLE_TOKEN_URI: "https://oauth2.googleapis.com/token",
+  } as unknown as AppEnv;
+  assert.deepEqual(realProviders(env, "chat").map((p) => p.name), ["gemini"]);
+  assert.deepEqual(realProviders({ ...env, AI_ALLOW_PAID: true } as AppEnv, "chat").map((p) => p.name), ["gemini", "vertex"]);
+});
+
+test("realProviders picks each purpose's model: purpose env, then provider env, then default", async () => {
+  const urls: string[] = [];
+  const fetchImpl = (async (url: string | URL | Request) => {
+    urls.push(String(url));
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "ok" }] } }] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const run = async (env: Record<string, unknown>, purpose: "blog" | "chat") => {
+    await realProviders({ GEMINI_API_KEY: "g", ...env } as unknown as AppEnv, purpose, fetchImpl)[0].generate(PROMPT);
+    return urls.at(-1) ?? "";
+  };
+  assert.ok((await run({}, "chat")).includes("/" + DEFAULT_TEXT_MODELS.chat.gemini + ":"));
+  assert.ok((await run({}, "blog")).includes("/" + DEFAULT_TEXT_MODELS.blog.gemini + ":"));
+  assert.ok((await run({ GEMINI_MODEL: "gemini-x" }, "chat")).includes("/gemini-x:"));
+  assert.ok((await run({ GEMINI_MODEL: "gemini-x", CHAT_GEMINI_MODEL: "gemini-chat" }, "chat")).includes("/gemini-chat:"));
 });

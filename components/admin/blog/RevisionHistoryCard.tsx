@@ -46,6 +46,11 @@ export default function RevisionHistoryCard({ postId, revisions }: { postId: str
     if (!window.confirm(`Restore "${title}"? The current version stays in History.`)) event.preventDefault();
   };
 
+  const handleRestore = (revisionId: string) => (formData: FormData) => {
+    formData.set("revisionId", revisionId);
+    dispatch(formData);
+  };
+
   return (
     <SidebarCard title={`History${revisions.length ? ` (${revisions.length})` : ""}`} defaultOpen={false}>
       <input type="hidden" name="postId" value={postId} />
@@ -70,9 +75,7 @@ export default function RevisionHistoryCard({ postId, revisions }: { postId: str
               </div>
               <button
                 type="submit"
-                formAction={dispatch}
-                name="revisionId"
-                value={revision.id}
+                formAction={handleRestore(revision.id)}
                 disabled={pending}
                 onClick={(event) => confirmRestore(event, revision.title)}
                 className={buttonVariants.small}

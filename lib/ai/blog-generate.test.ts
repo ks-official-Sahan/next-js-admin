@@ -6,6 +6,7 @@ import {
   generateBlogPost,
   generateSeoSuggestion,
   parseBlogGeneration,
+  repairJsonString,
   validateStructure,
 } from "./blog-generate";
 import type { AiOutcome, AiProvider } from "./providers";
@@ -64,6 +65,42 @@ test("parseBlogGeneration accepts a fully valid post", () => {
 test("parseBlogGeneration accepts the object wrapped in a code fence", () => {
   const result = parseBlogGeneration(`\`\`\`json\n${JSON.stringify(VALID_POST)}\n\`\`\``);
   assert.equal(result.ok, true);
+});
+
+test("parseBlogGeneration keeps a body that has its own chart and code fences", () => {
+  // Regression: the first ``` inside bodyMarkdown was taken as the reply's
+  // wrapper fence, cutting out "{ \"type\": ..." and failing at position 2.
+  const bodyMarkdown = `${VALID_POST.bodyMarkdown}\n\`\`\`chart\n{ "type": "bar", "title": "T", "labels": ["a"], "series": [{ "name": "n", "data": [1] }] }\n\`\`\`\n\n\`\`\`ts\nconst a = { b: 1 };\n\`\`\`\n`;
+  for (const text of [JSON.stringify({ ...VALID_POST, bodyMarkdown }), `\`\`\`json\n${JSON.stringify({ ...VALID_POST, bodyMarkdown })}\n\`\`\``]) {
+    const result = parseBlogGeneration(text);
+    assert.equal(result.ok, true, result.ok ? "" : result.error);
+    if (result.ok) assert.equal(result.data.bodyMarkdown, bodyMarkdown.trim());
+  }
+});
+
+test("parseBlogGeneration repairs and accepts valid post with unescaped internal quotes in bodyMarkdown", () => {
+  const postText = `{
+    "title": "Shipping Fast Without Breaking Things",
+    "excerpt": "A short look at how disciplined engineering teams ship quickly.",
+    "bodyMarkdown": "## Intro\\n\\nIn this post we explore "server-side rendering" and "zero-downtime" deploys.\\n\\n![a diagram](ai-image://1 \\"Diagram\\")\\n",
+    "seoTitle": "Shipping Fast Without Breaking Things",
+    "seoDescription": "How disciplined engineering teams ship quickly and safely.",
+    "topic": "Engineering",
+    "tags": ["engineering", "process"],
+    "featuredImage": { "prompt": "a clean engineering workspace, wide shot", "alt": "An engineer's workspace" },
+    "contentImages": [{ "token": "ai-image://1", "prompt": "a system diagram", "alt": "System diagram", "caption": "How it fits together" }]
+  }`;
+  const result = parseBlogGeneration(postText);
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.match(result.data.bodyMarkdown, /server-side rendering/);
+  }
+});
+
+test("repairJsonString closes truncated JSON structures", () => {
+  const truncated = `{"title": "Truncated Post", "bodyMarkdown": "Cut off mid`;
+  const repaired = repairJsonString(truncated);
+  assert.doesNotThrow(() => JSON.parse(repaired));
 });
 
 test("parseBlogGeneration rejects malformed JSON", () => {

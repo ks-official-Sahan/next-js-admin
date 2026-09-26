@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { audit, auditSafe } from "@/lib/admin/audit";
+import { retryMessage } from "@/lib/admin/rate-limited";
 import { authorizeAction } from "@/lib/actions/guard";
 import { done, fail, fieldErrorsFrom, formValues, type ActionState } from "@/lib/actions/state";
 import { unstable_update } from "@/lib/auth/config";
@@ -256,7 +257,7 @@ async function startMfa(purpose: "ENABLE" | "DISABLE", formData: FormData): Prom
   if (!issued.ok) {
     return fail(
       issued.error === "limited"
-        ? "Too many codes asked for. Wait a few minutes."
+        ? `Too many codes asked for. ${retryMessage(issued.retryAfterSeconds ?? 0)}`
         : issued.error === "locked"
           ? "Too many wrong codes. Wait a few minutes."
           : "The code could not be emailed. Check the email settings."

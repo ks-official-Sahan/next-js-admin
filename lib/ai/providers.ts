@@ -31,6 +31,8 @@ export interface AiGenerateOptions {
 
 export interface AiProvider {
   readonly name: string;
+  /** Paid or otherwise costly: tried only after every other provider, whatever its speed or health. */
+  readonly lastResort?: boolean;
   generate(prompt: ModelPrompt, options?: AiGenerateOptions): Promise<AiOutcome>;
 }
 
@@ -47,6 +49,8 @@ export interface AiResult {
   text?: string;
   errorClass?: string;
   attempts: AiAttempt[];
+  /** The last reply `accept` turned down, kept so a caller can ask a model to repair it. */
+  rejected?: { provider: string; text: string; reason: string };
 }
 
 export const AI_TIMEOUT_MS = 25_000;
@@ -116,7 +120,14 @@ export interface AiServiceDeps {
   now?: () => number;
 }
 
-const HEDGE = Symbol("hedge");
+export type AiAttemptStatus = {
+  provider: string;
+  stage: "start" | "failure" | "fallback" | "success";
+  errorClass?: string;
+  fallbackTo?: string;
+};
+
+export const HEDGE = Symbol("hedge");
 
 /**
  * Tries providers until one succeeds, a non-retryable failure stops the chain,
@@ -132,11 +143,26 @@ export function createAiService(deps: AiServiceDeps) {
   function rank(at: number): AiProvider[] {
     const cooling = (p: AiProvider) => Number((health.cooldownUntil.get(p.name) ?? 0) > at);
     const speed = (p: AiProvider) => health.latencyMs.get(p.name) ?? Number.POSITIVE_INFINITY;
+    const costly = (p: AiProvider) => Number(Boolean(p.lastResort));
     // Array.prototype.sort is stable, so unmeasured providers keep the configured order.
-    return [...deps.providers].sort((a, b) => cooling(a) - cooling(b) || speed(a) - speed(b));
+    return [...deps.providers].sort((a, b) => costly(a) - costly(b) || cooling(a) - cooling(b) || speed(a) - speed(b));
   }
 
-  async function generate(prompt: ModelPrompt, options?: { maxTokens?: number; jsonMode?: boolean }): Promise<AiResult> {
+  async function generate(
+    prompt: ModelPrompt,
+    options?: {
+      maxTokens?: number;
+      jsonMode?: boolean;
+      onAttempt?: (status: AiAttemptStatus) => void;
+      /**
+       * Output check run on each reply before it counts as a success: return
+       * null to accept, or a reason to treat the reply as that provider's
+       * failure. With hedging on, this is what stops a fast but broken reply
+       * (malformed JSON from a weak model) from beating a slower valid one.
+       */
+      accept?: (text: string) => string | null;
+    }
+  ): Promise<AiResult> {
     if (deps.providers.length === 0) {
       return { ok: false, provider: null, errorClass: "no_provider", attempts: [] };
     }
@@ -149,29 +175,52 @@ export function createAiService(deps: AiServiceDeps) {
     let next = 0;
     let stopped = false;
     let result: AiResult | null = null;
+    let rejected: AiResult["rejected"];
 
     const launch = (): boolean => {
       if (result || stopped || next >= ordered.length) return false;
       const remaining = deps.deadlineMs === undefined ? timeoutMs : deps.deadlineMs - (now() - startedAll);
       if (remaining <= 250) return false;
       const provider = ordered[next++];
+      options?.onAttempt?.({ provider: provider.name, stage: "start" });
       const started = now();
-      const run = attempt(provider, prompt, options?.maxTokens, Math.min(timeoutMs, remaining), cancelLosers.signal, options?.jsonMode).then((outcome) => {
+      const run = attempt(provider, prompt, options?.maxTokens, Math.min(timeoutMs, remaining), cancelLosers.signal, options?.jsonMode).then((raw) => {
         if (result) return; // Lost the race; its failure is not the provider's fault.
         const ms = now() - started;
+        let outcome = raw;
+        if (outcome.ok && options?.accept) {
+          const reason = options.accept(outcome.text);
+          if (reason) {
+            rejected = { provider: provider.name, text: outcome.text, reason };
+            outcome = { ok: false, errorClass: "invalid_output", retryable: true };
+          }
+        }
         if (outcome.ok) {
           health.cooldownUntil.delete(provider.name);
           const previous = health.latencyMs.get(provider.name);
           health.latencyMs.set(provider.name, previous === undefined ? ms : Math.round(previous * 0.7 + ms * 0.3));
           attempts.push({ provider: provider.name, ok: true, ms });
           result = { ok: true, provider: provider.name, text: outcome.text, attempts };
+          options?.onAttempt?.({ provider: provider.name, stage: "success" });
           cancelLosers.abort();
           return;
         }
         attempts.push({ provider: provider.name, ok: false, errorClass: outcome.errorClass, ms });
+        const fallbackTo = next < ordered.length ? ordered[next].name : undefined;
+        options?.onAttempt?.({
+          provider: provider.name,
+          stage: fallbackTo ? "fallback" : "failure",
+          errorClass: outcome.errorClass,
+          fallbackTo,
+        });
         const cooldown = cooldownFor(outcome);
         if (cooldown) health.cooldownUntil.set(provider.name, now() + cooldown);
-        log.warn("ai provider failed", { provider: provider.name, errorClass: outcome.errorClass, ms });
+        log.warn("ai provider failed", {
+          provider: provider.name,
+          errorClass: outcome.errorClass,
+          ms,
+          ...(outcome.errorClass === "invalid_output" && rejected ? { reason: rejected.reason.slice(0, 160) } : {}),
+        });
         if (!outcome.retryable) stopped = true;
       });
       const tracked: Promise<void> = run.finally(() => running.delete(tracked));
@@ -191,7 +240,7 @@ export function createAiService(deps: AiServiceDeps) {
       if (first === HEDGE) launch();
     }
 
-    return result ?? { ok: false, provider: null, errorClass: attempts[attempts.length - 1]?.errorClass ?? "deadline", attempts };
+    return result ?? { ok: false, provider: null, errorClass: attempts[attempts.length - 1]?.errorClass ?? "deadline", attempts, rejected };
   }
 
   return { generate };
@@ -232,7 +281,7 @@ export function openRouterProvider(config: {
       if (!config.allowPaidModels && !model.endsWith(FREE_SUFFIX)) {
         return { ok: false, errorClass: "paid_model_blocked", retryable: true };
       }
-      return sdkGenerate(client(model), prompt, options);
+      return sdkGenerate(client.chat(model), prompt, options);
     },
   };
 }
@@ -249,6 +298,7 @@ async function sdkGenerate(model: Parameters<typeof generateText>[0]["model"], p
       abortSignal: options?.signal,
     });
     if (!result.text) return { ok: false, errorClass: "empty_response", retryable: true };
+    if (result.finishReason === "length") return { ok: false, errorClass: "truncated", retryable: true };
     return { ok: true, text: result.text };
   } catch (error) {
     const status = (error as { statusCode?: number; status?: number })?.statusCode ?? (error as { status?: number })?.status;
@@ -268,8 +318,29 @@ export function nvidiaProvider(config: { apiKey: string; model?: string; fetch?:
 
   return {
     name: "nvidia",
-    generate: (prompt, options) => sdkGenerate(client(model), prompt, options),
+    generate: (prompt, options) => sdkGenerate(client.chat(model), prompt, options),
   };
+}
+
+/**
+ * Thinking tokens count against maxOutputTokens. On a short reply (the chat
+ * widget asks for 500) any budget can use up the whole cap and return no text,
+ * so short outputs get none; long structured outputs (blog JSON) get a modest
+ * share.
+ */
+export function thinkingBudgetFor(maxOutputTokens: number): number {
+  return maxOutputTokens >= 2000 ? Math.min(800, Math.floor(maxOutputTokens / 5)) : 0;
+}
+
+type GeminiResponse = { candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string; thought?: boolean }> } }> };
+
+/** Text of a Gemini/Vertex generateContent reply; a reply stopped at the token cap is "truncated", not a success. */
+export function geminiOutcome(data: unknown): AiOutcome {
+  const candidate = (data as GeminiResponse).candidates?.[0];
+  const text = candidate?.content?.parts?.filter((part) => !part.thought).map((part) => part.text ?? "").join("") ?? "";
+  if (candidate?.finishReason === "MAX_TOKENS") return { ok: false, errorClass: "truncated", retryable: true };
+  if (!text) return { ok: false, errorClass: "empty_response", retryable: true };
+  return { ok: true, text };
 }
 
 /** Gemini's own REST API (not OpenAI-compatible), called directly so no extra SDK is added for one provider. */
@@ -282,21 +353,16 @@ export function geminiProvider(config: { apiKey: string; model?: string; fetchIm
     async generate(prompt, options) {
       try {
         const maxOutputTokens = options?.maxTokens ?? 2400;
-        // Thinking tokens count against maxOutputTokens. On a short reply
-        // (the chat widget asks for 500) any budget can use up the whole cap
-        // and return no text, so short outputs get none; long structured
-        // outputs (blog JSON) get a modest share.
-        const thinkingBudget = maxOutputTokens >= 2000 ? Math.min(800, Math.floor(maxOutputTokens / 5)) : 0;
         const generationConfig: Record<string, unknown> = {
           maxOutputTokens,
-          thinkingConfig: { thinkingBudget },
+          thinkingConfig: { thinkingBudget: thinkingBudgetFor(maxOutputTokens) },
         };
         // When JSON mode is requested, ask the model to respond with valid JSON.
         // This dramatically improves structured output reliability for blog generation.
         if (options?.jsonMode) {
           generationConfig.responseMimeType = "application/json";
         }
-        const response = await fetchImpl(
+        let response = await fetchImpl(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
           {
             method: "POST",
@@ -310,13 +376,27 @@ export function geminiProvider(config: { apiKey: string; model?: string; fetchIm
             }),
           }
         );
+        if (response.status === 503 && !options?.signal?.aborted) {
+          // 503 is a temporary capacity spike on Google AI Studio; retry once after 500ms
+          await new Promise((r) => setTimeout(r, 500));
+          if (!options?.signal?.aborted) {
+            response = await fetchImpl(
+              `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+              {
+                method: "POST",
+                headers: { "content-type": "application/json", "x-goog-api-key": config.apiKey },
+                signal: options?.signal,
+                body: JSON.stringify({
+                  systemInstruction: { parts: [{ text: prompt.system }] },
+                  contents: [{ role: "user", parts: [{ text: prompt.user }] }],
+                  generationConfig,
+                }),
+              }
+            );
+          }
+        }
         if (!response.ok) return httpOutcome(response.status);
-        const data = (await response.json()) as {
-          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-        };
-        const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
-        if (!text) return { ok: false, errorClass: "empty_response", retryable: true };
-        return { ok: true, text };
+        return geminiOutcome(await response.json());
       } catch {
         return { ok: false, errorClass: options?.signal?.aborted ? "timeout" : "transport", retryable: true };
       }
@@ -343,6 +423,7 @@ export function vertexProvider(config: {
 
   return {
     name: "vertex",
+    lastResort: true,
     async generate(prompt, options) {
       try {
         const accessToken = await getVertexAccessToken(
@@ -358,17 +439,16 @@ export function vertexProvider(config: {
             body: JSON.stringify({
               systemInstruction: { parts: [{ text: prompt.system }] },
               contents: [{ role: "user", parts: [{ text: prompt.user }] }],
-              generationConfig: { maxOutputTokens: options?.maxTokens ?? 1800 },
+              generationConfig: {
+                maxOutputTokens: options?.maxTokens ?? 1800,
+                thinkingConfig: { thinkingBudget: thinkingBudgetFor(options?.maxTokens ?? 1800) },
+                ...(options?.jsonMode ? { responseMimeType: "application/json" } : {}),
+              },
             }),
           }
         );
         if (!response.ok) return httpOutcome(response.status);
-        const data = (await response.json()) as {
-          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-        };
-        const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
-        if (!text) return { ok: false, errorClass: "empty_response", retryable: true };
-        return { ok: true, text };
+        return geminiOutcome(await response.json());
       } catch {
         return { ok: false, errorClass: "transport", retryable: true };
       }
@@ -377,11 +457,11 @@ export function vertexProvider(config: {
 }
 
 /**
- * The chain from decision D15, reordered for reliability:
- * 1. Gemini (free, fast, reliable with a valid API key)
- * 2. Vertex (service account, slowest but most reliable)
- * 3. OpenRouter (free-tier models are heavily rate-limited)
- * 4. NVIDIA (last — key may be dead or model retired)
+ * The chain from decision D15, free tiers first and paid last:
+ * 1. Gemini (free API key, fast)
+ * 2. OpenRouter (free-tier models, heavily rate-limited)
+ * 3. NVIDIA (key may be dead or model retired)
+ * 4. Vertex (pay-as-you-go on the Cloud project: only when the free ones fail)
  */
 export function realProviders(env: AppEnv, fetchImpl?: typeof fetch): AiProvider[] {
   const providers: AiProvider[] = [];
@@ -391,21 +471,7 @@ export function realProviders(env: AppEnv, fetchImpl?: typeof fetch): AiProvider
     providers.push(geminiProvider({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL || DEFAULT_AI_MODELS.GEMINI_MODEL, fetchImpl }));
   }
 
-  // 2. Vertex AI — service-account auth, slower cold start but reliable
-  if (env.GOOGLE_CLIENT_EMAIL && env.GOOGLE_PRIVATE_KEY && env.GOOGLE_CLOUD_PROJECT && env.GOOGLE_TOKEN_URI) {
-    providers.push(
-      vertexProvider({
-        clientEmail: env.GOOGLE_CLIENT_EMAIL,
-        privateKey: env.GOOGLE_PRIVATE_KEY,
-        tokenUri: env.GOOGLE_TOKEN_URI,
-        project: env.GOOGLE_CLOUD_PROJECT,
-        model: env.VERTEX_MODEL || DEFAULT_AI_MODELS.VERTEX_MODEL,
-        fetchImpl,
-      })
-    );
-  }
-
-  // 3. OpenRouter — free-tier models are heavily rate-limited (429 common)
+  // 2. OpenRouter — free-tier models are heavily rate-limited (429 common)
   const openRouterModel = env.OPENROUTER_MODEL || DEFAULT_AI_MODELS.OPENROUTER_MODEL;
   if (env.OPENROUTER_API_KEY) {
     providers.push(
@@ -431,13 +497,28 @@ export function realProviders(env: AppEnv, fetchImpl?: typeof fetch): AiProvider
     );
   }
 
-  // 4. NVIDIA NIM — last; key may be invalid or model may be retired
+  // 3. NVIDIA NIM — key may be invalid or model may be retired
   if (env.NVIDIA_API_KEY) {
     providers.push(
       nvidiaProvider({
         apiKey: env.NVIDIA_API_KEY,
         model: env.NVIDIA_MODEL || DEFAULT_AI_MODELS.NVIDIA_MODEL,
         fetch: fetchImpl,
+      })
+    );
+  }
+
+  // 4. Vertex AI — last resort: it bills pay-as-you-go on the Cloud project,
+  // while the others are free tiers.
+  if (env.GOOGLE_CLIENT_EMAIL && env.GOOGLE_PRIVATE_KEY && env.GOOGLE_CLOUD_PROJECT && env.GOOGLE_TOKEN_URI) {
+    providers.push(
+      vertexProvider({
+        clientEmail: env.GOOGLE_CLIENT_EMAIL,
+        privateKey: env.GOOGLE_PRIVATE_KEY,
+        tokenUri: env.GOOGLE_TOKEN_URI,
+        project: env.GOOGLE_CLOUD_PROJECT,
+        model: env.VERTEX_MODEL || DEFAULT_AI_MODELS.VERTEX_MODEL,
+        fetchImpl,
       })
     );
   }

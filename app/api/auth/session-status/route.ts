@@ -17,6 +17,11 @@ export async function GET(request: NextRequest) {
   if (!request.cookies.has(SESSION_COOKIE)) {
     return new NextResponse(null, { status: 404, headers: { "Cache-Control": "no-store" } });
   }
-  const status = await getSessionStatus();
-  return NextResponse.json(status, { headers: { "Cache-Control": "no-store" } });
+  try {
+    const status = await getSessionStatus();
+    return NextResponse.json(status, { headers: { "Cache-Control": "no-store" } });
+  } catch {
+    // Database connection dropped or cold starting; answer 503 so heartbeat backs off and retries
+    return new NextResponse(null, { status: 503, headers: { "Cache-Control": "no-store" } });
+  }
 }

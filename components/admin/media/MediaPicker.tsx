@@ -4,8 +4,8 @@ import { useCallback, useRef, useState } from "react";
 import { Button, Group, Modal, Stack, Text, TextInput } from "@mantine/core";
 import { Upload, Search, AlertCircle } from "lucide-react";
 
-import { registerUpload } from "@/lib/actions/media";
 import { MEDIA_CONFIG } from "@/lib/media/config";
+import { uploadToMediaLibrary } from "@/lib/media/upload-client";
 
 export interface MediaPickerResult {
   mediaId: string;
@@ -43,57 +43,13 @@ export function MediaPicker({ onSelect, kind = "IMAGE", required = false }: Medi
       setUploading(true);
 
       try {
-        // Step 1: Get signed upload params from /api/admin/uploads/sign
-        const signResponse = await fetch("/api/admin/uploads/sign");
-        if (!signResponse.ok) throw new Error("Failed to get upload signature");
-
-        const signData = (await signResponse.json()) as {
-          cloudName: string;
-          uploadPreset: string;
-          signature: string;
-          timestamp: number;
-          folder: string;
-        };
-
-        // Step 2: Upload to Cloudinary using unsigned widget pattern
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("upload_preset", signData.uploadPreset);
-        formData.append("cloud_name", signData.cloudName);
-        formData.append("folder", signData.folder);
-        formData.append("signature", signData.signature);
-        formData.append("timestamp", String(signData.timestamp));
-
-        const cloudinaryUrl = `https://api.cloudinary.com/v1_1/${signData.cloudName}/auto/upload`;
-        const uploadResponse = await fetch(cloudinaryUrl, {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!uploadResponse.ok) throw new Error("Upload to Cloudinary failed");
-
-        const uploadData = (await uploadResponse.json()) as {
-          public_id: string;
-          secure_url: string;
-          width?: number;
-          height?: number;
-        };
-
-        // Step 3: Register with backend (registerUpload action)
-        const registerResponse = await registerUpload(uploadData.public_id, signData.folder);
-        if (!registerResponse.ok) {
-          throw new Error(registerResponse.error || "Failed to register upload");
+        const uploaded = await uploadToMediaLibrary(file, { fileName: file.name });
+        if (!uploaded.ok) {
+          setError(uploaded.error);
+          return;
         }
-
-        onSelect({
-          mediaId: registerResponse.asset?.id || uploadData.public_id,
-          src: registerResponse.asset?.url || uploadData.secure_url,
-          alt: "",
-        });
-
+        onSelect({ mediaId: uploaded.mediaId, src: uploaded.url, alt: "" });
         setOpened(false);
-      } catch (err) {
-        setError((err as Error).message || "Upload failed");
       } finally {
         setUploading(false);
         if (fileInputRef.current) fileInputRef.current.value = "";

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { getOptionalUser, hasPermission } from "@/lib/auth/dal";
 import { limit } from "@/lib/cache/ratelimit";
+import { rateLimitedResponse } from "@/lib/admin/rate-limited";
 import { checkOrigin } from "@/lib/security/check-origin";
 import { getEnv } from "@/lib/env";
 import { defaultAiDeps, generateBlogPost } from "@/lib/ai/blog-generate";
@@ -16,7 +17,7 @@ import { ensureUniqueSlug, slugify } from "@/lib/blog/slug";
 import { log } from "@/lib/log";
 
 // POST /api/admin/ai/generate-post. Requires generateAI, rate limited per
-// user (ai:admin:user, shared with /draft and /cover). Streams progress as
+// user (ai:post:user). Streams progress as
 // the generation runs: the model call in lib/ai/blog-generate.ts is a single
 // non-streaming request per provider (createAiService wraps generateText,
 // not streamText, across the whole fallback chain — see lib/ai/providers.ts,
@@ -33,6 +34,10 @@ export const dynamic = "force-dynamic";
 // Text generation (plus one repair) and image generation (~10-20 s each, in
 // parallel) can outlast a platform's short default function timeout.
 export const maxDuration = 300;
+
+/** Leaves the stream time to report and close before the platform's hard stop. */
+const ROUTE_BUDGET_MS = 285_000;
+const IMAGE_TIMEOUT_MS = 90_000;
 
 const bodySchema = z.object({
   prompt: z.string().trim().min(1).max(2000),
@@ -58,8 +63,8 @@ export async function POST(request: NextRequest) {
 
   if (!checkOrigin(request.headers, request)) return forbidden();
 
-  const limited = await limit("ai:admin:user", user.id);
-  if (!limited.ok) return new NextResponse(null, { status: 429, headers: { "Cache-Control": "no-store" } });
+  const limited = await limit("ai:post:user", user.id);
+  if (!limited.ok) return rateLimitedResponse(limited.resetSeconds, "Post generation");
 
   let body: unknown;
   try {
@@ -80,6 +85,15 @@ export async function POST(request: NextRequest) {
 
   const stream = new ReadableStream({
     async start(controller) {
+      const startedAt = Date.now();
+      // Each image stops at its own cap or at the route's remaining budget,
+      // whichever is sooner, and every image stops when the admin closes the
+      // tab (request.signal): image generation is billed per call.
+      const imageSignal = () =>
+        AbortSignal.any([
+          request.signal,
+          AbortSignal.timeout(Math.max(5_000, Math.min(IMAGE_TIMEOUT_MS, ROUTE_BUDGET_MS - (Date.now() - startedAt)))),
+        ]);
       let closed = false;
       const send = (event: string, data: unknown) => {
         if (closed) return;
@@ -92,7 +106,11 @@ export async function POST(request: NextRequest) {
 
       try {
         send("stage", { stage: "writing" });
-        const result = await generateBlogPost(input, defaultAiDeps());
+        const result = await generateBlogPost(input, defaultAiDeps(), {
+          onStatus: (status) => {
+            send("provider_status", status);
+          },
+        });
         if (!result.ok) {
           send("error", { error: result.error });
           return;
@@ -138,7 +156,7 @@ export async function POST(request: NextRequest) {
         if (input.featuredImage) jobs.push(
           (async () => {
             send("image", { which: "featured", status: "start" });
-            const outcome = await generateImageVertex(post.featuredImage.prompt, imageConfig, { aspectRatio: "16:9" });
+            const outcome = await generateImageVertex(post.featuredImage.prompt, imageConfig, { aspectRatio: "16:9", signal: imageSignal() });
             if (!outcome.ok) {
               send("image", { which: "featured", status: "error", error: outcome.error });
               return;
@@ -159,7 +177,7 @@ export async function POST(request: NextRequest) {
           jobs.push(
             (async () => {
               send("image", { which: image.token, status: "start" });
-              const outcome = await generateImageVertex(image.prompt, imageConfig, { aspectRatio: "4:3" });
+              const outcome = await generateImageVertex(image.prompt, imageConfig, { aspectRatio: "4:3", signal: imageSignal() });
               if (!outcome.ok) {
                 send("image", { which: image.token, status: "error", error: outcome.error });
                 return;

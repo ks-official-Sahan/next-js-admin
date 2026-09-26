@@ -4,6 +4,7 @@ import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
 
 import { auditSafe } from "@/lib/admin/audit";
+import { retryMessage } from "@/lib/admin/rate-limited";
 import { hasValidUnlock } from "@/lib/admin/unlock-request";
 import { signIn, signOut } from "@/lib/auth/config";
 import { getOptionalUser } from "@/lib/auth/dal";
@@ -32,7 +33,7 @@ const MESSAGES: Record<string, string> = {
   limited: "Too many attempts. Wait a while and try again.",
 };
 const ISSUE_ERRORS = {
-  limited: "Too many codes were asked for. Wait a few minutes and try again.",
+  limited: "Too many codes were asked for.",
   locked: "Too many wrong codes. Wait a few minutes and try again.",
   send_failed: "The code could not be emailed. Try again in a moment.",
 } as const;
@@ -78,7 +79,7 @@ const codeStep = (challengeId: string, email: string, notice?: string): SignInSt
 });
 
 const issueError = (issued: Extract<IssueResult, { ok: false }>): SignInState => ({
-  error: ISSUE_ERRORS[issued.error],
+  error: issued.error === "limited" ? `${ISSUE_ERRORS.limited} ${retryMessage(issued.retryAfterSeconds ?? 0)}` : ISSUE_ERRORS[issued.error],
 });
 
 export async function startSignIn(_previous: SignInState, formData: FormData): Promise<SignInState> {

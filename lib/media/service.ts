@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 
 import { audit } from "@/lib/admin/audit";
 import { db } from "@/lib/db/prisma";
+import { log } from "@/lib/log";
 
 import { MEDIA_CONFIG, getMediaKind } from "./config";
 import type { CloudinaryClient } from "./cloudinary";
@@ -181,11 +182,13 @@ export async function registerGeneratedImage(
   });
   if (!uploaded) return { ok: false, error: "Uploading the generated image to the media store failed." };
 
-  // The Cloudinary upload above is already done by this point (nothing to
-  // roll back there); create the row and its audit entry atomically so a
-  // rolled-back write never leaves an audit row behind, matching
-  // registerUpload()'s transaction above.
-  const asset = await db.$transaction(async (tx) => {
+  // Create the row and its audit entry atomically so a rolled-back write
+  // never leaves an audit row behind, matching registerUpload()'s transaction
+  // above. If that fails, the Cloudinary upload is removed again rather than
+  // left as an orphan no MediaAsset row points at.
+  let asset: { id: string; url: string };
+  try {
+    asset = await db.$transaction(async (tx) => {
     const created = await tx.mediaAsset.create({
       data: {
         provider: "CLOUDINARY",
@@ -216,6 +219,11 @@ export async function registerGeneratedImage(
 
     return created;
   });
+  } catch (error) {
+    log.error("register generated image failed", { error: error instanceof Error ? error.message : String(error) });
+    await input.cloudinaryClient.deleteAsset(uploaded.public_id);
+    return { ok: false, error: "The image uploaded but could not be saved to the media library." };
+  }
 
   return { ok: true, asset: { id: asset.id, url: asset.url } };
 }

@@ -24,7 +24,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^4.0.71",
     "@gsap/react": "^2.1.2",
-    "@sahan-sac/auth-kit": "^0.1.0",
+    "@sahan-sac/auth-kit": "^0.2.0",
     "@mantine/core": "^7.17.8",
     "@mantine/hooks": "^7.17.8",
     "@neondatabase/serverless": "^1.1.0",

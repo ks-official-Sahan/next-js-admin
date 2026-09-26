@@ -20,6 +20,11 @@ type PostStatus = "DRAFT" | "SCHEDULED" | "PUBLISHED" | "ARCHIVED";
 export default function PostStatusControls({ status, publishAt }: { status: PostStatus; publishAt: string | null }) {
   const [state, dispatch, pending] = useActionState(setPostStatusAction, idleState);
 
+  const handleAction = (actionName: string) => (formData: FormData) => {
+    formData.set("action", actionName);
+    dispatch(formData);
+  };
+
   useEffect(() => {
     if (state.message) toast.success(state.message);
     if (state.error) toast.error(state.error);
@@ -29,17 +34,17 @@ export default function PostStatusControls({ status, publishAt }: { status: Post
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         {status !== "PUBLISHED" ? (
-          <button type="submit" formAction={dispatch} name="action" value="publish" disabled={pending} className={buttonVariants.small}>
+          <button type="submit" formAction={handleAction("publish")} disabled={pending} className={buttonVariants.small}>
             Publish now
           </button>
         ) : null}
         {status !== "DRAFT" && status !== "ARCHIVED" ? (
-          <button type="submit" formAction={dispatch} name="action" value="unpublish" disabled={pending} className={buttonVariants.small}>
+          <button type="submit" formAction={handleAction("unpublish")} disabled={pending} className={buttonVariants.small}>
             Move to draft
           </button>
         ) : null}
         {status !== "ARCHIVED" ? (
-          <button type="submit" formAction={dispatch} name="action" value="archive" disabled={pending} className={buttonVariants.smallDanger}>
+          <button type="submit" formAction={handleAction("archive")} disabled={pending} className={buttonVariants.smallDanger}>
             Archive
           </button>
         ) : null}
@@ -53,7 +58,7 @@ export default function PostStatusControls({ status, publishAt }: { status: Post
             Publish at
           </label>
           <LocalDateTimeField id="post-publish-at" name="publishAt" defaultValue={publishAt} className={fieldClass} />
-          <button type="submit" formAction={dispatch} name="action" value="schedule" disabled={pending} className={buttonVariants.small}>
+          <button type="submit" formAction={handleAction("schedule")} disabled={pending} className={buttonVariants.small}>
             {pending ? "Saving…" : "Schedule"}
           </button>
         </div>

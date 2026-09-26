@@ -8,7 +8,12 @@ import { checkOrigin } from "@/lib/security/check-origin";
 import { limit } from "@/lib/cache/ratelimit";
 
 // GET /api/admin/uploads/sign
-// Returns signed upload parameters for Cloudinary unsigned widget.
+// Returns a signed Cloudinary upload for the browser to post the file with
+// directly (lib/media/upload-client.ts). `params` is exactly what was signed
+// and must be sent as-is, plus `file`, `api_key` and `signature`; Cloudinary
+// rejects any param that was not signed. allowed_formats is signed, so
+// Cloudinary itself refuses other types; registerUpload re-checks folder,
+// type and size before the asset is recorded.
 // Requires uploadMedia permission and passes origin checks.
 
 export const dynamic = "force-dynamic";
@@ -30,31 +35,27 @@ export async function GET(request: NextRequest) {
   const limited = await limit("upload:sign:user", user.id);
   if (!limited.ok) return new NextResponse(null, { status: 429, headers: { "Cache-Control": "no-store" } });
 
-  // Generate unsigned upload parameters
-  const timestamp = Math.floor(Date.now() / 1000);
-  const params = {
-    cloud_name: env.CLOUDINARY_CLOUD_NAME || "",
-    upload_preset: "app_unsigned", // Should be created in Cloudinary dashboard
-    folder: MEDIA_CONFIG.uploadFolder,
-    use_filename: "true",
-    unique_filename: "false",
-    overwrite: "false",
-    allowed_formats: [...MEDIA_CONFIG.images.formats, ...MEDIA_CONFIG.documents.formats].join(","),
-    max_file_size: String(MEDIA_CONFIG.images.maxSizeBytes),
-    timestamp: String(timestamp),
-  };
+  if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) {
+    return NextResponse.json({ ok: false, error: "Media uploads are not configured on this server." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+  }
 
-  // Sign the parameters
+  const params = {
+    folder: MEDIA_CONFIG.uploadFolder,
+    allowed_formats: [...MEDIA_CONFIG.images.formats, ...MEDIA_CONFIG.documents.formats].join(","),
+    timestamp: String(Math.floor(Date.now() / 1000)),
+  };
   const signature = signCloudinaryUpload(params, env.CLOUDINARY_API_SECRET);
 
   return NextResponse.json(
     {
+      ok: true,
+      // The API key identifies the account (it is not the secret); Cloudinary
+      // needs it on every signed upload.
       cloudName: env.CLOUDINARY_CLOUD_NAME,
-      uploadPreset: "app_unsigned",
+      apiKey: env.CLOUDINARY_API_KEY,
+      params,
       signature,
-      timestamp,
       folder: MEDIA_CONFIG.uploadFolder,
-      allowedFormats: [...MEDIA_CONFIG.images.formats, ...MEDIA_CONFIG.documents.formats],
       maxSizeBytes: MEDIA_CONFIG.images.maxSizeBytes,
     },
     {

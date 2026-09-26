@@ -3,11 +3,12 @@ import { z } from "zod";
 
 import { getOptionalUser, hasPermission } from "@/lib/auth/dal";
 import { limit } from "@/lib/cache/ratelimit";
+import { rateLimitedResponse } from "@/lib/admin/rate-limited";
 import { checkOrigin } from "@/lib/security/check-origin";
 import { defaultAiDeps, generateSeoSuggestion } from "@/lib/ai/blog-generate";
 
 // POST /api/admin/ai/seo. Requires generateAI, rate limited per user
-// (ai:admin:user, shared with the other AI helpers). Body:
+// (ai:text:user). Body:
 // { title, contentText }. Regenerates only seoTitle/seoDescription/excerpt
 // from the post's current title and body text — the "Suggest SEO" button,
 // distinct from the full-post generator.
@@ -29,8 +30,8 @@ export async function POST(request: NextRequest) {
 
   if (!checkOrigin(request.headers, request)) return forbidden();
 
-  const limited = await limit("ai:admin:user", user.id);
-  if (!limited.ok) return new NextResponse(null, { status: 429, headers: { "Cache-Control": "no-store" } });
+  const limited = await limit("ai:text:user", user.id);
+  if (!limited.ok) return rateLimitedResponse(limited.resetSeconds, "AI assist");
 
   let body: unknown;
   try {

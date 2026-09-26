@@ -97,6 +97,7 @@ export default function AiAssistantCard({
   const [imageStatuses, setImageStatuses] = useState<Record<string, ImageStatus>>({});
 
   const [hasContentImages, setHasContentImages] = useState(false);
+  const [providerStatus, setProviderStatus] = useState<string | null>(null);
 
   const bodyMarkdownRef = useRef("");
   const insertModeRef = useRef(false);
@@ -111,6 +112,7 @@ export default function AiAssistantCard({
   async function runGeneration() {
     setBusy(true);
     setError(null);
+    setProviderStatus(null);
     setDraftStep("active");
     setImagesStep("pending");
     setImageStatuses({});
@@ -124,8 +126,9 @@ export default function AiAssistantCard({
       });
 
       if (!response.ok || !response.body) {
-        const message = response.status === 429 ? "Too many AI requests right now — try again shortly." : "The AI assistant is unreachable right now.";
-        setError(message);
+        // Error responses are JSON { ok: false, error } (a 429 says when to retry).
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error || "The AI assistant is unreachable right now.");
         return;
       }
 
@@ -148,7 +151,11 @@ export default function AiAssistantCard({
           if (!parsed) continue;
           const { event, data } = parsed;
 
-          if (event === "content") {
+          if (event === "provider_status") {
+            const payload = data as { provider: string; status: string; message: string };
+            setProviderStatus(payload.message);
+          } else if (event === "content") {
+            setProviderStatus(null);
             const payload = data as {
               title: string;
               slug: string;
@@ -197,6 +204,7 @@ export default function AiAssistantCard({
               emitBody();
             }
           } else if (event === "error") {
+            setProviderStatus(null);
             const payload = data as { error: string };
             setError(payload.error);
             onPatch({ type: "error", message: payload.error });
@@ -335,6 +343,12 @@ export default function AiAssistantCard({
       {busy || draftStep === "done" ? (
         <ul aria-live="polite" className="mt-3 space-y-1.5 rounded-md border border-border bg-muted/20 p-3">
           <StepRow state={draftStep} label="Drafting & structuring the post" />
+          {draftStep === "active" && providerStatus ? (
+            <li className="ml-5 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+              {providerStatus}
+            </li>
+          ) : null}
           {draftStep !== "pending" ? (
             <StepRow state={imagesStep} label={hasContentImages || imagesStep !== "pending" ? "Generating images" : "Generating images (none needed)"} />
           ) : null}

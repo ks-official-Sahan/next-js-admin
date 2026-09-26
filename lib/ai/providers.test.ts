@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createAiHealth, createAiService, geminiProvider, realProviders, type AiOutcome, type AiProvider } from "./providers";
+import { createAiHealth, createAiService, geminiOutcome, geminiProvider, realProviders, type AiOutcome, type AiProvider } from "./providers";
 import { DEFAULT_AI_MODELS, type AppEnv } from "@/lib/env";
 import type { ModelPrompt } from "./guard";
 
@@ -27,6 +27,64 @@ test("uses the first provider that succeeds", async () => {
     result.attempts.map((a) => a.provider),
     ["a", "b"]
   );
+});
+
+test("a reply that accept turns down falls through to the next provider", async () => {
+  const service = createAiService({
+    providers: [fakeProvider("a", { ok: true, text: "{ broken" }), fakeProvider("b", { ok: true, text: "{}" })],
+  });
+  const result = await service.generate(PROMPT, { accept: (text) => (text === "{}" ? null : "Invalid JSON") });
+  assert.equal(result.provider, "b");
+  assert.deepEqual(
+    result.attempts.map((a) => [a.provider, a.errorClass]),
+    [["a", "invalid_output"], ["b", undefined]]
+  );
+});
+
+test("when every reply is turned down, the last one is returned for repair", async () => {
+  const service = createAiService({ providers: [fakeProvider("a", { ok: true, text: "{ broken" })] });
+  const result = await service.generate(PROMPT, { accept: () => "Invalid JSON" });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.rejected, { provider: "a", text: "{ broken", reason: "Invalid JSON" });
+});
+
+test("with hedging, a fast invalid reply does not beat a slower valid one", async () => {
+  const slow: AiProvider = { name: "slow", generate: () => new Promise((resolve) => setTimeout(() => resolve({ ok: true, text: "valid" }), 30)) };
+  const service = createAiService({ providers: [slow, fakeProvider("fast", { ok: true, text: "junk" })], hedgeAfterMs: 5 });
+  const result = await service.generate(PROMPT, { accept: (text) => (text === "valid" ? null : "bad") });
+  assert.equal(result.provider, "slow");
+  assert.equal(result.text, "valid");
+});
+
+test("geminiOutcome treats a MAX_TOKENS stop as truncated and skips thought parts", () => {
+  assert.deepEqual(geminiOutcome({ candidates: [{ finishReason: "MAX_TOKENS", content: { parts: [{ text: "{\"a\":" }] } }] }), {
+    ok: false,
+    errorClass: "truncated",
+    retryable: true,
+  });
+  assert.deepEqual(geminiOutcome({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: "plan", thought: true }, { text: "{}" }] } }] }), {
+    ok: true,
+    text: "{}",
+  });
+  assert.equal(geminiOutcome({}).ok, false);
+});
+
+test("a lastResort provider goes after every other one, even when it was fastest", async () => {
+  const health = createAiHealth();
+  health.latencyMs.set("paid", 1);
+  health.latencyMs.set("free", 9_000);
+  health.cooldownUntil.set("free", Date.now() + 60_000);
+  const order: string[] = [];
+  const provider = (name: string, lastResort = false): AiProvider => ({
+    name,
+    lastResort,
+    generate: async () => {
+      order.push(name);
+      return { ok: false, errorClass: "http_500", retryable: true };
+    },
+  });
+  await createAiService({ providers: [provider("paid", true), provider("free")], health }).generate(PROMPT);
+  assert.deepEqual(order, ["free", "paid"]);
 });
 
 test("stops at a non-retryable failure without trying later providers", async () => {

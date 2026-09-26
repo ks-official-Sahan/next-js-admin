@@ -248,6 +248,17 @@ export default function BlogEditorForm({
     return stored && isDraftNewer(stored.savedAt, initial.updatedAt ?? null) ? stored : null;
   }, [dirty, draftDismissed, draftRaw, initial.updatedAt]);
 
+  // Creating a post ends in a server-side redirect (createPostAction), so
+  // handleResult never runs for the create form and its "new" draft would be
+  // offered again on the next new post. The edit page of the post that draft
+  // produced clears it: same slug, and slugs are unique.
+  const createdSlug = post?.id ? initial.slug : null;
+  useEffect(() => {
+    if (!createdSlug) return;
+    const newKey = draftStorageKey(undefined);
+    if (parseDraft(readDraftRaw(newKey))?.slug === createdSlug) clearDraft(newKey);
+  }, [createdSlug]);
+
   // Warn on a hard navigation (refresh/close-tab) while there is something
   // unsaved to lose.
   useEffect(() => {

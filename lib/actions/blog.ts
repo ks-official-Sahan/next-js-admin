@@ -42,6 +42,21 @@ function isUniqueConstraintError(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && (error as { code?: string }).code === "P2002");
 }
 
+/**
+ * True when the database was too slow or unreachable to finish (a connection
+ * or pool timeout, or an interactive transaction that expired), as opposed to
+ * a bad request. The change was rolled back, so the admin can simply retry.
+ */
+function isDbUnavailable(error: unknown): boolean {
+  const code = error && typeof error === "object" ? (error as { code?: string }).code : undefined;
+  if (code === "P1001" || code === "P1002" || code === "P1008" || code === "P1017" || code === "P2024" || code === "P2028") return true;
+  const message = error instanceof Error ? error.message : "";
+  return /expired transaction|Transaction API error|Can't reach database|timed out/i.test(message);
+}
+
+const DB_SLOW_MESSAGE = "The database did not respond in time, so nothing was saved. Your changes are still in the editor: try again.";
+const UNEXPECTED_MESSAGE = "Something went wrong. Please try again.";
+
 /** True for Prisma's "record to update not found" (P2025). */
 function isNotFoundError(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && (error as { code?: string }).code === "P2025");
@@ -154,7 +169,7 @@ export async function createPostAction(_previous: ActionState, formData: FormDat
       return fail("Some fields need attention.", { slug: "This slug is already in use." });
     }
     log.error("create post failed", { error: error instanceof Error ? error.message : String(error) });
-    return fail("Something went wrong. Please try again.");
+    return fail(isDbUnavailable(error) ? DB_SLOW_MESSAGE : UNEXPECTED_MESSAGE);
   }
   // redirect() throws internally; it must not be inside the try/catch above.
   redirect(`/admin/blog/${createdId}`);
@@ -260,7 +275,7 @@ export async function updatePostAction(_previous: ActionState, formData: FormDat
       return fail("Some fields need attention.", { slug: "This slug is already in use." });
     }
     log.error("update post failed", { error: error instanceof Error ? error.message : String(error) });
-    return fail("Something went wrong. Please try again.");
+    return fail(isDbUnavailable(error) ? DB_SLOW_MESSAGE : UNEXPECTED_MESSAGE);
   }
 }
 

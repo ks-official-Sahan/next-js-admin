@@ -1,6 +1,7 @@
 import "server-only";
 
 import { env } from "@/lib/env";
+import { log } from "@/lib/log";
 
 import { signCloudinaryUpload } from "./signature";
 
@@ -71,27 +72,26 @@ export class CloudinaryClient {
     }
   }
 
-  // Delete asset from Cloudinary
+  // Delete asset from Cloudinary (Admin API: DELETE resources/image/upload).
+  // True when it is gone, including when it was already gone.
   async deleteAsset(publicId: string): Promise<boolean> {
     if (!this.apiKey || !this.apiSecret || !this.cloudName) {
       throw new Error("Cloudinary credentials not configured");
     }
 
     try {
-      const url = `https://api.cloudinary.com/v1_1/${this.cloudName}/resources/image/destroy`;
-      const body = new URLSearchParams({ public_id: publicId });
-
-      const response = await this.fetchFn(url, {
-        method: "POST",
-        headers: {
-          Authorization: this.authHeader(),
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: body.toString(),
-      });
-
-      return response.ok;
-    } catch {
+      const query = new URLSearchParams({ "public_ids[]": publicId });
+      const url = `https://api.cloudinary.com/v1_1/${this.cloudName}/resources/image/upload?${query}`;
+      const response = await this.fetchFn(url, { method: "DELETE", headers: { Authorization: this.authHeader() } });
+      if (!response.ok) {
+        log.warn("cloudinary delete failed", { status: response.status });
+        return false;
+      }
+      const data = (await response.json()) as { deleted?: Record<string, string> };
+      const state = data.deleted?.[publicId];
+      return state === "deleted" || state === "not_found";
+    } catch (error) {
+      log.warn("cloudinary delete failed", { error: error instanceof Error ? error.message : String(error) });
       return false;
     }
   }
@@ -130,9 +130,16 @@ export class CloudinaryClient {
         body: body.toString(),
       });
 
-      if (!response.ok) return null;
+      if (!response.ok) {
+        // Cloudinary's error text names the cause (for example "Invalid
+        // Signature") and never contains the secret.
+        const detail = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+        log.warn("cloudinary upload failed", { status: response.status, error: detail?.error?.message?.slice(0, 200) });
+        return null;
+      }
       return (await response.json()) as UploadBase64Result;
-    } catch {
+    } catch (error) {
+      log.warn("cloudinary upload failed", { error: error instanceof Error ? error.message : String(error) });
       return null;
     }
   }

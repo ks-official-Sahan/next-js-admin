@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHash, createHmac, timingSafeEqual } from "crypto";
 
 // HMAC-SHA256 signing and verification for /media URLs.
 // Uses constant-time comparison to prevent timing attacks.
@@ -41,15 +41,19 @@ export function verifyMediaSignature(
   }
 }
 
-// For Cloudinary upload signing (OAuth not available, so direct param signing)
+/**
+ * Cloudinary's upload signature: SHA-1 hex of the sorted "key=value" pairs
+ * joined with "&", with the API secret appended. It is a plain hash, not an
+ * HMAC keyed by the secret (an HMAC is rejected with 401 "Invalid Signature").
+ * Sign exactly the params the request sends, minus file, cloud_name,
+ * resource_type and api_key.
+ */
 export function signCloudinaryUpload(params: Record<string, string>, secret: string | undefined): string {
   if (!secret) throw new Error("CLOUDINARY_API_SECRET not configured");
 
-  // Sort params and build string: "key1=value1&key2=value2&..."
-  const sortedKeys = Object.keys(params).sort();
-  const message = sortedKeys.map((k) => `${k}=${params[k]}`).join("&");
-
-  const hmac = createHmac("sha1", secret);
-  hmac.update(message);
-  return hmac.digest("hex");
+  const message = Object.keys(params)
+    .sort()
+    .map((k) => `${k}=${params[k]}`)
+    .join("&");
+  return createHash("sha1").update(message + secret).digest("hex");
 }

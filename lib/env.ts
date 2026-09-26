@@ -41,10 +41,10 @@ const emailProvider = text
   .pipe(z.enum(["auto", "resend", "brevo-smtp", "capture"]));
 
 export const DEFAULT_AI_MODELS = {
-  OPENROUTER_MODEL: "google/gemma-4-31b-it:free",
-  GEMINI_MODEL: "gemini-3.1-flash",
-  VERTEX_MODEL: "gemini-3.1-flash",
-  NVIDIA_MODEL: "meta/llama-3.3-70b-instruct",
+  OPENROUTER_MODEL: "nvidia/nemotron-3.5-lightning:free",
+  GEMINI_MODEL: "gemini-2.5-flash",
+  VERTEX_MODEL: "gemini-2.5-flash",
+  NVIDIA_MODEL: "deepseek-ai/deepseek-v4.1-flash",
   IMAGEN_MODEL: "gemini-3.1-flash-image",
 } as const;
 

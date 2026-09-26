@@ -67,6 +67,12 @@ describe("Media signatures", () => {
     assert(sig.length === 40); // SHA1 hex is 40 chars
   });
 
+  it("Cloudinary signature matches the documented example (SHA-1 of params + secret)", () => {
+    // From Cloudinary's "Generating authentication signatures" guide.
+    const params = { eager: "w_400,h_300,c_pad|w_260,h_200,c_crop", public_id: "sample_image", timestamp: "1315060510" };
+    assert.equal(signCloudinaryUpload(params, "abcd"), "bfd09f95f331f558cbd1320e67aa8d488770583e");
+  });
+
   it("Cloudinary signature is deterministic", () => {
     const params = { public_id: "test", folder: "app", timestamp: "1234567890" };
     const sig1 = signCloudinaryUpload(params, TEST_CLOUDINARY_SECRET);

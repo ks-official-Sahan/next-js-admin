@@ -1,5 +1,5 @@
 import { Metadata } from "next";
-import { Container, Grid, Card, Stack, Text, TextInput, Textarea, Button, Group, Badge, Alert, List } from "@mantine/core";
+import { Container, Grid, GridCol, Card, CardSection, Stack, Text, TextInput, Textarea, Button, Group, Badge, Alert, List, ListItem } from "@mantine/core";
 import { AlertTriangle, Trash2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
@@ -44,14 +44,14 @@ export default async function MediaDetailPage({ params }: MediaDetailPageProps) 
       </Group>
 
       <Grid>
-        <Grid.Col span={{ base: 12, md: 8 }}>
+        <GridCol span={{ base: 12, md: 8 }}>
           <Stack gap="lg">
             {asset.kind === "IMAGE" && asset.url && (
               <Card withBorder>
-                <Card.Section>
+                <CardSection>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={asset.url} alt={asset.alt || "Media"} style={{ maxWidth: "100%", maxHeight: 400 }} />
-                </Card.Section>
+                </CardSection>
               </Card>
             )}
 
@@ -122,9 +122,9 @@ export default async function MediaDetailPage({ params }: MediaDetailPageProps) 
               </Stack>
             </Card>
           </Stack>
-        </Grid.Col>
+        </GridCol>
 
-        <Grid.Col span={{ base: 12, md: 4 }}>
+        <GridCol span={{ base: 12, md: 4 }}>
           <Stack gap="lg">
             {asset.usages.length > 0 && (
               <Alert icon={<AlertTriangle size={16} />} color="yellow" title="In Use">
@@ -132,11 +132,11 @@ export default async function MediaDetailPage({ params }: MediaDetailPageProps) 
                 until those references are removed.
                 <List size="sm" mt="xs">
                   {asset.usages.slice(0, 5).map((usage) => (
-                    <List.Item key={usage.id}>
+                    <ListItem key={usage.id}>
                       {usage.entityType} ({usage.field})
-                    </List.Item>
+                    </ListItem>
                   ))}
-                  {asset.usages.length > 5 && <List.Item>... and {asset.usages.length - 5} more</List.Item>}
+                  {asset.usages.length > 5 && <ListItem>... and {asset.usages.length - 5} more</ListItem>}
                 </List>
               </Alert>
             )}
@@ -165,7 +165,7 @@ export default async function MediaDetailPage({ params }: MediaDetailPageProps) 
               </Stack>
             </Card>
           </Stack>
-        </Grid.Col>
+        </GridCol>
       </Grid>
     </Container>
   );

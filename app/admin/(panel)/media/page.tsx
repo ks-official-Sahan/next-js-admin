@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { Metadata } from "next";
-import { Container, Group, Button, Stack, Text, TextInput, Select, SimpleGrid, Card, Image, Badge } from "@mantine/core";
+import { Container, Group, Button, Stack, Text, TextInput, Select, SimpleGrid, Card, CardSection, Image, Badge } from "@mantine/core";
 import { Upload, Search } from "lucide-react";
 
 import { getOptionalUser, hasPermission } from "@/lib/auth/dal";
@@ -36,9 +36,9 @@ async function MediaList() {
       {assets.map((asset) => (
         <Card key={asset.id} withBorder component="a" href={`/admin/media/${asset.id}`} style={{ cursor: "pointer" }}>
           {asset.kind === "IMAGE" && asset.url && (
-            <Card.Section withBorder inheritPadding py="xs">
+            <CardSection withBorder inheritPadding py="xs">
               <Image src={asset.url} alt={asset.alt || "Media"} height={180} fit="cover" />
-            </Card.Section>
+            </CardSection>
           )}
           <Stack gap="xs" p="xs">
             <div>

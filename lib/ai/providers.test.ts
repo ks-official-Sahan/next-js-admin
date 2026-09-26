@@ -235,3 +235,17 @@ test("realProviders picks each purpose's model: purpose env, then provider env, 
   assert.ok((await run({ GEMINI_MODEL: "gemini-x" }, "chat")).includes("/gemini-x:"));
   assert.ok((await run({ GEMINI_MODEL: "gemini-x", CHAT_GEMINI_MODEL: "gemini-chat" }, "chat")).includes("/gemini-chat:"));
 });
+
+test("geminiProvider sends a response schema when jsonMode carries one", async () => {
+  let body: { generationConfig?: Record<string, unknown> } = {};
+  const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+    body = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "{}" }] } }] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const schema = { type: "OBJECT", properties: { a: { type: "STRING" } } };
+  await geminiProvider({ apiKey: "k", fetchImpl }).generate(PROMPT, { jsonMode: { schema } });
+  assert.equal(body.generationConfig?.responseMimeType, "application/json");
+  assert.deepEqual(body.generationConfig?.responseSchema, schema);
+  await geminiProvider({ apiKey: "k", fetchImpl }).generate(PROMPT, { jsonMode: true });
+  assert.equal(body.generationConfig?.responseSchema, undefined);
+});

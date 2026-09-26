@@ -13,29 +13,91 @@ import { getEnv } from "@/lib/env";
 // generous per-attempt and whole-chain timeouts with a hedge, since a full
 // post is a much bigger generation than the existing draft/cover helpers.
 
+/** Shortens `text` to at most `max` characters, at the last word break when there is one. */
+export function clampText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const space = cut.lastIndexOf(" ");
+  return (space > max * 0.6 ? cut.slice(0, space) : cut).replace(/[\s,;:.-]+$/, "");
+}
+
+/**
+ * A required string that is shortened to `max` instead of rejected: a model
+ * that writes 230 characters of alt text should not throw away a whole
+ * finished post (it did, with "Too big: expected string to have <=200").
+ */
+const clamped = (max: number) =>
+  z
+    .string()
+    .trim()
+    .min(1)
+    .transform((value) => clampText(value, max));
+
 const contentImageSchema = z.object({
   token: z.string().min(1).max(64),
-  prompt: z.string().trim().min(1).max(500),
-  alt: z.string().trim().min(1).max(200),
-  caption: z.string().trim().max(200).optional(),
+  prompt: clamped(500),
+  alt: clamped(200),
+  caption: z
+    .string()
+    .trim()
+    .transform((value) => clampText(value, 200))
+    .optional(),
 });
 
 export const blogGenerationSchema = z.object({
-  title: z.string().trim().min(1).max(200),
-  excerpt: z.string().trim().min(1).max(500),
+  title: clamped(200),
+  excerpt: clamped(500),
   bodyMarkdown: z.string().trim().min(1).max(50_000),
-  seoTitle: z.string().trim().min(1).max(70),
-  seoDescription: z.string().trim().min(1).max(200),
-  topic: z.string().trim().min(1).max(50),
-  tags: z.array(z.string().trim().min(1).max(30)).max(10).default([]),
+  seoTitle: clamped(70),
+  seoDescription: clamped(200),
+  topic: clamped(50),
+  tags: z
+    .array(z.string().trim().min(1).transform((value) => clampText(value, 30)))
+    .default([])
+    .transform((tags) => tags.slice(0, 10)),
   featuredImage: z.object({
-    prompt: z.string().trim().min(1).max(500),
-    alt: z.string().trim().min(1).max(200),
+    prompt: clamped(500),
+    alt: clamped(200),
   }),
   contentImages: z.array(contentImageSchema).max(3).default([]),
 });
 
 export type BlogGeneration = z.infer<typeof blogGenerationSchema>;
+
+/**
+ * The same shape as a Gemini response schema (OpenAPI subset). Gemini and
+ * Vertex enforce it while decoding, so their reply is always valid, correctly
+ * escaped JSON: with only responseMimeType, Gemini now and then left quotes
+ * unescaped inside bodyMarkdown (a chart's JSON, code samples), and no repair
+ * can undo that, because an unescaped "type": looks like a real key. Length
+ * limits stay in the prompt and the zod schema above; bodyMarkdown stays last
+ * so a cut-off reply keeps its metadata.
+ */
+const STRING = { type: "STRING" } as const;
+export const BLOG_RESPONSE_SCHEMA: Record<string, unknown> = {
+  type: "OBJECT",
+  properties: {
+    title: STRING,
+    excerpt: STRING,
+    seoTitle: STRING,
+    seoDescription: STRING,
+    topic: STRING,
+    tags: { type: "ARRAY", items: STRING },
+    featuredImage: { type: "OBJECT", properties: { prompt: STRING, alt: STRING }, required: ["prompt", "alt"], propertyOrdering: ["prompt", "alt"] },
+    contentImages: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: { token: STRING, prompt: STRING, alt: STRING, caption: STRING },
+        required: ["token", "prompt", "alt"],
+        propertyOrdering: ["token", "prompt", "alt", "caption"],
+      },
+    },
+    bodyMarkdown: STRING,
+  },
+  required: ["title", "excerpt", "seoTitle", "seoDescription", "topic", "tags", "featuredImage", "contentImages", "bodyMarkdown"],
+  propertyOrdering: ["title", "excerpt", "seoTitle", "seoDescription", "topic", "tags", "featuredImage", "contentImages", "bodyMarkdown"],
+};
 
 export const seoSuggestionSchema = z.object({
   seoTitle: z.string().trim().min(1).max(70),
@@ -342,7 +404,7 @@ export async function generateBlogPost(
 
   const first = await service.generate(buildBlogGenerationPrompt(input), {
     maxTokens: GENERATION_MAX_TOKENS,
-    jsonMode: true,
+    jsonMode: { schema: BLOG_RESPONSE_SCHEMA },
     onAttempt: handleAttempt,
     accept,
   });
@@ -374,7 +436,7 @@ export async function generateBlogPost(
 
   const repair = await service.generate(buildRepairPrompt(input, firstText, issue), {
     maxTokens: GENERATION_MAX_TOKENS,
-    jsonMode: true,
+    jsonMode: { schema: BLOG_RESPONSE_SCHEMA },
     onAttempt: handleAttempt,
     accept,
   });

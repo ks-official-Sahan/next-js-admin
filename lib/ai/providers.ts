@@ -26,8 +26,21 @@ export interface AiGenerateOptions {
   maxTokens?: number;
   /** Aborted when the attempt times out, so a slow provider stops consuming a socket. */
   signal?: AbortSignal;
-  /** When true, providers that support it (Gemini) will request JSON output. */
-  jsonMode?: boolean;
+  /**
+   * JSON output. `true` asks for JSON (Gemini/Vertex responseMimeType); an
+   * object also passes a response schema, which Gemini/Vertex enforce while
+   * decoding, so the reply is always syntactically valid, correctly escaped
+   * JSON of that shape. Providers without the feature ignore it.
+   */
+  jsonMode?: JsonMode;
+}
+
+export type JsonMode = boolean | { schema: Record<string, unknown> };
+
+/** generationConfig fields for Gemini/Vertex JSON output. */
+function jsonConfig(jsonMode: JsonMode | undefined): Record<string, unknown> {
+  if (!jsonMode) return {};
+  return typeof jsonMode === "object" ? { responseMimeType: "application/json", responseSchema: jsonMode.schema } : { responseMimeType: "application/json" };
 }
 
 export interface AiProvider {
@@ -64,7 +77,7 @@ async function attempt(
   maxTokens: number | undefined,
   ms: number,
   cancel: AbortSignal,
-  jsonMode?: boolean
+  jsonMode?: JsonMode
 ): Promise<AiOutcome> {
   const controller = new AbortController();
   const onCancel = () => controller.abort();
@@ -153,7 +166,7 @@ export function createAiService(deps: AiServiceDeps) {
     prompt: ModelPrompt,
     options?: {
       maxTokens?: number;
-      jsonMode?: boolean;
+      jsonMode?: JsonMode;
       onAttempt?: (status: AiAttemptStatus) => void;
       /**
        * Output check run on each reply before it counts as a success: return
@@ -347,12 +360,8 @@ export function geminiProvider(config: { apiKey: string; model?: string; fetchIm
         const generationConfig: Record<string, unknown> = {
           maxOutputTokens,
           thinkingConfig: thinkingConfigFor(model, maxOutputTokens),
+          ...jsonConfig(options?.jsonMode),
         };
-        // When JSON mode is requested, ask the model to respond with valid JSON.
-        // This dramatically improves structured output reliability for blog generation.
-        if (options?.jsonMode) {
-          generationConfig.responseMimeType = "application/json";
-        }
         let response = await fetchImpl(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
           {
@@ -435,7 +444,7 @@ export function vertexProvider(config: {
               generationConfig: {
                 maxOutputTokens: options?.maxTokens ?? 1800,
                 thinkingConfig: thinkingConfigFor(model, options?.maxTokens ?? 1800),
-                ...(options?.jsonMode ? { responseMimeType: "application/json" } : {}),
+                ...jsonConfig(options?.jsonMode),
               },
             }),
           }

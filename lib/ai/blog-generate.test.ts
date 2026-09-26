@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  clampText,
   extractJsonObject,
   generateBlogPost,
   generateSeoSuggestion,
@@ -306,4 +307,20 @@ test("generateBlogPost returns the repaired post best-effort even if it is still
   // the repair return it, so the repair is exercised but the result is still
   // accepted (best-effort — a structurally imperfect post beats none).
   assert.equal(result.ok, true);
+});
+
+test("clampText shortens at a word break and leaves short text alone", () => {
+  assert.equal(clampText("short", 10), "short");
+  assert.equal(clampText("one two three four five", 14), "one two three");
+  assert.equal(clampText("abcdefghijklmnop", 5), "abcde");
+});
+
+test("parseBlogGeneration shortens an overlong field instead of rejecting the post", () => {
+  const longAlt = "A detailed description ".repeat(15).trim();
+  const result = parseBlogGeneration(JSON.stringify({ ...VALID_POST, featuredImage: { prompt: "p", alt: longAlt }, tags: Array.from({ length: 14 }, (_, i) => `tag${i}`) }));
+  assert.equal(result.ok, true, result.ok ? "" : result.error);
+  if (result.ok) {
+    assert.ok(result.data.featuredImage.alt.length <= 200);
+    assert.equal(result.data.tags.length, 10);
+  }
 });

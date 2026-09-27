@@ -14,6 +14,8 @@ import { defaultAiDeps, generateSeoSuggestion } from "@/lib/ai/blog-generate";
 // distinct from the full-post generator.
 
 export const dynamic = "force-dynamic";
+// Vercel Hobby allows at most 60 s; the AI chain stops at 50 s (lib/ai/blog.ts).
+export const maxDuration = 60;
 
 const bodySchema = z.object({
   title: z.string().trim().min(1).max(200),

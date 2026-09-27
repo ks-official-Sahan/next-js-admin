@@ -31,13 +31,13 @@ import { log } from "@/lib/log";
 // never requested from the model or the image provider.
 
 export const dynamic = "force-dynamic";
-// Text generation (plus one repair) and image generation (~10-20 s each, in
-// parallel) can outlast a platform's short default function timeout.
-export const maxDuration = 300;
+// Vercel Hobby allows at most 60 s. Text gets TEXT_BUDGET_MS (42 s, including
+// any repair); images run in parallel in what is left (FLUX takes ~6-9 s).
+export const maxDuration = 60;
 
 /** Leaves the stream time to report and close before the platform's hard stop. */
-const ROUTE_BUDGET_MS = 285_000;
-const IMAGE_TIMEOUT_MS = 90_000;
+const ROUTE_BUDGET_MS = 57_000;
+const IMAGE_TIMEOUT_MS = 30_000;
 
 const bodySchema = z.object({
   prompt: z.string().trim().min(1).max(2000),
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
       const imageSignal = () =>
         AbortSignal.any([
           request.signal,
-          AbortSignal.timeout(Math.max(5_000, Math.min(IMAGE_TIMEOUT_MS, ROUTE_BUDGET_MS - (Date.now() - startedAt)))),
+          AbortSignal.timeout(Math.max(1_000, Math.min(IMAGE_TIMEOUT_MS, ROUTE_BUDGET_MS - (Date.now() - startedAt)))),
         ]);
       let closed = false;
       const send = (event: string, data: unknown) => {

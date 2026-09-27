@@ -14,6 +14,8 @@ import { defaultAiDeps, suggestCover } from "@/lib/ai/blog";
 // (design notes, Step 12).
 
 export const dynamic = "force-dynamic";
+// Vercel Hobby allows at most 60 s; the AI chain stops at 50 s (lib/ai/blog.ts).
+export const maxDuration = 60;
 
 const bodySchema = z.object({ topic: z.string().trim().min(1).max(300) });
 

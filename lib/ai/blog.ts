@@ -4,6 +4,9 @@ import { createAiService, realProviders, type AiProvider } from "./providers";
 import { buildCoverPrompt, buildDraftPrompt, looksLikeLeak } from "./guard";
 import { getEnv } from "@/lib/env";
 
+/** Whole-chain cap for the draft and cover helpers: their routes stop at 60 s (Vercel Hobby). */
+const HELPER_DEADLINE_MS = 50_000;
+
 // The two AI helpers behind app/api/admin/ai/{draft,cover}/route.ts
 // (design notes, Step 12). Providers are injected so this module
 // is unit tested without a real network call; the routes pass realProviders().
@@ -42,7 +45,7 @@ export function defaultAiDeps(): AiDeps {
 
 export async function draftPost(input: DraftInput, deps: AiDeps): Promise<DraftResult | AiHelperFailure> {
   const prompt = buildDraftPrompt(input);
-  const service = createAiService({ providers: deps.providers });
+  const service = createAiService({ providers: deps.providers, deadlineMs: HELPER_DEADLINE_MS });
   const result = await service.generate(prompt, { maxTokens: 1400 });
 
   if (!result.ok || !result.text) {
@@ -56,7 +59,7 @@ export async function draftPost(input: DraftInput, deps: AiDeps): Promise<DraftR
 
 export async function suggestCover(input: CoverInput, deps: AiDeps): Promise<CoverResult | AiHelperFailure> {
   const prompt = buildCoverPrompt(input);
-  const service = createAiService({ providers: deps.providers });
+  const service = createAiService({ providers: deps.providers, deadlineMs: HELPER_DEADLINE_MS });
   const result = await service.generate(prompt, { maxTokens: 200 });
 
   if (!result.ok || !result.text) {

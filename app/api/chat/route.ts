@@ -24,6 +24,10 @@ import type { ChatbotConfig } from "@/lib/settings/schema";
 import { getPublicSettings } from "@/lib/settings/service";
 import { Site } from "@/config/site";
 
+// The provider chain stops at 20 s (deadlineMs below); leave room for the
+// session writes. Vercel Hobby's default can be shorter than that.
+export const maxDuration = 30;
+
 function hashIp(ip: string, secret: string): string {
   return createHmac("sha256", secret).update(ip).digest("hex");
 }

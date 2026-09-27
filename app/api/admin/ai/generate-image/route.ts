@@ -19,8 +19,9 @@ import { MEDIA_CONFIG } from "@/lib/media/config";
 // the same path the streamed full-post generator uses for its images).
 
 export const dynamic = "force-dynamic";
-// One image takes ~10-20 s, and a fallback model can add another attempt.
-export const maxDuration = 120;
+// Vercel Hobby allows at most 60 s. FLUX on NVIDIA takes ~6-9 s; the signal
+// below leaves time to upload the result before the hard stop.
+export const maxDuration = 60;
 
 const bodySchema = z.object({
   prompt: z.string().trim().min(1).max(500),
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Stops before maxDuration, and when the admin leaves (image calls are billed).
-  const signal = AbortSignal.any([request.signal, AbortSignal.timeout(100_000)]);
+  const signal = AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]);
   const outcome = await generateImage(parsed.data.prompt, imageConfig, { aspectRatio: "16:9", signal });
   if (!outcome.ok) {
     return NextResponse.json({ ok: false, error: outcome.error }, { status: 502, headers: { "Cache-Control": "no-store" } });

@@ -324,3 +324,21 @@ test("parseBlogGeneration shortens an overlong field instead of rejecting the po
     assert.equal(result.data.tags.length, 10);
   }
 });
+
+test("generateBlogPost skips the repair when too little of the time budget is left", async () => {
+  // Parses fine but fails the structure check, which would normally trigger a repair.
+  let calls = 0;
+  const provider: AiProvider = { name: "fake", generate: async () => (calls++, { ok: true, text: JSON.stringify(VALID_POST) }) };
+  let clock = 0;
+  const result = await generateBlogPost(INPUT, { providers: [provider] }, { budgetMs: 42_000, now: () => (clock += 30_000) });
+  assert.equal(result.ok, true);
+  assert.equal(calls, 1);
+});
+
+test("generateBlogPost reports a timeout-style failure when an unparseable reply leaves no time to repair", async () => {
+  let clock = 0;
+  const provider = fakeProvider("fake", { ok: true, text: "not json" });
+  const result = await generateBlogPost(INPUT, { providers: [provider] }, { budgetMs: 42_000, now: () => (clock += 30_000) });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.error, /in time/);
+});

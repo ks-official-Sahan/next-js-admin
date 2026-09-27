@@ -119,12 +119,16 @@ export function defaultAiDeps(): AiDeps {
 }
 
 /**
- * Budgets for a full post (title + body + SEO + image prompts). A Long post
- * with thinking takes Gemini 40-70 s, so a 45 s attempt cap timed out good
- * replies and handed the post to weaker fallbacks. Two calls (first + one
- * repair) stay inside the route's 300 s maxDuration.
+ * The whole text phase (first call plus the optional repair) must fit in
+ * TEXT_BUDGET_MS: the route runs on Vercel Hobby, whose functions stop at
+ * 60 s, and images plus uploads need the rest. Gemini writes a Medium post in
+ * 14-30 s (measured 2026-09-26). The repair only runs when enough of the
+ * budget is left for it to finish; otherwise a parsed first post is returned
+ * as is.
  */
-const GENERATION_BUDGETS = { timeoutMs: 80_000, deadlineMs: 130_000, hedgeAfterMs: 25_000 } as const;
+export const TEXT_BUDGET_MS = 42_000;
+const MIN_REPAIR_MS = 15_000;
+const GENERATION_BUDGETS = { timeoutMs: 40_000, hedgeAfterMs: 15_000 } as const;
 const GENERATION_MAX_TOKENS = 8192;
 
 /**
@@ -373,9 +377,12 @@ export type BlogGenerationStatusCallback = (status: {
 export async function generateBlogPost(
   input: BlogGenerationInput,
   deps: AiDeps,
-  options?: { onStatus?: BlogGenerationStatusCallback }
+  options?: { onStatus?: BlogGenerationStatusCallback; budgetMs?: number; now?: () => number }
 ): Promise<GenerateBlogPostResult | AiHelperFailure> {
-  const service = createAiService({ providers: deps.providers, health: sharedAiHealth, ...GENERATION_BUDGETS });
+  const now = options?.now ?? Date.now;
+  const startedAt = now();
+  const budgetMs = options?.budgetMs ?? TEXT_BUDGET_MS;
+  const service = createAiService({ providers: deps.providers, health: sharedAiHealth, ...GENERATION_BUDGETS, deadlineMs: budgetMs });
 
   const handleAttempt = (status: AiAttemptStatus) => {
     let message = "";
@@ -428,13 +435,21 @@ export async function generateBlogPost(
     issue = firstParsed.error;
   }
 
+  // Not enough time left for a repair to finish: keep a parsed post as it is.
+  const remainingMs = budgetMs - (now() - startedAt);
+  if (remainingMs < MIN_REPAIR_MS) {
+    if (firstParsed.ok) return { ok: true, post: firstParsed.data, provider: first.provider ?? "unknown" };
+    return { ok: false, error: `The AI could not produce a valid post in time (${issue}). Try again, or pick a shorter length.` };
+  }
+
   options?.onStatus?.({
     provider: first.provider ?? "ai",
     status: "start",
     message: "Refining and repairing post structure...",
   });
 
-  const repair = await service.generate(buildRepairPrompt(input, firstText, issue), {
+  const repairService = createAiService({ providers: deps.providers, health: sharedAiHealth, ...GENERATION_BUDGETS, deadlineMs: remainingMs });
+  const repair = await repairService.generate(buildRepairPrompt(input, firstText, issue), {
     maxTokens: GENERATION_MAX_TOKENS,
     jsonMode: { schema: BLOG_RESPONSE_SCHEMA },
     onAttempt: handleAttempt,

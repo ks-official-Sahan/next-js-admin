@@ -12,3 +12,6 @@ allowBuilds:
   prisma: true
   sharp: true
   unrs-resolver: true
+
+minimumReleaseAgeExclude:
+  - '@sahan-sac/auth-kit@0.2.0 || 0.3.0'

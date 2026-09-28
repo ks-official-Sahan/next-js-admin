@@ -9,7 +9,7 @@ export const DEFAULT_SCHEMA = "public";
  * on DATABASE_URL if you share one Postgres instance across projects.
  * `public_test` is for database tests only.
  */
-export const ALLOWED_SCHEMAS = [DEFAULT_SCHEMA, "public_test"] as const;
+export const ALLOWED_SCHEMAS = [DEFAULT_SCHEMA, "public_test", "admin-panel"] as const;
 
 type Env = Record<string, string | undefined>;
 

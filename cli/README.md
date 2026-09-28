@@ -1,6 +1,6 @@
 # create-admin
 
-Scaffold a new project from [admin-template](https://github.com/ks-official-Sahan/admin-template): a Next.js admin panel starter with auth, RBAC, a CMS, a blog, media, leads/CRM and a chatbot.
+Scaffold a new project from [admin-template](https://github.com/ks-official-Sahan/next-js-admin): a Next.js admin panel starter with auth, RBAC, a CMS, a blog, media, leads/CRM and a chatbot.
 
 ## Usage
 
@@ -38,7 +38,7 @@ A CLI version always scaffolds the matching template tag: `create-admin@0.1.0` d
 ## What it does
 
 1. Refuses to run if `dir` already exists and is not empty.
-2. Downloads `github:ks-official-Sahan/admin-template#<ref>` with [giget](https://github.com/unjs/giget).
+2. Downloads `github:ks-official-Sahan/next-js-admin#<ref>` with [giget](https://github.com/unjs/giget).
 3. Removes the scaffold's own `cli/` folder and `.github/workflows/release-cli.yml` — those belong to the template repo, not to your project.
 4. Sets `package.json`'s `name` to a valid npm package name derived from `dir`.
 5. Copies `.env.example` to `.env.local`, filling every `*_SECRET`/`*_SIGNING_KEY` variable with a fresh `crypto.randomBytes(32)` value and leaving provider keys (database, email, AI, Cloudinary, ...) blank for you to fill in.

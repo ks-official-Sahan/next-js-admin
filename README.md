@@ -1,7 +1,7 @@
 # Admin Template
 
 A production-ready admin panel starter, extracted into a reusable
-[GitHub template](https://github.com/ks-official-Sahan/admin-template) and a
+[GitHub template](https://github.com/ks-official-Sahan/next-js-admin) and a
 `create-admin` CLI. Auth, RBAC, a content CMS, a blog with AI drafting, a
 media library, a leads/CRM inbox and a chatbot — all on Next.js, ready to
 point at your own database and deploy.
@@ -55,7 +55,7 @@ you. See [`cli/README.md`](cli/README.md) for the full option list
 ### Option B: "Use this template" on GitHub
 
 Click **Use this template** on the
-[repository page](https://github.com/ks-official-Sahan/admin-template),
+[repository page](https://github.com/ks-official-Sahan/next-js-admin),
 clone your new repo, then:
 
 ```sh

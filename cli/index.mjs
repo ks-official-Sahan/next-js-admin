@@ -17,7 +17,7 @@ import { renderEnvLocal, listSecretVarNames } from "./lib/env-template.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** The template repository this CLI scaffolds from. */
-const TEMPLATE_REPO = "ks-official-Sahan/admin-template";
+const TEMPLATE_REPO = "ks-official-Sahan/next-js-admin";
 
 async function main() {
   const pkg = JSON.parse(await readFile(path.join(__dirname, "package.json"), "utf8"));

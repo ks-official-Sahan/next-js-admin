@@ -1,8 +1,7 @@
 {
   "name": "admin-template",
   "description": "Admin panel starter: auth, RBAC, CMS, blog, media, leads and a chatbot, built on Next.js.",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.3.0",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {

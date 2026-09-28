@@ -11,6 +11,8 @@ import { assertAddress, EmailGuardError } from "@/lib/email/guards";
 // (design notes, step 5).
 
 export const dynamic = "force-dynamic";
+// Two rounds of Brevo reads at up to 8 s each, plus the session check.
+export const maxDuration = 30;
 
 const json = (body: unknown, status = 200) =>
   NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });

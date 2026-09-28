@@ -23,6 +23,15 @@ export const PAGE_PATHS: Record<PageSlug, string[]> = {
 
 const unique = <T>(items: T[]): T[] => [...new Set(items)];
 
+/** One plan for several changes (bulk actions): each tag and path once. */
+export function mergePlans(plans: InvalidationPlan[]): InvalidationPlan {
+  const paths = new Map<string, PathEntry>();
+  for (const entry of plans.flatMap((plan) => plan.paths)) {
+    paths.set(typeof entry === "string" ? entry : `${entry.type}:${entry.path}`, entry);
+  }
+  return { tags: unique(plans.flatMap((plan) => plan.tags)), paths: [...paths.values()] };
+}
+
 /** Publish or restore a section of a page. `consumers` comes from the registry. */
 export function forContentPublish(
   page: PageSlug,

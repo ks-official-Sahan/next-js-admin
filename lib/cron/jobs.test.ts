@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import { strict as assert } from "node:assert";
 
-import { auditPruneJob, blogPublishJob, revisionPruneJob, sessionCleanupJob, CLEANUP_GRACE_MS } from "./jobs";
+import { AUDIT_PRUNE_BATCH, auditPruneJob, blogPublishJob, revisionPruneJob, sessionCleanupJob, CLEANUP_GRACE_MS } from "./jobs";
 
 // Fakes stand in for Prisma. Each mimics only the subset of behaviour the job
 // touches (status/date filtering), which is enough to prove the job logic
@@ -159,15 +159,24 @@ describe("sessionCleanupJob", () => {
 });
 
 describe("auditPruneJob", () => {
-  function fakeDb(rows: Array<{ createdAt: Date }>) {
+  function fakeDb(rows: Array<{ id?: string; createdAt: Date }>) {
     const created: unknown[] = [];
+    rows.forEach((row, index) => (row.id ??= `row-${index}`));
     return {
       db: {
         auditLog: {
-          async deleteMany({ where }: any) {
+          async findMany({ where, take }: any) {
             const cutoff: Date = where.createdAt.lt;
+            return rows
+              .filter((r) => r.createdAt.getTime() < cutoff.getTime())
+              .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+              .slice(0, take)
+              .map((r) => ({ id: r.id }));
+          },
+          async deleteMany({ where }: any) {
+            const ids = new Set<string>(where.id.in);
             const before = rows.length;
-            const kept = rows.filter((r) => r.createdAt.getTime() >= cutoff.getTime());
+            const kept = rows.filter((r) => !ids.has(r.id!));
             const count = before - kept.length;
             rows.length = 0;
             rows.push(...kept);
@@ -193,6 +202,15 @@ describe("auditPruneJob", () => {
     assert.equal(rows.length, 1);
     assert.equal(created.length, 1);
     assert.equal((created[0] as { action: string }).action, "audit.exported");
+  });
+
+  test("deletes a backlog larger than one batch", async () => {
+    const old = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000);
+    const rows = Array.from({ length: AUDIT_PRUNE_BATCH * 2 + 5 }, () => ({ createdAt: old }));
+    const { db } = fakeDb(rows);
+    const result = await auditPruneJob({ retentionDays: 365 }, db as never);
+    assert.equal(result.deleted, AUDIT_PRUNE_BATCH * 2 + 5);
+    assert.equal(rows.length, 0);
   });
 
   test("nothing to delete: no rows and no audit write", async () => {

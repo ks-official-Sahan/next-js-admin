@@ -9,6 +9,28 @@ type AudioContextType = {
 
 const AudioContext = createContext<AudioContextType | undefined>(undefined);
 
+// Storage can throw (site data blocked, some private modes). The audio state
+// is a nicety, and this provider wraps the whole site, so a storage failure
+// must never break rendering.
+function readStorage(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStorage(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Not persisted; playback itself is unaffected.
+  }
+}
+
+/** timeupdate fires about four times a second; persist the position less often. */
+const SAVE_POSITION_EVERY_MS = 5_000;
+
 export const AudioProvider = ({ children }: { children: React.ReactNode }) => {
   const [bgSound] = useState<HTMLAudioElement | null>(() => {
     if (typeof window === "undefined") return null;
@@ -29,8 +51,8 @@ export const AudioProvider = ({ children }: { children: React.ReactNode }) => {
     if (!bgSound) return;
     const audio = bgSound;
 
-    const savedIsPlaying = localStorage.getItem("isPlaying");
-    const savedCurrentTime = localStorage.getItem("currentTime");
+    const savedIsPlaying = readStorage("isPlaying");
+    const savedCurrentTime = readStorage("currentTime");
 
     const handlePlay = () => {
       setIsPlaying(true);
@@ -51,14 +73,14 @@ export const AudioProvider = ({ children }: { children: React.ReactNode }) => {
       audio.play().catch(() => {
         // If the audio fails to play (e.g., due to browser restrictions), set the state to false
         setIsPlaying(false);
-        localStorage.setItem("isPlaying", "false");
+        writeStorage("isPlaying", "false");
       });
     }
 
     return () => {
       // Store the current time and play state before unmounting
-      localStorage.setItem("currentTime", audio.currentTime.toString());
-      localStorage.setItem("isPlaying", isPlayingRef.current.toString());
+      writeStorage("currentTime", audio.currentTime.toString());
+      writeStorage("isPlaying", isPlayingRef.current.toString());
       audio.pause();
       audio.removeEventListener("play", handlePlay);
       audio.removeEventListener("pause", handlePause);
@@ -68,13 +90,21 @@ export const AudioProvider = ({ children }: { children: React.ReactNode }) => {
   // Store the currentTime in localStorage whenever audio time updates
   useEffect(() => {
     if (bgSound) {
+      let lastSaved = 0;
       const handleTimeUpdate = () => {
-        localStorage.setItem("currentTime", bgSound.currentTime.toString());
+        const now = Date.now();
+        if (now - lastSaved < SAVE_POSITION_EVERY_MS) return;
+        lastSaved = now;
+        writeStorage("currentTime", bgSound.currentTime.toString());
       };
+      // Unmount cleanup does not run when the tab closes; pagehide does.
+      const handlePageHide = () => writeStorage("currentTime", bgSound.currentTime.toString());
       bgSound.addEventListener("timeupdate", handleTimeUpdate);
+      window.addEventListener("pagehide", handlePageHide);
 
       return () => {
         bgSound.removeEventListener("timeupdate", handleTimeUpdate);
+        window.removeEventListener("pagehide", handlePageHide);
       };
     }
   }, [bgSound]);
@@ -83,12 +113,12 @@ export const AudioProvider = ({ children }: { children: React.ReactNode }) => {
     if (bgSound) {
       if (isPlaying) {
         bgSound.pause();
-        localStorage.setItem("isPlaying", "false");
+        writeStorage("isPlaying", "false");
       } else {
         bgSound.play().catch(() => {
           // Handle case where audio fails to play
         });
-        localStorage.setItem("isPlaying", "true");
+        writeStorage("isPlaying", "true");
       }
       setIsPlaying(!isPlaying);
     }

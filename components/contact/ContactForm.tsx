@@ -4,7 +4,7 @@ import type { PageContent } from "@/lib/cms/registry";
 import { Site } from "@/config/site";
 import { cn } from "@/lib/utils";
 import { Check, Copy, Send } from "lucide-react";
-import React, { useId, useState, useEffect } from "react";
+import React, { useId, useState, useEffect, useRef } from "react";
 
 type ChannelId = "email" | "whatsapp";
 type Field = "name" | "email" | "message";
@@ -33,6 +33,10 @@ const ContactForm = ({ content }: ContactFormProps) => {
   const [errors, setErrors] = useState<Errors>({});
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error" | "opened" | "copied">("idle");
   const [token, setToken] = useState<string>("");
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // The "sent" state resets after a few seconds; stop that timer on unmount.
+  useEffect(() => () => clearTimeout(resetTimer.current), []);
 
   // Fetch timing token on mount
   useEffect(() => {
@@ -111,7 +115,8 @@ const ContactForm = ({ content }: ContactFormProps) => {
         if (res.ok) {
           setStatus("success");
           setValues({ name: "", email: "", message: "" });
-          setTimeout(() => setStatus("idle"), 3000);
+          clearTimeout(resetTimer.current);
+          resetTimer.current = setTimeout(() => setStatus("idle"), 3000);
           return;
         }
       } catch (error) {

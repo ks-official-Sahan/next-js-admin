@@ -16,6 +16,12 @@ import { log } from "@/lib/log";
 
 export const DEFAULT_AUDIT_RETENTION_DAYS = 365;
 
+/** Audit prune deletes in batches of this many rows, oldest first... */
+export const AUDIT_PRUNE_BATCH = 2_000;
+/** ...and stops after this long, well inside the 60 s function limit. The
+ * next run continues where this one stopped. */
+const AUDIT_PRUNE_BUDGET_MS = 40_000;
+
 /** Deleted rows younger than this are kept even once expired or revoked, so a
  * session or token that just expired is still visible for a moment on the
  * sessions screen and cannot be deleted mid-request. */
@@ -25,7 +31,7 @@ type PostDb = Pick<typeof db.post, "updateMany">;
 type SessionDb = Pick<typeof db.userSession, "deleteMany">;
 type TokenDb = Pick<typeof db.authToken, "deleteMany">;
 type MfaDb = Pick<typeof db.mfaChallenge, "deleteMany">;
-type AuditDb = Pick<typeof db.auditLog, "deleteMany" | "create">;
+type AuditDb = Pick<typeof db.auditLog, "findMany" | "deleteMany" | "create">;
 
 export type RevisionPruneDb = Pick<typeof db, "$executeRaw">;
 
@@ -139,7 +145,23 @@ export async function auditPruneJob(
     const now = new Date();
     const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000);
 
-    const result = await client.auditLog.deleteMany({ where: { createdAt: { lt: cutoff } } });
+    // Batches, not one DELETE: a large backlog (the first run, or a cron gap)
+    // would otherwise be one long statement that can outlive the function.
+    let deleted = 0;
+    const started = Date.now();
+    for (;;) {
+      const batch = await client.auditLog.findMany({
+        where: { createdAt: { lt: cutoff } },
+        orderBy: { createdAt: "asc" },
+        select: { id: true },
+        take: AUDIT_PRUNE_BATCH,
+      });
+      if (batch.length === 0) break;
+      const removed = await client.auditLog.deleteMany({ where: { id: { in: batch.map((row) => row.id) } } });
+      deleted += removed.count;
+      if (batch.length < AUDIT_PRUNE_BATCH || Date.now() - started > AUDIT_PRUNE_BUDGET_MS) break;
+    }
+    const result = { count: deleted };
     if (result.count === 0) {
       log.info("audit prune cron: no old audit entries to delete");
       return { deleted: 0 };

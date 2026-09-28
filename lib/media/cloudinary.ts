@@ -32,6 +32,11 @@ export interface UploadBase64Result {
 
 export type FetchFn = typeof fetch;
 
+// A hung Cloudinary call must fail on its own clock, not hold the function
+// until the platform kills it at 60 s.
+const ADMIN_API_TIMEOUT_MS = 10_000;
+const UPLOAD_TIMEOUT_MS = 20_000;
+
 export class CloudinaryClient {
   private apiKey: string;
   private apiSecret: string;
@@ -63,6 +68,7 @@ export class CloudinaryClient {
         headers: {
           Authorization: this.authHeader(),
         },
+        signal: AbortSignal.timeout(ADMIN_API_TIMEOUT_MS),
       });
 
       if (!response.ok) return null;
@@ -82,7 +88,11 @@ export class CloudinaryClient {
     try {
       const query = new URLSearchParams({ "public_ids[]": publicId });
       const url = `https://api.cloudinary.com/v1_1/${this.cloudName}/resources/image/upload?${query}`;
-      const response = await this.fetchFn(url, { method: "DELETE", headers: { Authorization: this.authHeader() } });
+      const response = await this.fetchFn(url, {
+        method: "DELETE",
+        headers: { Authorization: this.authHeader() },
+        signal: AbortSignal.timeout(ADMIN_API_TIMEOUT_MS),
+      });
       if (!response.ok) {
         log.warn("cloudinary delete failed", { status: response.status });
         return false;
@@ -128,6 +138,7 @@ export class CloudinaryClient {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: body.toString(),
+        signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
       });
 
       if (!response.ok) {

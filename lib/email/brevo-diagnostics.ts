@@ -183,7 +183,17 @@ export async function runBrevoDiagnostics(
   const plans = (account.body as { plan?: Array<{ type?: string }> } | null)?.plan;
   const plan = plans?.[0]?.type ?? null;
 
-  const senders = await get("/senders");
+  // The remaining reads are independent: run them together, so the report
+  // takes two round trips instead of up to four.
+  const eventsQueried = Boolean(input.messageId || input.email);
+  const eventParams = new URLSearchParams({ limit: "20", sort: "desc", days: "7" });
+  if (input.messageId) eventParams.set("messageId", input.messageId);
+  if (input.email) eventParams.set("email", input.email);
+  const [senders, domains, eventsResult] = await Promise.all([
+    get("/senders"),
+    domain ? get("/senders/domains") : Promise.resolve(null),
+    eventsQueried ? get(`/smtp/statistics/events?${eventParams}`) : Promise.resolve(null),
+  ]);
   if (senders?.status === 200) {
     const list = (senders.body as { senders?: Array<{ email?: string; active?: boolean }> } | null)?.senders ?? [];
     sender.verified = list.some(
@@ -194,7 +204,6 @@ export async function runBrevoDiagnostics(
   }
 
   if (domain) {
-    const domains = await get("/senders/domains");
     if (domains?.status === 200) {
       const list =
         (domains.body as { domains?: Array<{ domain_name?: string; authenticated?: boolean }> } | null)?.domains ?? [];
@@ -205,13 +214,9 @@ export async function runBrevoDiagnostics(
     }
   }
 
-  const eventsQueried = Boolean(input.messageId || input.email);
   let events: BrevoEvent[] = [];
   if (eventsQueried) {
-    const params = new URLSearchParams({ limit: "20", sort: "desc", days: "7" });
-    if (input.messageId) params.set("messageId", input.messageId);
-    if (input.email) params.set("email", input.email);
-    const result = await get(`/smtp/statistics/events?${params}`);
+    const result = eventsResult;
     if (result?.status === 200) {
       const raw = (result.body as { events?: BrevoEvent[] } | null)?.events ?? [];
       events = raw.map(({ date, email, event, messageId, reason }) => ({ date, email, event, messageId, reason }));

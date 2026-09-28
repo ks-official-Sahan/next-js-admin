@@ -9,7 +9,7 @@ import { done, fail, fieldErrorsFrom } from "@/lib/actions/state";
 import { audit, auditMany } from "@/lib/admin/audit";
 import { hasPermission } from "@/lib/auth/dal";
 import { invalidate } from "@/lib/cache/invalidate";
-import { forPost, forPostList } from "@/lib/cache/plan";
+import { forPost, forPostList, mergePlans } from "@/lib/cache/plan";
 import { db } from "@/lib/db/prisma";
 import { extractText, sanitizeRich } from "@/lib/cms/rich-text";
 import { postInputSchema, publishActionSchema } from "@/lib/blog/schema";
@@ -533,10 +533,15 @@ export async function bulkPostStatusAction(_previous: ActionState, formData: For
       );
     });
 
-    // Anything that was or now is public needs its pages refreshed.
-    for (const before of befores) {
-      if (before.status === "PUBLISHED" || data.status === "PUBLISHED") invalidate(forPost(before.slug));
-    }
+    // Anything that was or now is public needs its pages refreshed: one
+    // merged plan, so shared tags and paths are revalidated once, not per post.
+    invalidate(
+      mergePlans(
+        befores
+          .filter((before) => before.status === "PUBLISHED" || data.status === "PUBLISHED")
+          .map((before) => forPost(before.slug))
+      )
+    );
     revalidatePath(ADMIN_LIST_PATH);
     return done(`Updated ${befores.length} of ${parsedIds.ids.length} posts.`);
   } catch (error) {
@@ -576,9 +581,13 @@ export async function bulkDeletePostsAction(_previous: ActionState, formData: Fo
       );
     });
 
-    for (const before of befores) {
-      if (before.status === "PUBLISHED" || before.status === "SCHEDULED") invalidate(forPost(before.slug));
-    }
+    invalidate(
+      mergePlans(
+        befores
+          .filter((before) => before.status === "PUBLISHED" || before.status === "SCHEDULED")
+          .map((before) => forPost(before.slug))
+      )
+    );
     revalidatePath(ADMIN_LIST_PATH);
     return done(`Deleted ${befores.length} of ${parsedIds.ids.length} posts.`);
   } catch (error) {

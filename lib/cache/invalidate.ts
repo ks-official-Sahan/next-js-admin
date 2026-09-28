@@ -1,6 +1,7 @@
 import "server-only";
 
 import { revalidatePath, revalidateTag } from "next/cache";
+import { after } from "next/server";
 
 import { purgeRedisTag } from "./cached";
 import type { InvalidationPlan } from "./plan";
@@ -28,8 +29,14 @@ export function invalidate(plan: InvalidationPlan): void {
   // layer for these tags, so a publish is visible immediately instead of
   // waiting out that layer's short TTL. Never awaited: invalidate() is
   // called synchronously from ~30 Server Actions and must not add latency
-  // to the response they return.
-  for (const tag of tags) {
-    void purgeRedisTag(tag).catch(() => {});
+  // to the response they return. after() keeps the function alive until the
+  // purge finishes; a bare promise can be frozen with the serverless
+  // instance once the response is sent.
+  const purge = () => Promise.all([...tags].map((tag) => purgeRedisTag(tag).catch(() => {})));
+  try {
+    after(purge);
+  } catch {
+    // Outside a request (a script or a test): run it detached.
+    void purge();
   }
 }

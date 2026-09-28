@@ -7,7 +7,7 @@ import type { AppEnv } from "@/lib/env";
 import { log } from "@/lib/log";
 
 import type { ModelPrompt } from "./guard";
-import { DEFAULT_TEXT_MODELS, paidAllowed, textModels, thinkingConfigFor, type TextPurpose } from "./models";
+import { DEFAULT_TEXT_MODELS, paidAllowed, textModels, thinkingConfigFor, vertexConfigured, type TextPurpose } from "./models";
 import { getVertexAccessToken } from "./vertex";
 
 // An injectable, ordered provider chain, in the style of lib/email/service.ts
@@ -514,13 +514,13 @@ export function realProviders(env: AppEnv, purpose: TextPurpose, fetchImpl?: typ
 
   // 4. Vertex AI — bills pay-as-you-go on the Cloud project, so it runs only
   // when the owner opted in (AI_ALLOW_PAID), and then after the free ones.
-  if (paidAllowed(env) && env.GOOGLE_CLIENT_EMAIL && env.GOOGLE_PRIVATE_KEY && env.GOOGLE_CLOUD_PROJECT && env.GOOGLE_TOKEN_URI) {
+  if (paidAllowed(env) && vertexConfigured(env)) {
     providers.push(
       vertexProvider({
-        clientEmail: env.GOOGLE_CLIENT_EMAIL,
-        privateKey: env.GOOGLE_PRIVATE_KEY,
+        clientEmail: env.GOOGLE_CLIENT_EMAIL!,
+        privateKey: env.GOOGLE_PRIVATE_KEY!,
         tokenUri: env.GOOGLE_TOKEN_URI,
-        project: env.GOOGLE_CLOUD_PROJECT,
+        project: env.GOOGLE_CLOUD_PROJECT!,
         model: models.vertex,
         fetchImpl,
       })

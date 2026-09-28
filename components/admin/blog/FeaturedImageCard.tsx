@@ -27,6 +27,7 @@ export default function FeaturedImageCard({
   onAltChange,
   onSelect,
   onClear,
+  canGenerate = true,
   generating = false,
 }: {
   src: string | null;
@@ -34,6 +35,8 @@ export default function FeaturedImageCard({
   onAltChange: (alt: string) => void;
   onSelect: (result: { mediaId: string; src: string; alt: string }) => void;
   onClear: () => void;
+  /** Blog AI and an image provider are on: show the generate-with-AI prompt. */
+  canGenerate?: boolean;
   /** The AI assistant is generating the featured image with the post. */
   generating?: boolean;
 }) {
@@ -148,6 +151,7 @@ export default function FeaturedImageCard({
         placeholder="Describe the image for screen readers and SEO"
       />
 
+      {canGenerate ? (
       <div className="mt-4 border-t border-border pt-3">
         <label htmlFor="ai-image-prompt" className="sr-only">
           AI image prompt
@@ -180,6 +184,7 @@ export default function FeaturedImageCard({
           </p>
         ) : null}
       </div>
+      ) : null}
     </SidebarCard>
   );
 }

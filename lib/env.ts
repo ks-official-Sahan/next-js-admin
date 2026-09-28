@@ -61,6 +61,8 @@ const schema = z.object({
   DIRECT_DATABASE_URL: text,
   UPSTASH_REDIS_REST_URL: text,
   UPSTASH_REDIS_REST_TOKEN: text,
+  // Unset: use Redis when both Upstash variables are valid. false/0/off: always in-memory.
+  REDIS_ENABLED: text,
   CLOUDINARY_CLOUD_NAME: text,
   CLOUDINARY_API_KEY: text,
   CLOUDINARY_API_SECRET: text,
@@ -88,6 +90,9 @@ const schema = z.object({
   // verified free defaults. AI_ALLOW_PAID lets paid providers (Vertex text and
   // images, Gemini images) join the chains; off by default, so AI costs $0.
   AI_ALLOW_PAID: flag,
+  // Blog AI assistant (draft, SEO, cover and inline images). Off by default;
+  // on only with ENABLE_BLOG_AI=true and at least one text provider key.
+  ENABLE_BLOG_AI: flag,
   OPENROUTER_BASE_URL: text,
   OPENROUTER_API_KEY: text,
   OPENROUTER_API_KEY_2: text,
@@ -113,7 +118,7 @@ const schema = z.object({
   GOOGLE_CLIENT_EMAIL: text,
   GOOGLE_PRIVATE_KEY: privateKey,
   GOOGLE_CLOUD_PROJECT: text,
-  GOOGLE_TOKEN_URI: text,
+  GOOGLE_TOKEN_URI: text.transform((value) => value ?? "https://oauth2.googleapis.com/token"),
 
   // SEO: IndexNow ping and Bing Webmaster diagnostics
   INDEXNOW_KEY: text,

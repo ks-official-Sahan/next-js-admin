@@ -23,11 +23,11 @@ export interface CookieSerializeOptions {
 }
 
 /**
- * Read the maintenance bypass secret from environment.
- * Returns null if not configured.
+ * Read the maintenance bypass secret from environment. Returns null when it
+ * is not set, and then the bypass query and cookie are ignored entirely.
  */
-export function bypassKeysFromEnv(): BypassCookieKeys | null {
-  const secret = process.env.MAINTENANCE_BYPASS_SECRET;
+export function bypassKeysFromEnv(env: Record<string, string | undefined> = process.env): BypassCookieKeys | null {
+  const secret = env.MAINTENANCE_BYPASS_SECRET?.trim();
   if (!secret) return null;
   return { secret };
 }

@@ -165,6 +165,7 @@ export default function BlogEditorForm({
   action,
   post,
   canUseAi,
+  canGenerateImages = false,
   canPublish = false,
   existingTopics = [],
   existingTags = [],
@@ -174,7 +175,10 @@ export default function BlogEditorForm({
 }: {
   action: (previous: ActionState, formData: FormData) => Promise<ActionState>;
   post?: EditablePost;
+  /** The blog AI assistant is on (ENABLE_BLOG_AI, a provider key) and this actor holds generateAI. */
   canUseAi: boolean;
+  /** An image provider is configured too: the image options and the featured-image generator show. */
+  canGenerateImages?: boolean;
   /** Whether this actor can publish/schedule (hasPermission(user, "publishBlog")). */
   canPublish?: boolean;
   /** Distinct topics already in use, offered as chips. */
@@ -517,6 +521,7 @@ export default function BlogEditorForm({
                 onPatch={handleAiPatch}
                 existingContent={content}
                 hasFeaturedImage={Boolean(coverMediaId)}
+                imagesAvailable={canGenerateImages}
                 // Open for a new, empty post; a slim collapsed bar once there is a body.
                 defaultOpen={!initial.content.trim()}
               />
@@ -528,6 +533,7 @@ export default function BlogEditorForm({
           {/* Sidebar: two columns of cards on tablets, one sticky column from xl. */}
           <div className="grid content-start gap-6 lg:grid-cols-2 xl:sticky xl:top-[8.5rem] xl:max-h-[calc(100dvh-9.5rem)] xl:grid-cols-1 xl:overflow-y-auto xl:overscroll-contain xl:pb-2 xl:pr-1">
             <FeaturedImageCard
+              canGenerate={canGenerateImages}
               generating={coverBusy}
               src={coverSrc}
               alt={coverAlt}

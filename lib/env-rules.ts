@@ -14,7 +14,8 @@ export interface SecretRule {
 export const SECRET_RULES: readonly SecretRule[] = [
   { name: "AUTH_SECRET", min: 32, required: true },
   { name: "INTERNAL_SIGNING_SECRET", min: 32, required: true },
-  { name: "ADMIN_LOGIN_UNLOCK_SECRET", min: 12, required: true },
+  // Optional: unset turns the hidden-login gate off (the login page is public).
+  { name: "ADMIN_LOGIN_UNLOCK_SECRET", min: 12, required: false },
   { name: "MEDIA_SIGNING_SECRET", min: 32, required: false },
   { name: "CRON_SECRET", min: 32, required: false },
   { name: "MAINTENANCE_BYPASS_SECRET", min: 12, required: false },

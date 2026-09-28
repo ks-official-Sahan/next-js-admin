@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
+import { textAiConfigured } from "@/lib/ai/availability";
 import { createAiService, realProviders, sharedAiHealth } from "@/lib/ai/providers";
 import { limit } from "@/lib/cache/ratelimit";
 import { filterModelOutput, guardUserMessage } from "@/lib/chatbot/guard";
@@ -182,6 +183,9 @@ export async function POST(request: NextRequest) {
     }
     if (!chatbotConfig.enabled) {
       return jsonResponse({ error: "Chatbot is disabled" }, { status: 503 });
+    }
+    if (!textAiConfigured(env)) {
+      return jsonResponse({ error: "Chatbot is not available" }, { status: 503 });
     }
 
     // Reads run together; history is taken before this turn is stored.

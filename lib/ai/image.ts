@@ -2,7 +2,7 @@ import "server-only";
 
 import type { AppEnv } from "@/lib/env";
 
-import { imageModels, paidAllowed } from "./models";
+import { imageModels, paidAllowed, vertexConfigured } from "./models";
 import { getVertexAccessToken } from "./vertex";
 
 // AI image generation for the blog generator (featured image + inline
@@ -139,7 +139,7 @@ export async function generateImageVertex(
 
 /** True when the Vertex service account needed for Vertex image generation is configured. */
 export function vertexImageAvailable(env: AppEnv): boolean {
-  return Boolean(env.GOOGLE_CLIENT_EMAIL && env.GOOGLE_PRIVATE_KEY && env.GOOGLE_CLOUD_PROJECT && env.GOOGLE_TOKEN_URI);
+  return vertexConfigured(env);
 }
 
 // ─── NVIDIA (free) ──────────────────────────────────────────────────────────
@@ -238,7 +238,7 @@ export function imageConfigFromEnv(env: AppEnv): ImageConfig | null {
     config.vertex = {
       clientEmail: env.GOOGLE_CLIENT_EMAIL!,
       privateKey: env.GOOGLE_PRIVATE_KEY!,
-      tokenUri: env.GOOGLE_TOKEN_URI!,
+      tokenUri: env.GOOGLE_TOKEN_URI,
       project: env.GOOGLE_CLOUD_PROJECT!,
       model: models.vertex,
     };

@@ -17,8 +17,8 @@ test("envProblems accepts long enough secrets", () => {
 
 test("required secrets that are missing or blank are reported", () => {
   const names = envProblems({ AUTH_SECRET: "   " }).map((problem) => `${problem.name}:${problem.kind}`);
+  // ADMIN_LOGIN_UNLOCK_SECRET is optional: unset turns the hidden-login gate off.
   assert.deepEqual(names.sort(), [
-    "ADMIN_LOGIN_UNLOCK_SECRET:missing",
     "AUTH_SECRET:missing",
     "INTERNAL_SIGNING_SECRET:missing",
   ]);

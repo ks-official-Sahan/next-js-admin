@@ -13,6 +13,7 @@ import IpAllowlistForm from "@/components/admin/settings/IpAllowlistForm";
 import MaintenanceForm from "@/components/admin/settings/MaintenanceForm";
 import SeoToolsPanel from "@/components/admin/settings/SeoToolsPanel";
 import { getIntegrationHealth } from "@/lib/admin/integrations";
+import { bypassKeysFromEnv } from "@/lib/admin/maintenance-bypass";
 import { hasPermission, requireUser } from "@/lib/auth/dal";
 import { getKnownIps } from "@/lib/auth/session-store";
 import { clientIp } from "@/lib/security/ip";
@@ -72,7 +73,7 @@ export default async function SettingsPage() {
             title="Maintenance mode"
             description="Put the public site into maintenance while /admin, /api/admin and /api/cron keep working."
           >
-            <MaintenanceForm value={maintenance} bypassConfigured={Boolean(process.env.MAINTENANCE_BYPASS_SECRET)} />
+            <MaintenanceForm value={maintenance} bypassConfigured={bypassKeysFromEnv() !== null} />
           </Section>
         ) : null}
 

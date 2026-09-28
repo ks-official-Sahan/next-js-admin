@@ -60,6 +60,9 @@ export const DEFAULT_IMAGE_MODELS: ImageModels = {
 /** The subset of the parsed env this module reads. */
 export interface ModelEnv {
   AI_ALLOW_PAID?: boolean;
+  GOOGLE_CLIENT_EMAIL?: string;
+  GOOGLE_PRIVATE_KEY?: string;
+  GOOGLE_CLOUD_PROJECT?: string;
   GEMINI_MODEL?: string;
   OPENROUTER_MODEL?: string;
   NVIDIA_MODEL?: string;
@@ -103,6 +106,11 @@ export function imageModels(env: ModelEnv): ImageModels {
 
 /** Paid providers (Vertex, Gemini image) join a chain only when this is true. */
 export const paidAllowed = (env: ModelEnv): boolean => env.AI_ALLOW_PAID === true;
+
+/** The Vertex service account is complete. Vertex still only runs with AI_ALLOW_PAID. */
+export function vertexConfigured(env: ModelEnv): boolean {
+  return Boolean(env.GOOGLE_CLIENT_EMAIL && env.GOOGLE_PRIVATE_KEY && env.GOOGLE_CLOUD_PROJECT);
+}
 
 /**
  * Gemini's thinking control differs by generation: 2.x takes a token budget

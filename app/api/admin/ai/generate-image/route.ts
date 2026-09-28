@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { getOptionalUser, hasPermission } from "@/lib/auth/dal";
+import { blogAiImagesEnabled } from "@/lib/ai/availability";
 import { limit } from "@/lib/cache/ratelimit";
 import { rateLimitedResponse } from "@/lib/admin/rate-limited";
 import { checkOrigin } from "@/lib/security/check-origin";
@@ -34,6 +35,9 @@ const forbidden = () => new NextResponse(null, { status: 403, headers: { "Cache-
 const IMAGE_FOLDER = `${MEDIA_CONFIG.uploadFolder}/ai-blog`;
 
 export async function POST(request: NextRequest) {
+  // Off (ENABLE_BLOG_AI) or no provider configured: the route does not exist.
+  if (!blogAiImagesEnabled()) return notFound();
+
   const user = await getOptionalUser();
   if (!user || user.mustChangePassword) return notFound();
   if (!hasPermission(user, "generateAI")) return notFound();

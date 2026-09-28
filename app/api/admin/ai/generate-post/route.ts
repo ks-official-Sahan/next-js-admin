@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { getOptionalUser, hasPermission } from "@/lib/auth/dal";
+import { blogAiEnabled } from "@/lib/ai/availability";
 import { limit } from "@/lib/cache/ratelimit";
 import { rateLimitedResponse } from "@/lib/admin/rate-limited";
 import { checkOrigin } from "@/lib/security/check-origin";
@@ -57,6 +58,9 @@ function sseLine(event: string, data: unknown): string {
 const IMAGE_FOLDER = `${MEDIA_CONFIG.uploadFolder}/ai-blog`;
 
 export async function POST(request: NextRequest) {
+  // Off (ENABLE_BLOG_AI) or no provider configured: the route does not exist.
+  if (!blogAiEnabled()) return notFound();
+
   const user = await getOptionalUser();
   if (!user || user.mustChangePassword) return notFound();
   if (!hasPermission(user, "generateAI")) return notFound();

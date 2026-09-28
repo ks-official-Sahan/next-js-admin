@@ -71,6 +71,7 @@ export default function AiAssistantCard({
   onPatch,
   existingContent,
   hasFeaturedImage,
+  imagesAvailable = true,
   defaultOpen = true,
 }: {
   onPatch: (patch: AiPatch) => void;
@@ -78,6 +79,8 @@ export default function AiAssistantCard({
   existingContent: string;
   /** A featured image is already set: generating a new one becomes an explicit "replace" choice, off by default. */
   hasFeaturedImage: boolean;
+  /** False when no image provider is configured: the image options are hidden and never requested. */
+  imagesAvailable?: boolean;
   defaultOpen?: boolean;
 }) {
   const [tone, setTone] = useState<Tone>("Professional");
@@ -85,8 +88,9 @@ export default function AiAssistantCard({
   // null = follow the default (on only while there is no featured image), so
   // choosing an image from the library flips it off without an effect.
   const [featuredChoice, setFeaturedChoice] = useState<boolean | null>(null);
-  const withFeatured = featuredChoice ?? !hasFeaturedImage;
-  const [withInline, setWithInline] = useState(true);
+  const withFeatured = imagesAvailable && (featuredChoice ?? !hasFeaturedImage);
+  const [inlineChoice, setWithInline] = useState(true);
+  const withInline = imagesAvailable && inlineChoice;
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -290,6 +294,7 @@ export default function AiAssistantCard({
             ))}
           </select>
         </div>
+        {imagesAvailable ? (
         <fieldset className="s640:col-span-2" disabled={busy}>
           <legend className="text-xs font-medium text-muted-foreground">Images</legend>
           <div className="mt-1 flex min-h-10 flex-wrap items-center gap-x-5 gap-y-2 text-sm">
@@ -313,6 +318,7 @@ export default function AiAssistantCard({
             </label>
           </div>
         </fieldset>
+        ) : null}
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">

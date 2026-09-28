@@ -1,4 +1,4 @@
-import { isUnlockSecret, signUnlockCookie, UNLOCK_QUERY, unlockCookieOptions, unlockKeysFromEnv, verifyTokenTag, verifyUnlockCookie } from "@sahan-sac/auth-kit";
+import { isUnlockSecret, loginUnlockEnabled, signUnlockCookie, UNLOCK_QUERY, unlockCookieOptions, unlockKeysFromEnv, verifyTokenTag, verifyUnlockCookie } from "@sahan-sac/auth-kit";
 import { buildCsp, clientIp, generateNonce, isAllowedOrigin, isScannerPath, parseOriginList, shouldBlockAdminByAllowlist, UNKNOWN_IP } from "@sahan-sac/auth-kit/security";
 import { getToken } from "next-auth/jwt";
 import { NextResponse, type NextRequest } from "next/server";
@@ -208,10 +208,12 @@ export async function proxy(request: NextRequest) {
     }
   }
 
+  // The hidden-login gate is on only when ADMIN_LOGIN_UNLOCK_SECRET is set.
+  const unlockGate = loginUnlockEnabled();
   const keys = unlockKeysFromEnv();
 
   // 4a. Unlock query: /admin or /admin/login with ?secret=...
-  if (adminPage && searchParams.has(UNLOCK_QUERY) && (pathname === "/admin" || pathname === LOGIN_PATH)) {
+  if (unlockGate && adminPage && searchParams.has(UNLOCK_QUERY) && (pathname === "/admin" || pathname === LOGIN_PATH)) {
     const callerIp = ip(request);
     // Same R22 fail-open rule as the IP allowlist above: without
     // TRUSTED_PROXY_HOPS (or off Vercel), every caller shares UNKNOWN_IP, so
@@ -254,7 +256,7 @@ export async function proxy(request: NextRequest) {
 
   if (adminApi) return signedIn ? withCsp(request) : locked(request);
 
-  const unlocked = keys ? verifyUnlockCookie(request.cookies.get(UNLOCK_COOKIE)?.value, now, keys) : false;
+  const unlocked = !unlockGate || (keys ? verifyUnlockCookie(request.cookies.get(UNLOCK_COOKIE)?.value, now, keys) : false);
   if (!signedIn && !unlocked) return locked(request);
 
   if (!signedIn && pathname !== LOGIN_PATH && pathname !== FORGOT_PASSWORD_PATH) {

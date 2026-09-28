@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { blogAiEnabled, blogAiImagesEnabled } from "@/lib/ai/availability";
 import { hasPermission, requirePermission } from "@/lib/auth/dal";
 import { db } from "@/lib/db/prisma";
 import { SiteMetadata } from "@/config/site";
@@ -40,6 +41,7 @@ export default async function EditBlogPostPage({ params }: { params: Promise<{ i
   const canPublish = hasPermission(user, "publishBlog");
   const canDelete = hasPermission(user, "deleteBlog");
   const siteUrl = new URL(SiteMetadata.siteUrl).host;
+  const canUseAi = hasPermission(user, "generateAI") && blogAiEnabled();
 
   // A restore writes a "restore" revision; keying the editor on the newest
   // one remounts it with the restored fields. An ordinary save never changes
@@ -51,7 +53,8 @@ export default async function EditBlogPostPage({ params }: { params: Promise<{ i
       <BlogEditorForm
         key={editorKey}
         action={updatePostAction}
-        canUseAi={hasPermission(user, "generateAI")}
+        canUseAi={canUseAi}
+        canGenerateImages={canUseAi && blogAiImagesEnabled()}
         canPublish={canPublish}
         existingTopics={topics}
         existingTags={tags}

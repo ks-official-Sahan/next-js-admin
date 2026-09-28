@@ -19,7 +19,9 @@ built on, see `docs/SECURITY-RULES.md`.
    random values, at least 32 characters (the two unlock/bypass secrets can
    be as short as 12). Generate with `openssl rand -base64 32` or similar.
    Production refuses to start with a missing or short value once
-   `DATABASE_URL` is set.
+   `DATABASE_URL` is set. `MAINTENANCE_BYPASS_SECRET`,
+   `ADMIN_LOGIN_UNLOCK_SECRET`, `MEDIA_SIGNING_SECRET` and `CRON_SECRET` are
+   optional: each feature is off while its secret is unset.
 4. Run migrations (`pnpm exec prisma migrate deploy`, or `migrate dev`
    locally) — or `pnpm db:push` for a fresh database. The schema defaults to
    `public`; if you share one Postgres instance across projects, give this
@@ -35,7 +37,8 @@ The admin panel is hidden behind two independent gates, both enforced in
    `https://<site>/admin?secret=<ADMIN_LOGIN_UNLOCK_SECRET>` once — the query
    string is stripped and a signed, httpOnly cookie is set for 2 hours.
    Unlock attempts are rate-limited per IP; repeated wrong secrets lock you
-   out for a while.
+   out for a while. With `ADMIN_LOGIN_UNLOCK_SECRET` unset this gate is off:
+   `/admin/login` is public and only the sign-in gate below applies.
 2. **Sign in.** Once unlocked, `/admin/login` is a normal email + password
    form (plus MFA if the account has it turned on, from `/admin/account`).
    A wrong password does not reveal whether the email exists.

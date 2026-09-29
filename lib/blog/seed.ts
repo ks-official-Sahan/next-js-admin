@@ -5,8 +5,8 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { UpdatesContent } from "@/contents/updates";
 import { sanitizeRich, extractText } from "@/lib/cms/rich-text";
 
-import { computeReadMinutes } from "./readtime";
-import { ensureUniqueSlug, slugify } from "./slug";
+import { computeReadMinutes } from "@sahan-sac/blog-kit/readtime";
+import { ensureUniqueSlug, slugify } from "@sahan-sac/blog-kit/slug";
 
 // Idempotent import of `UpdatesContent.posts` as published posts. Only runs when the Post table is empty, so an
 // edited or newly authored post is never touched or duplicated. Called from

@@ -1,7 +1,7 @@
 "use server";
 
 import { authorizeAction } from "@/lib/actions/guard";
-import { cloudinary } from "@/lib/media/cloudinary";
+import { cloudinary } from "@/lib/media/cloudinary-client";
 import {
   deleteMedia as deleteMediaService,
   registerUpload as registerUploadService,

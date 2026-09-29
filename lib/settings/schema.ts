@@ -1,3 +1,4 @@
+import { CHAT_TONES } from "@sahan-sac/chat-kit/types";
 import { z } from "zod";
 
 // Settings schema with zod validation and defaults. Each key can be stored or
@@ -36,7 +37,7 @@ export type IpAllowlist = z.infer<typeof ipAllowlistSchema>;
 // Chatbot: configuration for the chatbot widget
 export const chatbotConfigSchema = z.object({
   enabled: z.boolean().default(true),
-  tone: z.enum(["professional", "friendly", "casual"]).default("professional"),
+  tone: z.enum(CHAT_TONES).default("professional"),
   greeting: z.string().default("Hi! How can I help you today?"),
   trainingDataVersion: z.number().default(0),
 });

@@ -1,6 +1,7 @@
 import { Metadata } from "next";
 import Link from "next/link";
 
+import { chatbotEnabled } from "@/lib/ai/availability";
 import { requirePermission } from "@/lib/auth/dal";
 import { buttonVariants, cardClass } from "@/components/admin/ui/styles";
 
@@ -19,6 +20,13 @@ export default async function ChatbotDashboard() {
         <h1 className="text-2xl font-semibold tracking-tight">Chatbot Management</h1>
         <p className="mt-1 text-sm text-muted-foreground">Manage conversations and training data for the chatbot.</p>
       </div>
+
+      {!chatbotEnabled() && (
+        <p role="status" className="rounded-md border border-border bg-muted p-3 text-sm">
+          The chatbot is turned off by ENABLE_CHATBOT (or no AI provider key is set), so visitors do not see it. Conversations and
+          training data stay available here.
+        </p>
+      )}
 
       <div className="grid grid-cols-1 gap-6 s768:grid-cols-2">
         <section className={cardClass} aria-labelledby="conversations-heading">

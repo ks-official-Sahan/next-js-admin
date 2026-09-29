@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { chartFigureHtml } from "./chart";
+import { chartFigureHtml } from "@sahan-sac/blog-kit/chart";
 import { extractToc, renderPostContent } from "./render";
 
 // ─── renderPostContent ──────────────────────────────────────────────────

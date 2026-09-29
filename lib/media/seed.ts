@@ -5,7 +5,7 @@ import { join, extname } from "path";
 
 import type { Prisma } from "@prisma/client";
 
-import { MEDIA_CONFIG } from "./config";
+import { MEDIA_CONFIG } from "@sahan-sac/media-kit/config";
 
 // Scan directories and register LOCAL media assets idempotently.
 // Parses image headers for width/height where possible, falls back to null.

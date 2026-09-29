@@ -5,7 +5,7 @@ import { requirePermission } from "@/lib/auth/dal";
 import { getServerQueryClient } from "@/lib/cache/query-client.server";
 import { queryKeys } from "@/lib/cache/query-keys";
 import { listSessionSummaries } from "@/lib/chatbot/session";
-import { CHAT_SESSIONS_PAGE_SIZE } from "@/lib/chatbot/session-summaries";
+import { CHAT_SESSIONS_PAGE_SIZE } from "@sahan-sac/chat-kit/session-summaries";
 import ConversationsClient from "@/components/admin/chatbot/ConversationsClient";
 
 export const metadata: Metadata = {

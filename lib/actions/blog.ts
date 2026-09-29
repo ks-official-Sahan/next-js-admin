@@ -13,9 +13,9 @@ import { forPost, forPostList, mergePlans } from "@/lib/cache/plan";
 import { db } from "@/lib/db/prisma";
 import { extractText, sanitizeRich } from "@/lib/cms/rich-text";
 import { postInputSchema, publishActionSchema } from "@/lib/blog/schema";
-import { parseSubmittedUpdatedAt, UPDATE_CONFLICT_MESSAGE } from "@/lib/blog/concurrency";
-import { computeReadMinutes } from "@/lib/blog/readtime";
-import { parseSnapshot, sameSnapshot, snapshotOf, type PostSnapshot } from "@/lib/blog/revisions";
+import { parseSubmittedUpdatedAt, UPDATE_CONFLICT_MESSAGE } from "@sahan-sac/blog-kit/concurrency";
+import { computeReadMinutes } from "@sahan-sac/blog-kit/readtime";
+import { parseSnapshot, sameSnapshot, snapshotOf, type PostSnapshot } from "@sahan-sac/blog-kit/revisions";
 import { log } from "@/lib/log";
 
 // Blog CRUD and status actions (design notes, Step 12). Draft

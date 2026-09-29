@@ -2,13 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { cloudinaryImageUrl, cloudinarySrcSet } from "@sahan-sac/media-kit/delivery";
+
 import { HomeContainer } from "@/components/home/HomeSection";
 import FinalCta from "@/components/home/FinalCta";
 import { SiteMetadata } from "@/config/site";
 import { getPageContent } from "@/lib/cms/loaders";
 import { getPosts, getPostBySlug, relatedPosts, type BlogPostView } from "@/lib/blog/queries";
 import { extractToc, renderPostContent } from "@/lib/blog/render";
-import { cloudinaryImageUrl, cloudinarySrcSet } from "@/lib/media/delivery";
 import { RSS_ALTERNATES } from "@/lib/metadata";
 import { jsonLdHtml } from "@/lib/seo/json-ld";
 

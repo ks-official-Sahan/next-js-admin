@@ -180,6 +180,30 @@ request, no manual resync needed. Settings themselves live in Postgres and
 are never lost — Redis is a cache the proxy layer reads, not the source of
 truth.
 
+## Packages
+
+The reusable parts of the admin CMS come from npm packages (source and
+releases live in the Sahan monorepo). This app wires them together; none of
+them touches Prisma or React, and only auth-kit depends on Next.js.
+
+| Package | What it holds | Stays in the app |
+| --- | --- | --- |
+| `@sahan-sac/auth-kit` | Sessions, RBAC rules, rate-limit buckets, login unlock | Prisma adapter, route handlers, admin UI |
+| `@sahan-sac/ai-core` | AI provider chain, model resolution, image generation, prompt guards, the AI env schema and feature switches | `lib/ai/availability.ts` (the switches bound to `getEnv()`) |
+| `@sahan-sac/blog-kit` | Post, SEO, draft and cover generation, `generateBlogImage` with its `ImageSink` port, Markdown, charts, slugs, revisions | Post schema, queries, rendering (`sanitizeRich`), seed, `lib/ai/image-sink.ts` |
+| `@sahan-sac/chat-kit` | `runChat`, chat prompts and output filter, knowledge builder, `ChatStore` contract, visitor cookie | `/api/chat` (origin, rate limits, cookie, storage), `lib/chatbot/{knowledge,session,site}.ts`, the widget |
+| `@sahan-sac/media-kit` | Cloudinary client, upload validation, URL signing, delivery transforms, browser upload client | `lib/media/service.ts` (DB rows and audit), `lib/media/cloudinary-client.ts` |
+
+`ai-core`, `blog-kit` and `chat-kit` release together under one version;
+`auth-kit` and `media-kit` are versioned on their own. `chat-kit` never
+imports `blog-kit` (blog posts reach the chatbot as a knowledge source), and
+`blog-kit` never imports `media-kit` (images go through `ImageSink`).
+
+Feature switches: `ENABLE_BLOG_AI` (off by default) and `ENABLE_CHATBOT`
+(on by default) each also need a text provider key. With the chatbot off,
+the site widget is not rendered, `/api/chat` answers 503, and
+`/admin/chatbot` says why.
+
 ## Verify everything is configured
 
 - `pnpm exec tsx scripts/check-env-example.mts` — `.env.example` matches

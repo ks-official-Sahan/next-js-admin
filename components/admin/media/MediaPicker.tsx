@@ -4,8 +4,10 @@ import { useCallback, useRef, useState } from "react";
 import { Button, Group, Modal, Stack, Text, TextInput } from "@mantine/core";
 import { Upload, Search, AlertCircle } from "lucide-react";
 
-import { MEDIA_CONFIG } from "@/lib/media/config";
-import { uploadToMediaLibrary } from "@/lib/media/upload-client";
+import { MEDIA_CONFIG } from "@sahan-sac/media-kit/config";
+import { uploadToMediaLibrary } from "@sahan-sac/media-kit/upload-client";
+
+import { registerUpload } from "@/lib/actions/media";
 
 export interface MediaPickerResult {
   mediaId: string;
@@ -43,7 +45,7 @@ export function MediaPicker({ onSelect, kind = "IMAGE", required = false }: Medi
       setUploading(true);
 
       try {
-        const uploaded = await uploadToMediaLibrary(file, { fileName: file.name });
+        const uploaded = await uploadToMediaLibrary(file, registerUpload, { fileName: file.name });
         if (!uploaded.ok) {
           setError(uploaded.error);
           return;

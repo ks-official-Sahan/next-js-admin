@@ -1,26 +1,17 @@
 import "server-only";
 
-import { db } from "@/lib/db/prisma";
+import type { ChatMessageInput, ChatSessionInput, ChatStore } from "@sahan-sac/chat-kit/adapter";
+import type { ChatSessionSummary } from "@sahan-sac/chat-kit/session-summaries";
 import type { ChatSession, ChatMessage } from "@prisma/client";
 
-import type { ChatSessionSummary } from "./session-summaries";
+import { db } from "@/lib/db/prisma";
 
-// Session management for chat: create/read sessions, add messages, track lead capture.
+// Session management for chat: create/read sessions, add messages, track lead
+// capture. prismaChatStore at the bottom is the @sahan-sac/chat-kit ChatStore
+// the chat route uses.
 
-export interface CreateSessionInput {
-  sessionId: string; // UUID from client
-  ipHash?: string;
-  userAgent?: string;
-  pagePath?: string;
-}
-
-export interface AddMessageInput {
-  sessionId: string;
-  role: "user" | "assistant";
-  content: string;
-  tokens?: number;
-  latencyMs?: number;
-}
+export type CreateSessionInput = ChatSessionInput;
+export type AddMessageInput = ChatMessageInput;
 
 export interface SessionWithMessages extends ChatSession {
   messages: ChatMessage[];
@@ -115,3 +106,11 @@ export async function listSessionSummaries(options: { limit: number; offset: num
   });
   return rows.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }));
 }
+
+export const prismaChatStore: ChatStore = {
+  upsertSession,
+  addMessage,
+  getRecentMessages: getSessionMessages,
+  linkInquiry,
+  listSessionSummaries,
+};

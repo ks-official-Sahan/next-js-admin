@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { DEFAULT_IMAGE_MODELS, DEFAULT_TEXT_MODELS, imageModels, paidAllowed, textModels, thinkingConfigFor } from "./ai/models";
+import { DEFAULT_IMAGE_MODELS, DEFAULT_TEXT_MODELS, imageModels, paidAllowed, textModels, thinkingConfigFor } from "@sahan-sac/ai-core/models";
 import { parseEnv } from "./env";
 
 test("unset or blank model variables resolve to the verified free defaults", () => {

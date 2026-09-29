@@ -1,8 +1,9 @@
 import { ImageResponse } from "next/og";
 
+import { cloudinaryImageUrl } from "@sahan-sac/media-kit/delivery";
+
 import { SiteMetadata } from "@/config/site";
 import { getPostBySlug, getPosts } from "@/lib/blog/queries";
-import { cloudinaryImageUrl } from "@/lib/media/delivery";
 
 // Per-post social card. Not a page — a sibling file-convention image next to
 // app/(site)/updates/[slug]/page.tsx (that page is owned by another stream;

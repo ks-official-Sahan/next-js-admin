@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import ChatWidgetLoader from "@/components/site/chat/ChatWidgetLoader";
 import SiteShell from "@/components/site/SiteShell";
 import { SiteMetadata } from "@/config/site";
+import { chatbotEnabled } from "@/lib/ai/availability";
 import { RSS_ALTERNATES } from "@/lib/metadata";
 import { getSetting } from "@/lib/settings/service";
 
@@ -32,7 +33,7 @@ export default async function SiteLayout({
   return (
     <SiteShell>
       {children}
-      {features.chatbotEnabled && (
+      {features.chatbotEnabled && chatbotEnabled() && (
         <ChatWidgetLoader enabled config={chatbotConfig} siteUrl={SiteMetadata.siteUrl} />
       )}
     </SiteShell>

@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getOptionalUser, hasPermission } from "@/lib/auth/dal";
 import { listSessionSummaries } from "@/lib/chatbot/session";
-import { parseChatSessionListParams } from "@/lib/chatbot/session-summaries";
+import { parseChatSessionListParams } from "@sahan-sac/chat-kit/session-summaries";
 import { log } from "@/lib/log";
 
 // JSON for the conversations list's polling (lib/admin/hooks/

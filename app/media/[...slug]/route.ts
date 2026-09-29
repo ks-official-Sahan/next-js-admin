@@ -1,9 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { isAllowedWidth, isAllowedQuality } from "@sahan-sac/media-kit/validation";
+import { verifyMediaSignature } from "@sahan-sac/media-kit/signature";
+
 import { env } from "@/lib/env";
 import { db } from "@/lib/db/prisma";
-import { isAllowedWidth, isAllowedQuality } from "@/lib/media/validation";
-import { verifyMediaSignature } from "@/lib/media/signature";
 
 // GET /media/[mediaId]?w=800&q=85&sig=...
 // Delivers signed media from Cloudinary with restricted widths and qualities.

@@ -2,13 +2,14 @@ import "server-only";
 
 import type { Prisma } from "@prisma/client";
 
+import { MEDIA_CONFIG, getMediaKind } from "@sahan-sac/media-kit/config";
+import type { CloudinaryClient } from "@sahan-sac/media-kit/cloudinary";
+import { validateMediaUpload, validateMediaMetadata } from "@sahan-sac/media-kit/validation";
+
 import { audit } from "@/lib/admin/audit";
 import { db } from "@/lib/db/prisma";
 import { log } from "@/lib/log";
-
-import { MEDIA_CONFIG, getMediaKind } from "./config";
-import type { CloudinaryClient } from "./cloudinary";
-import { validateMediaUpload, validateMediaMetadata } from "./validation";
+import { MEDIA_UPLOAD_FOLDER } from "@/lib/media/folder";
 
 const IMAGE_MIME_FORMATS: Record<string, string> = {
   "image/png": "png",
@@ -63,13 +64,13 @@ export async function registerUpload(
     }
 
     // Validate folder matches upload folder (safety check)
-    if (cloudinaryAsset.folder !== MEDIA_CONFIG.uploadFolder) {
+    if (cloudinaryAsset.folder !== MEDIA_UPLOAD_FOLDER) {
       await cloudinaryClient.deleteAsset(publicId);
       return { ok: false, error: `File uploaded to wrong folder: ${cloudinaryAsset.folder}` };
     }
 
     // Validate folder parameter matches
-    if (folder !== MEDIA_CONFIG.uploadFolder) {
+    if (folder !== MEDIA_UPLOAD_FOLDER) {
       await cloudinaryClient.deleteAsset(publicId);
       return { ok: false, error: `Folder parameter does not match Cloudinary folder` };
     }

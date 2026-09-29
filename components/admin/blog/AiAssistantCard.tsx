@@ -4,8 +4,8 @@ import { useRef, useState } from "react";
 import { Check, Loader2, Sparkles } from "lucide-react";
 
 import { buttonVariants, fieldClass, textareaClass } from "@/components/admin/ui/styles";
-import { applyImageToken } from "@/lib/blog/ai-image-tokens";
-import { markdownToHtml } from "@/lib/blog/markdown";
+import { applyImageToken } from "@sahan-sac/blog-kit/ai-image-tokens";
+import { markdownToHtml } from "@sahan-sac/blog-kit/markdown";
 import { cn } from "@/lib/utils";
 
 import SidebarCard from "./SidebarCard";

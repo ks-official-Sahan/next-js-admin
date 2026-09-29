@@ -2,7 +2,7 @@ import "server-only";
 
 import { db } from "@/lib/db/prisma";
 
-import { REVISIONS_KEPT } from "./revisions";
+import { REVISIONS_KEPT } from "@sahan-sac/blog-kit/revisions";
 
 export interface RevisionListItem {
   id: string;

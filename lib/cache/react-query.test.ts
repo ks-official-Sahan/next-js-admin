@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { adminPostListSearch, parseAdminPostListParams } from "@/lib/blog/admin-list-params";
-import { parseChatSessionListParams } from "@/lib/chatbot/session-summaries";
+import { parseChatSessionListParams } from "@sahan-sac/chat-kit/session-summaries";
 
 import { ADMIN_QUERY_DEFAULTS, AdminFetchError, queryKeys } from "./query-keys";
 

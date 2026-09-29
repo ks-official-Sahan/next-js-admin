@@ -6,7 +6,10 @@ import { blogAiEnabled } from "@/lib/ai/availability";
 import { limit } from "@/lib/cache/ratelimit";
 import { rateLimitedResponse } from "@/lib/admin/rate-limited";
 import { checkOrigin } from "@/lib/security/check-origin";
-import { defaultAiDeps, suggestCover } from "@/lib/ai/blog";
+import { getEnv } from "@/lib/env";
+import { realBlogDeps } from "@sahan-sac/blog-kit/deps";
+import { blogSite } from "@/lib/ai/blog-site";
+import { suggestCover } from "@sahan-sac/blog-kit/helpers";
 
 // POST /api/admin/ai/cover. Requires generateAI, rate limited per user
 // (ai:text:user). Body: { topic }. Returns a text prompt
@@ -48,7 +51,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "A topic is required." }, { status: 400 });
   }
 
-  const result = await suggestCover(parsed.data, defaultAiDeps());
+  const result = await suggestCover(parsed.data, realBlogDeps(getEnv(), blogSite));
   if (!result.ok) return NextResponse.json(result, { status: 502, headers: { "Cache-Control": "no-store" } });
   return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
 }

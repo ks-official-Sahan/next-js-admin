@@ -8,8 +8,8 @@ import { ArrowLeft, Eye } from "lucide-react";
 import ActionForm, { Field, SubmitButton } from "@/components/admin/ui/ActionForm";
 import type { ActionState } from "@/lib/actions/state";
 import { buttonVariants, cardClass } from "@/components/admin/ui/styles";
-import { draftStorageKey, isDraftNewer } from "@/lib/blog/draft";
-import { slugify } from "@/lib/blog/slug";
+import { draftStorageKey, isDraftNewer } from "@sahan-sac/blog-kit/draft";
+import { slugify } from "@sahan-sac/blog-kit/slug";
 import { cn } from "@/lib/utils";
 
 import AiAssistantCard, { type AiPatch } from "./AiAssistantCard";

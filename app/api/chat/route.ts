@@ -3,29 +3,32 @@ import { headers } from "next/headers";
 import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { textAiConfigured } from "@/lib/ai/availability";
-import { createAiService, realProviders, sharedAiHealth } from "@/lib/ai/providers";
-import { limit } from "@/lib/cache/ratelimit";
-import { filterModelOutput, guardUserMessage } from "@/lib/chatbot/guard";
-import { getKnowledge } from "@/lib/chatbot/knowledge";
-import { buildChatPrompt } from "@/lib/chatbot/prompts";
-import { addMessage, getSessionMessages, upsertSession } from "@/lib/chatbot/session";
+import { realProviders, sharedAiHealth } from "@sahan-sac/ai-core/providers";
+import { runChat } from "@sahan-sac/chat-kit/handler";
 import {
-  CHAT_VISITOR_COOKIE,
   chatVisitorCookieOptions,
   newChatVisitorId,
   signChatVisitorId,
   verifyChatVisitorCookie,
-} from "@/lib/chatbot/visitor-cookie";
+} from "@sahan-sac/chat-kit/visitor-cookie";
+
+import { chatbotEnabled as chatbotAvailable } from "@/lib/ai/availability";
+import { limit } from "@/lib/cache/ratelimit";
+import { getKnowledge } from "@/lib/chatbot/knowledge";
+import { prismaChatStore as store } from "@/lib/chatbot/session";
+import { chatSite } from "@/lib/chatbot/site";
 import { getEnv } from "@/lib/env";
 import { log } from "@/lib/log";
 import { clientIp, UNKNOWN_IP } from "@/lib/security/ip";
 import { isAllowedOrigin } from "@/lib/security/origin";
 import type { ChatbotConfig } from "@/lib/settings/schema";
 import { getPublicSettings } from "@/lib/settings/service";
-import { Site } from "@/config/site";
 
-// The provider chain stops at 20 s (deadlineMs below); leave room for the
+// The visitor-id cookie's name from before chat-kit had a neutral default;
+// keeping it means existing visitors keep their id.
+const CHAT_VISITOR_COOKIE = "app_chat_vid";
+
+// The provider chain stops at 20 s (chat-kit CHAT_BUDGETS.deadlineMs); leave room for the
 // session writes. Vercel Hobby's default can be shorter than that.
 export const maxDuration = 30;
 
@@ -33,7 +36,7 @@ function hashIp(ip: string, secret: string): string {
   return createHmac("sha256", secret).update(ip).digest("hex");
 }
 
-// sessionId is a client-generated opaque id (see lib/chatbot/session.ts) —
+// sessionId is a client-generated opaque id (see @sahan-sac/chat-kit/adapter) —
 // not a secret, just a grouping key — hence the character class rather than
 // a specific format. message is what the visitor typed.
 const chatRequestSchema = z.object({
@@ -62,6 +65,12 @@ export async function POST(request: NextRequest) {
       );
     }
     return response;
+  }
+
+  // Off (ENABLE_CHATBOT=false) or no text provider configured: nothing to do,
+  // so answer before any body parsing or rate-limit round trip.
+  if (!chatbotAvailable(env)) {
+    return jsonResponse({ error: "Chatbot is not available" }, { status: 503 });
   }
 
   // Content-Type check
@@ -184,18 +193,15 @@ export async function POST(request: NextRequest) {
     if (!chatbotConfig.enabled) {
       return jsonResponse({ error: "Chatbot is disabled" }, { status: 503 });
     }
-    if (!textAiConfigured(env)) {
-      return jsonResponse({ error: "Chatbot is not available" }, { status: 503 });
-    }
 
     // Reads run together; history is taken before this turn is stored.
     let history: { role: string; content: string }[] = [];
     let knowledge: string | null = null;
     try {
       const [hist, kn] = await Promise.all([
-        getSessionMessages(chatReq.sessionId, 10).catch(() => []),
+        store.getRecentMessages(chatReq.sessionId, 10).catch(() => []),
         getKnowledge().catch(() => null),
-        upsertSession({ sessionId: chatReq.sessionId, ipHash, userAgent: h.get("user-agent") || undefined }).catch((err) => {
+        store.upsertSession({ sessionId: chatReq.sessionId, ipHash, userAgent: h.get("user-agent") || undefined }).catch((err) => {
           log.warn("Failed to upsert chat session", { error: String(err) });
           return null;
         }),
@@ -206,56 +212,39 @@ export async function POST(request: NextRequest) {
       log.warn("Failed gathering session/knowledge context for chat", { error: String(err) });
     }
 
-    const storedUserMessage = addMessage({ sessionId: chatReq.sessionId, role: "user", content: chatReq.message }).catch((error) =>
+    const storedUserMessage = store.addMessage({ sessionId: chatReq.sessionId, role: "user", content: chatReq.message }).catch((error) =>
       log.warn("Failed to store chat message", { error: String(error) })
     );
 
-    const prompt = buildChatPrompt({
-      config: chatbotConfig,
-      knowledge: knowledge || "",
-      userMessage: guardUserMessage(chatReq.message),
-      history,
-    });
-
-    // A visitor waits on this: fail over fast and give up well before a proxy timeout.
-    const aiService = createAiService({
-      providers: realProviders(env, "chat"),
-      timeoutMs: 12_000,
-      deadlineMs: 20_000,
-      hedgeAfterMs: 5_000,
-      health: sharedAiHealth,
-    });
-
     const started = Date.now();
-    const result = await aiService.generate(prompt, { maxTokens: 500 });
-    const latencyMs = Date.now() - started;
+    const result = await runChat(
+      {
+        message: chatReq.message,
+        history,
+        knowledge,
+        config: chatbotConfig,
+        site: chatSite,
+        siteHostname: env.SITE_URL ? new URL(env.SITE_URL).hostname : "example.com",
+        extraHosts: ["wa.me", "t.me"],
+      },
+      { providers: realProviders(env, "chat"), health: sharedAiHealth, logger: log }
+    );
 
     if (!result.ok) {
       log.warn("AI service failed for chat", { error: result.errorClass });
       return jsonResponse({ error: "Failed to generate response" }, { status: 503 });
     }
-
-    // Filter output (pure function with explicit allowed hosts)
-    const responseText = result.text || "I apologize, but I was unable to generate a response.";
-    const siteHostname = env.SITE_URL ? new URL(env.SITE_URL).hostname : "example.com";
-    // Links may point only where the owner's own content already points
-    // (project and profile URLs in the knowledge), never to a host the model invented.
-    const knowledgeHosts = [...(knowledge ?? "").matchAll(/https?:\/\/([a-z0-9.-]+)/gi)].map((match) => match[1].toLowerCase());
-    const filteredResponse = filterModelOutput(responseText, {
-      siteHostname,
-      allowedHosts: [...new Set([siteHostname, "wa.me", "t.me", ...knowledgeHosts])],
-      siteEmail: Site.email,
-    });
+    const { text: filteredResponse, latencyMs } = result;
 
     // The visitor gets the reply now; the transcript is written after the response.
     after(async () => {
       try {
         await storedUserMessage;
-        await addMessage({
+        await store.addMessage({
           sessionId: chatReq.sessionId,
           role: "assistant",
           content: filteredResponse,
-          tokens: Math.ceil((result.text || "").length / 4), // Rough estimate
+          tokens: result.tokens,
           latencyMs,
         });
       } catch (error) {

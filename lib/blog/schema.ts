@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { isSafeHref } from "@/lib/cms/href";
 
-import { isValidSlug, SLUG_MAX_LENGTH } from "./slug";
+import { isValidSlug, SLUG_MAX_LENGTH } from "@sahan-sac/blog-kit/slug";
 
 // Zod schemas for a post (design notes, Step 12). Shared by
 // lib/actions/blog.ts (admin writes) and prisma/seed-blog.ts (import). The

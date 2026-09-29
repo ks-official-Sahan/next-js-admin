@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 
+import { base64ToBlob, uploadToMediaLibrary } from "@sahan-sac/media-kit/upload-client";
+
 import { buttonVariants, fieldClass } from "@/components/admin/ui/styles";
 import { MediaPicker } from "@/components/admin/media/MediaPicker";
-import { base64ToBlob, uploadToMediaLibrary } from "@/lib/media/upload-client";
+import { registerUpload } from "@/lib/actions/media";
 import { cn } from "@/lib/utils";
 
 import SidebarCard from "./SidebarCard";
@@ -53,7 +55,7 @@ export default function FeaturedImageCard({
     setUploading(true);
     setError(null);
     const altText = alt || prompt.slice(0, 150);
-    const result = await uploadToMediaLibrary(base64ToBlob(unsaved.base64, unsaved.mimeType), { fileName: unsavedName, alt: altText || undefined });
+    const result = await uploadToMediaLibrary(base64ToBlob(unsaved.base64, unsaved.mimeType), registerUpload, { fileName: unsavedName, alt: altText || undefined });
     setUploading(false);
     if (!result.ok) {
       setError(`${result.error} You can still download the image.`);

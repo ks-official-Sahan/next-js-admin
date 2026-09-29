@@ -10,7 +10,17 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { aiEnvSchema } from "@sahan-sac/ai-core/env";
+import { mediaEnvSchema } from "@sahan-sac/media-kit/env";
+
 const root = fileURLToPath(new URL("..", import.meta.url));
+
+// Package schemas lib/env.ts spreads in (`...aiEnvSchema.shape`). Their env
+// modules are pure, so they can be imported here, unlike lib/env.ts itself.
+const SPREAD_SCHEMAS: Record<string, readonly string[]> = {
+  aiEnvSchema: Object.keys(aiEnvSchema.shape),
+  mediaEnvSchema: Object.keys(mediaEnvSchema.shape),
+};
 
 // Variables read directly from process.env, never through lib/env.ts's typed
 // schema, because the code that reads them runs somewhere lib/env.ts's
@@ -29,6 +39,12 @@ function namesFromEnvTs(): Set<string> {
     if (!trimmed || trimmed.startsWith("//")) continue;
     const match = trimmed.match(/^([A-Z][A-Z0-9_]*):/);
     if (match) names.add(match[1]);
+    const spread = trimmed.match(/^\.\.\.(\w+)\.shape,?$/);
+    if (spread) {
+      const spreadNames = SPREAD_SCHEMAS[spread[1]];
+      if (!spreadNames) throw new Error(`lib/env.ts spreads ${spread[1]}; add it to SPREAD_SCHEMAS in this script`);
+      for (const name of spreadNames) names.add(name);
+    }
   }
   return names;
 }

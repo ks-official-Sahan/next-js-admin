@@ -7,22 +7,25 @@ import { limit } from "@/lib/cache/ratelimit";
 import { rateLimitedResponse } from "@/lib/admin/rate-limited";
 import { checkOrigin } from "@/lib/security/check-origin";
 import { getEnv } from "@/lib/env";
-import { defaultAiDeps, generateBlogPost } from "@/lib/ai/blog-generate";
-import { generateImage, imageConfigFromEnv } from "@/lib/ai/image";
-import { removeImageToken } from "@/lib/blog/ai-image-tokens";
-import { registerGeneratedImage } from "@/lib/media/service";
-import { cloudinary } from "@/lib/media/cloudinary";
-import { MEDIA_CONFIG } from "@/lib/media/config";
+import { realBlogDeps } from "@sahan-sac/blog-kit/deps";
+import { generateBlogPost } from "@sahan-sac/blog-kit/generate";
+import { generateBlogImage } from "@sahan-sac/blog-kit/images";
+import { imageConfigFromEnv } from "@sahan-sac/ai-core/image";
+
+import { removeImageToken } from "@sahan-sac/blog-kit/ai-image-tokens";
+import { blogSite } from "@/lib/ai/blog-site";
+import { mediaLibrarySink } from "@/lib/ai/image-sink";
+import { MEDIA_UPLOAD_FOLDER } from "@/lib/media/folder";
 import { db } from "@/lib/db/prisma";
-import { ensureUniqueSlug, slugify } from "@/lib/blog/slug";
+import { ensureUniqueSlug, slugify } from "@sahan-sac/blog-kit/slug";
 import { log } from "@/lib/log";
 
 // POST /api/admin/ai/generate-post. Requires generateAI, rate limited per
 // user (ai:post:user). Streams progress as
-// the generation runs: the model call in lib/ai/blog-generate.ts is a single
+// the generation runs: the model call in @sahan-sac/blog-kit/generate is a single
 // non-streaming request per provider (createAiService wraps generateText,
-// not streamText, across the whole fallback chain — see lib/ai/providers.ts,
-// which this task does not change), so "streaming" here means staged
+// not streamText, across the whole fallback chain — see
+// @sahan-sac/ai-core/providers), so "streaming" here means staged
 // Server-Sent Events rather than token-by-token text: a `stage` event while
 // the model writes, one `content` event with the complete parsed post the
 // moment it is ready, then one `image` event per image (featured + up to 3
@@ -55,7 +58,7 @@ function sseLine(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
-const IMAGE_FOLDER = `${MEDIA_CONFIG.uploadFolder}/ai-blog`;
+const IMAGE_FOLDER = `${MEDIA_UPLOAD_FOLDER}/ai-blog`;
 
 export async function POST(request: NextRequest) {
   // Off (ENABLE_BLOG_AI) or no provider configured: the route does not exist.
@@ -110,7 +113,7 @@ export async function POST(request: NextRequest) {
 
       try {
         send("stage", { stage: "writing" });
-        const result = await generateBlogPost(input, defaultAiDeps(), {
+        const result = await generateBlogPost(input, realBlogDeps(env, blogSite), {
           onStatus: (status) => {
             send("provider_status", status);
           },
@@ -155,25 +158,22 @@ export async function POST(request: NextRequest) {
           return;
         }
 
+        const imageDeps = { config: imageConfig, sink: mediaLibrarySink(actor) };
         const jobs: Promise<void>[] = [];
 
         if (input.featuredImage) jobs.push(
           (async () => {
             send("image", { which: "featured", status: "start" });
-            const outcome = await generateImage(post.featuredImage.prompt, imageConfig, { aspectRatio: "16:9", signal: imageSignal() });
-            if (!outcome.ok) {
-              send("image", { which: "featured", status: "error", error: outcome.error });
-              return;
-            }
-            const registered = await registerGeneratedImage(
-              { base64: outcome.base64, mimeType: outcome.mimeType, alt: post.featuredImage.alt, folder: IMAGE_FOLDER, cloudinaryClient: cloudinary },
-              actor
+            const stored = await generateBlogImage(
+              post.featuredImage.prompt,
+              { alt: post.featuredImage.alt, folder: IMAGE_FOLDER, aspectRatio: "16:9", signal: imageSignal() },
+              imageDeps
             );
-            if (!registered.ok) {
-              send("image", { which: "featured", status: "error", error: registered.error });
+            if (!stored.ok) {
+              send("image", { which: "featured", status: "error", error: stored.error });
               return;
             }
-            send("image", { which: "featured", status: "done", mediaId: registered.asset.id, url: registered.asset.url, alt: post.featuredImage.alt });
+            send("image", { which: "featured", status: "done", mediaId: stored.mediaId, url: stored.url, alt: post.featuredImage.alt });
           })()
         );
 
@@ -181,20 +181,16 @@ export async function POST(request: NextRequest) {
           jobs.push(
             (async () => {
               send("image", { which: image.token, status: "start" });
-              const outcome = await generateImage(image.prompt, imageConfig, { aspectRatio: "4:3", signal: imageSignal() });
-              if (!outcome.ok) {
-                send("image", { which: image.token, status: "error", error: outcome.error });
-                return;
-              }
-              const registered = await registerGeneratedImage(
-                { base64: outcome.base64, mimeType: outcome.mimeType, alt: image.alt, folder: IMAGE_FOLDER, cloudinaryClient: cloudinary },
-                actor
+              const stored = await generateBlogImage(
+                image.prompt,
+                { alt: image.alt, folder: IMAGE_FOLDER, aspectRatio: "4:3", signal: imageSignal() },
+                imageDeps
               );
-              if (!registered.ok) {
-                send("image", { which: image.token, status: "error", error: registered.error });
+              if (!stored.ok) {
+                send("image", { which: image.token, status: "error", error: stored.error });
                 return;
               }
-              send("image", { which: image.token, status: "done", mediaId: registered.asset.id, url: registered.asset.url, alt: image.alt });
+              send("image", { which: image.token, status: "done", mediaId: stored.mediaId, url: stored.url, alt: image.alt });
             })()
           );
         }

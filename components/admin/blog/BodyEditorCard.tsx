@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Columns2 } from "lucide-react";
 
 import { cardClass } from "@/components/admin/ui/styles";
-import { htmlToMarkdown, markdownToHtml } from "@/lib/blog/markdown";
+import { htmlToMarkdown, markdownToHtml } from "@sahan-sac/blog-kit/markdown";
 import { cn } from "@/lib/utils";
 
 import MarkdownField from "./MarkdownField";

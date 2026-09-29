@@ -1,5 +1,5 @@
-import { extractChartSpec, renderChartSvg, stripTags, unescapeHtml } from "./chart";
-import { slugify } from "./slug";
+import { extractChartSpec, renderChartSvg, stripTags, unescapeHtml } from "@sahan-sac/blog-kit/chart";
+import { slugify } from "@sahan-sac/blog-kit/slug";
 
 // Presentation-time post-processing of already-sanitized post HTML, shared
 // by the public post page (app/(site)/updates/[slug]/page.tsx) and the admin

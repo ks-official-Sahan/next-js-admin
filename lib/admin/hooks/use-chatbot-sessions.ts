@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
-import type { ChatSessionSummary } from "@/lib/chatbot/session-summaries";
+import type { ChatSessionSummary } from "@sahan-sac/chat-kit/session-summaries";
 import { queryKeys, type ChatbotSessionListParams } from "@/lib/cache/query-keys";
 
 import { fetchAdminJson } from "./fetch-json";

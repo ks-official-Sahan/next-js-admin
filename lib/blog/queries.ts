@@ -8,8 +8,8 @@ import { extractText, sanitizeRich } from "@/lib/cms/rich-text";
 import { log } from "@/lib/log";
 import { UpdatesContent } from "@/contents/updates";
 
-import { computeReadMinutes } from "./readtime";
-import { ensureUniqueSlug, slugify } from "./slug";
+import { computeReadMinutes } from "@sahan-sac/blog-kit/readtime";
+import { ensureUniqueSlug, slugify } from "@sahan-sac/blog-kit/slug";
 
 // Public reads of blog posts (design notes, Step 12, tag
 // `blog:list` / `blog:post:<slug>`). Only PUBLISHED rows are ever read here:

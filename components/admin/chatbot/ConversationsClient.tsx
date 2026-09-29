@@ -6,7 +6,7 @@ import { useState } from "react";
 import EmptyState from "@/components/admin/ui/EmptyState";
 import { badgeClass, buttonVariants, tableClass, tdClass, thClass } from "@/components/admin/ui/styles";
 import { useAdminChatbotSessions } from "@/lib/admin/hooks/use-chatbot-sessions";
-import { CHAT_SESSIONS_PAGE_SIZE } from "@/lib/chatbot/session-summaries";
+import { CHAT_SESSIONS_PAGE_SIZE } from "@sahan-sac/chat-kit/session-summaries";
 import { cn } from "@/lib/utils";
 
 export default function ConversationsClient() {

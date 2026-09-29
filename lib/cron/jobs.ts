@@ -4,7 +4,7 @@ import { db } from "@/lib/db/prisma";
 import { invalidate } from "@/lib/cache/invalidate";
 import { forPostList } from "@/lib/cache/plan";
 import { audit } from "@/lib/admin/audit";
-import { REVISIONS_KEPT } from "@/lib/blog/revisions";
+import { REVISIONS_KEPT } from "@sahan-sac/blog-kit/revisions";
 import { log } from "@/lib/log";
 
 // Shared cron job logic, called by both the /api/cron/* routes (automatic,

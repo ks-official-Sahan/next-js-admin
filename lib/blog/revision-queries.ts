@@ -1,6 +1,6 @@
 import "server-only";
 
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
 
 import { REVISIONS_KEPT } from "@sahan-sac/blog-kit/revisions";
 
@@ -18,17 +18,6 @@ export interface RevisionListItem {
  * for exactly this list.
  */
 export async function listPostRevisions(postId: string): Promise<RevisionListItem[]> {
-  const rows = await db.postRevision.findMany({
-    where: { postId },
-    orderBy: { createdAt: "desc" },
-    take: REVISIONS_KEPT,
-    select: { id: true, title: true, reason: true, createdAt: true, createdBy: { select: { email: true } } },
-  });
-  return rows.map((row) => ({
-    id: row.id,
-    title: row.title,
-    reason: row.reason,
-    createdAt: row.createdAt.toISOString(),
-    authorEmail: row.createdBy?.email ?? null,
-  }));
+  const rows = await repos.postRevisions.listForPost(postId, REVISIONS_KEPT);
+  return rows.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }));
 }

@@ -3,7 +3,7 @@ import "server-only";
 import { readdir, stat } from "fs/promises";
 import { join, extname } from "path";
 
-import type { Prisma } from "@prisma/client";
+import type { Repos } from "@/lib/data/repos";
 
 import { MEDIA_CONFIG } from "@sahan-sac/media-kit/config";
 
@@ -95,7 +95,7 @@ async function scanDirectory(dirPath: string, publicUrlPrefix: string): Promise<
 
 // Main seed function: scan directories and register assets with db
 export async function seedMediaAssets(
-  db: { mediaAsset: { upsert: (args: Prisma.MediaAssetUpsertArgs) => Promise<unknown> } },
+  db: Pick<Repos, "media">,
   basePublicDir: string
 ): Promise<{ created: number; skipped: number }> {
   const allAssets: LocalMediaAsset[] = [];
@@ -111,27 +111,19 @@ export async function seedMediaAssets(
 
   for (const asset of allAssets) {
     try {
-      await db.mediaAsset.upsert({
-        where: {
-          provider_publicId: {
-            provider: "LOCAL",
-            publicId: asset.url, // Use URL as publicId for local assets
-          },
-        },
-        create: {
-          provider: "LOCAL",
-          kind: "IMAGE",
-          publicId: asset.url,
-          url: asset.url,
-          format: asset.format,
-          width: asset.width,
-          height: asset.height,
-          sizeBytes: asset.sizeBytes,
-          alt: asset.alt,
-          title: asset.title,
-          folder: asset.folder,
-        },
-        update: {}, // Idempotent: don't update existing entries
+      // Idempotent: an existing entry is left as it is.
+      await db.media.createIfMissing({
+        provider: "LOCAL",
+        kind: "IMAGE",
+        publicId: asset.url, // Use URL as publicId for local assets
+        url: asset.url,
+        format: asset.format,
+        width: asset.width,
+        height: asset.height,
+        sizeBytes: asset.sizeBytes,
+        alt: asset.alt,
+        title: asset.title,
+        folder: asset.folder,
       });
       created++;
     } catch {

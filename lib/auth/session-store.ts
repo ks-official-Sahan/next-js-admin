@@ -5,7 +5,7 @@ import { createSessionStore } from "@sahan-sac/auth-kit/session";
 import { kv } from "@/lib/cache/redis";
 
 import { AUTH_SECRET } from "./kit";
-import { prismaAuthAdapter } from "./prisma-adapter";
+import { authAdapter } from "@/lib/data";
 
 // Server side of a session: the Postgres row is the authority, Redis holds a
 // 30 second copy of its state so most requests skip the database.
@@ -22,6 +22,6 @@ export const {
   forceLogoutAll,
   getKnownIps,
   listSessions,
-} = createSessionStore({ adapter: prismaAuthAdapter, kv, authSecret: AUTH_SECRET });
+} = createSessionStore({ adapter: authAdapter, kv, authSecret: AUTH_SECRET });
 
 export type { KnownIp, NewSession, Revoker, SessionListItem } from "@sahan-sac/auth-kit/session";

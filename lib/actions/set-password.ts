@@ -11,9 +11,8 @@ import { LOGIN_PATH } from "@/lib/auth/constants";
 import { hashToken, tokenState, verifyTokenTag } from "@/lib/auth/invite-token";
 import { hashPassword } from "@/lib/auth/password";
 import { checkPassword } from "@/lib/auth/password-policy";
-import type { RoleName } from "@/lib/auth/permissions";
 import { revokeUserSessions } from "@/lib/auth/session-store";
-import { db } from "@/lib/db/prisma";
+import { repos, withTx } from "@/lib/data";
 import { sendEmail } from "@/lib/email";
 import { passwordChanged } from "@/lib/email/templates";
 import { getEnv } from "@/lib/env";
@@ -44,7 +43,7 @@ export async function setPasswordAction(_previous: ActionState, formData: FormDa
 
   const random = verifyTokenTag(token, getEnv().AUTH_SECRET);
   if (!random) return fail(INVALID);
-  const row = await db.authToken.findUnique({ where: { tokenHash: hashToken(random) } });
+  const row = await repos.authTokens.findByHash(hashToken(random));
   if (!row || tokenState(row, Date.now()) !== "valid") return fail(INVALID);
 
   if (password !== confirm) return fail("The two passwords differ.", { confirm: "Does not match." });
@@ -55,24 +54,17 @@ export async function setPasswordAction(_previous: ActionState, formData: FormDa
   let cleanup: { userId: string; email: string; name: string | null } | null = null;
 
   try {
-    await db.$transaction(async (tx) => {
-      const claimed = await tx.authToken.updateMany({
-        where: { id: row.id, usedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
-        data: { usedAt: new Date() },
-      });
-      if (claimed.count !== 1) throw new LinkUsed();
+    await withTx(async (tx) => {
+      if ((await tx.authTokens.claim(row.id, new Date())) !== 1) throw new LinkUsed();
 
       if (row.purpose === "INVITE") {
-        if (await tx.user.findUnique({ where: { email: row.email }, select: { id: true } })) throw new LinkUsed();
-        const created = await tx.user.create({
-          data: {
-            email: row.email,
-            name: name || null,
-            role: (row.role ?? "EDITOR") as RoleName,
-            passwordHash,
-            createdById: row.createdById,
-          },
-          select: { id: true },
+        if (await tx.users.existsByEmail(row.email)) throw new LinkUsed();
+        const created = await tx.users.create({
+          email: row.email,
+          name: name || null,
+          role: row.role ?? "EDITOR",
+          passwordHash,
+          createdById: row.createdById,
         });
         await audit(
           {
@@ -88,14 +80,9 @@ export async function setPasswordAction(_previous: ActionState, formData: FormDa
         return;
       }
 
-      const user = row.userId
-        ? await tx.user.findUnique({ where: { id: row.userId }, select: { id: true, email: true, name: true, disabledAt: true } })
-        : null;
+      const user = row.userId ? await tx.users.findRef(row.userId) : null;
       if (!user || user.disabledAt) throw new LinkUsed();
-      await tx.user.update({
-        where: { id: user.id },
-        data: { passwordHash, passwordChangedAt: new Date(), mustChangePassword: false },
-      });
+      await tx.users.update(user.id, { passwordHash, passwordChangedAt: new Date(), mustChangePassword: false });
       await audit(
         {
           action: "auth.password.reset_completed",

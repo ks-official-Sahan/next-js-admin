@@ -6,7 +6,7 @@ import { audit } from "@/lib/admin/audit";
 import { fail, formValues, type ActionState } from "@/lib/actions/state";
 import { hashToken, tokenState, verifyTokenTag } from "@/lib/auth/invite-token";
 import { revokeUserSessions } from "@/lib/auth/session-store";
-import { db } from "@/lib/db/prisma";
+import { repos, withTx } from "@/lib/data";
 import { sendEmail } from "@/lib/email";
 import { emailChanged } from "@/lib/email/templates";
 import { getEnv } from "@/lib/env";
@@ -31,31 +31,24 @@ export async function confirmEmailChangeAction(_previous: ActionState, formData:
 
   const random = verifyTokenTag(parsed.data.token, getEnv().AUTH_SECRET);
   if (!random) return fail(INVALID);
-  const row = await db.authToken.findUnique({ where: { tokenHash: hashToken(random) } });
+  const row = await repos.authTokens.findByHash(hashToken(random));
   if (!row || row.purpose !== "EMAIL_CHANGE" || !row.userId || tokenState(row, Date.now()) !== "valid") {
     return fail(INVALID);
   }
 
   let changed: { userId: string; oldEmail: string; newEmail: string; name: string | null } | null = null;
   try {
-    await db.$transaction(async (tx) => {
-      const claimed = await tx.authToken.updateMany({
-        where: { id: row.id, usedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
-        data: { usedAt: new Date() },
-      });
-      if (claimed.count !== 1) throw new LinkUsed();
+    await withTx(async (tx) => {
+      if ((await tx.authTokens.claim(row.id, new Date())) !== 1) throw new LinkUsed();
 
-      const user = await tx.user.findUnique({
-        where: { id: row.userId! },
-        select: { id: true, email: true, name: true, disabledAt: true },
-      });
+      const user = await tx.users.findRef(row.userId!);
       if (!user || user.disabledAt) throw new LinkUsed();
       // A second EMAIL_CHANGE link asking for a different address could have
       // been issued and used first; the address this link names must still
       // be free.
-      if (await tx.user.findUnique({ where: { email: row.email }, select: { id: true } })) throw new LinkUsed();
+      if (await tx.users.existsByEmail(row.email)) throw new LinkUsed();
 
-      await tx.user.update({ where: { id: user.id }, data: { email: row.email } });
+      await tx.users.update(user.id, { email: row.email });
       await audit(
         {
           action: "user.email_changed",

@@ -8,9 +8,8 @@ import { auditSafe } from "@/lib/admin/audit";
 import { authorizeAction } from "@/lib/actions/guard";
 import { done, fail, formValues, type ActionState } from "@/lib/actions/state";
 import { canManage } from "@/lib/auth/rbac-rules";
-import type { RoleName } from "@/lib/auth/permissions";
 import { forceLogoutAll, revokeSession, revokeUserSessions } from "@/lib/auth/session-store";
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
 import { notifyForcedLogout } from "@/lib/users/notify";
 import { findUserRef } from "@/lib/users/service";
 
@@ -31,14 +30,11 @@ export async function revokeSessionAction(_previous: ActionState, formData: Form
   if (typeof sid !== "string" || !sid) return fail("Missing session.");
   if (sid === user.sid) return fail("Use Sign out to end your current session.");
 
-  const session = await db.userSession.findUnique({
-    where: { id: sid },
-    select: { id: true, userId: true, user: { select: { email: true, role: true } } },
-  });
+  const session = await repos.sessions.findWithOwner(sid);
   if (!session) return fail("That session does not exist.");
   // Your own other sessions are always yours to end. Anyone else's follows the hierarchy.
   const own = session.userId === user.id;
-  if (!own && !canManage(user, { id: session.userId, role: session.user.role as RoleName })) {
+  if (!own && !canManage(user, { id: session.userId, role: session.user.role })) {
     return fail("You are not allowed to end this session.");
   }
 
@@ -116,10 +112,7 @@ export async function forceLogoutEveryone(_previous: ActionState, formData: Form
   });
 
   if (result.userIds.length > 0) {
-    const affected = await db.user.findMany({
-      where: { id: { in: result.userIds } },
-      select: { email: true, name: true },
-    });
+    const affected = await repos.users.findRefs(result.userIds);
     after(async () => {
       await Promise.allSettled(
         affected.map((person) =>

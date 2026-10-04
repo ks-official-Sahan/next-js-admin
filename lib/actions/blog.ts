@@ -10,7 +10,8 @@ import { audit, auditMany } from "@/lib/admin/audit";
 import { hasPermission } from "@/lib/auth/dal";
 import { invalidate } from "@/lib/cache/invalidate";
 import { forPost, forPostList, mergePlans } from "@/lib/cache/plan";
-import { db } from "@/lib/db/prisma";
+import { isDbUnavailable, repos, withTx } from "@/lib/data";
+import { UniqueViolation } from "@/lib/data/errors";
 import { extractText, sanitizeRich } from "@/lib/cms/rich-text";
 import { postInputSchema, publishActionSchema } from "@/lib/blog/schema";
 import { parseSubmittedUpdatedAt, UPDATE_CONFLICT_MESSAGE } from "@sahan-sac/blog-kit/concurrency";
@@ -30,37 +31,18 @@ import { log } from "@/lib/log";
 const ADMIN_LIST_PATH = "/admin/blog";
 
 /** Thrown inside updatePostAction's transaction when the conditional
- * update matches no row (P2025) — someone else changed the post since the
+ * update matches no row — someone else changed the post since the
  * editor loaded it. Caught by the surrounding try/catch, same "abort the
  * transaction with a typed reason" idiom as lib/cms/service.ts's `Abort`. */
 class UpdateConflictError extends Error {}
 
-/** True for a Prisma unique-constraint violation (P2002) — used to map a
- * slug collision to a field error instead of a 500, whether it came from the
- * slugTaken() pre-check missing a race or a row edited directly elsewhere. */
-function isUniqueConstraintError(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && (error as { code?: string }).code === "P2002");
-}
-
-/**
- * True when the database was too slow or unreachable to finish (a connection
- * or pool timeout, or an interactive transaction that expired), as opposed to
- * a bad request. The change was rolled back, so the admin can simply retry.
- */
-function isDbUnavailable(error: unknown): boolean {
-  const code = error && typeof error === "object" ? (error as { code?: string }).code : undefined;
-  if (code === "P1001" || code === "P1002" || code === "P1008" || code === "P1017" || code === "P2024" || code === "P2028") return true;
-  const message = error instanceof Error ? error.message : "";
-  return /expired transaction|Transaction API error|Can't reach database|timed out/i.test(message);
-}
+// A UniqueViolation maps a slug collision to a field error instead of a 500,
+// whether it came from the slugTaken() pre-check missing a race or a row
+// edited directly elsewhere. isDbUnavailable means the change was rolled back
+// because the database was too slow, so the admin can simply retry.
 
 const DB_SLOW_MESSAGE = "The database did not respond in time, so nothing was saved. Your changes are still in the editor: try again.";
 const UNEXPECTED_MESSAGE = "Something went wrong. Please try again.";
-
-/** True for Prisma's "record to update not found" (P2025). */
-function isNotFoundError(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && (error as { code?: string }).code === "P2025");
-}
 
 function computed(content: string) {
   const contentHtml = sanitizeRich(content);
@@ -69,8 +51,8 @@ function computed(content: string) {
 }
 
 async function slugTaken(slug: string, excludeId?: string): Promise<boolean> {
-  const existing = await db.post.findUnique({ where: { slug }, select: { id: true } });
-  return Boolean(existing && existing.id !== excludeId);
+  const ownerId = await repos.posts.idBySlug(slug);
+  return Boolean(ownerId && ownerId !== excludeId);
 }
 
 function payloadFrom(formData: FormData): Record<string, unknown> {
@@ -123,30 +105,28 @@ export async function createPostAction(_previous: ActionState, formData: FormDat
   let createdId: string;
   try {
     const extra = computed(parsed.data.content);
-    const created = await db.$transaction(async (tx) => {
-      const row = await tx.post.create({
-        data: {
-          slug: parsed.data.slug,
-          title: parsed.data.title,
-          excerpt: parsed.data.excerpt || null,
-          content: parsed.data.content,
-          contentHtml: extra.contentHtml,
-          contentText: extra.contentText,
-          readMinutes: extra.readMinutes,
-          topic: parsed.data.topic,
-          tags: parsed.data.tags,
-          coverMediaId: parsed.data.coverMediaId || null,
-          coverAlt: parsed.data.coverAlt || null,
-          seoTitle: parsed.data.seoTitle || null,
-          seoDescription: parsed.data.seoDescription || null,
-          canonicalUrl: parsed.data.canonicalUrl || null,
-          noindex: parsed.data.noindex,
-          status: resolved.status,
-          publishAt: resolved.publishAt,
-          publishedAt: resolved.publishedAt,
-          generatedByAI: String(formData.get("generatedByAI") ?? "") === "1",
-          authorId: auth.user.id,
-        },
+    const created = await withTx(async (tx) => {
+      const row = await tx.posts.create({
+        slug: parsed.data.slug,
+        title: parsed.data.title,
+        excerpt: parsed.data.excerpt || null,
+        content: parsed.data.content,
+        contentHtml: extra.contentHtml,
+        contentText: extra.contentText,
+        readMinutes: extra.readMinutes,
+        topic: parsed.data.topic,
+        tags: parsed.data.tags,
+        coverMediaId: parsed.data.coverMediaId || null,
+        coverAlt: parsed.data.coverAlt || null,
+        seoTitle: parsed.data.seoTitle || null,
+        seoDescription: parsed.data.seoDescription || null,
+        canonicalUrl: parsed.data.canonicalUrl || null,
+        noindex: parsed.data.noindex,
+        status: resolved.status,
+        publishAt: resolved.publishAt,
+        publishedAt: resolved.publishedAt,
+        generatedByAI: String(formData.get("generatedByAI") ?? "") === "1",
+        authorId: auth.user.id,
       });
       await audit(
         {
@@ -165,7 +145,7 @@ export async function createPostAction(_previous: ActionState, formData: FormDat
     revalidatePath(ADMIN_LIST_PATH);
     createdId = created.id;
   } catch (error) {
-    if (isUniqueConstraintError(error)) {
+    if (error instanceof UniqueViolation) {
       return fail("Some fields need attention.", { slug: "This slug is already in use." });
     }
     log.error("create post failed", { error: error instanceof Error ? error.message : String(error) });
@@ -214,7 +194,7 @@ export async function updatePostAction(_previous: ActionState, formData: FormDat
   if (!parsed.success) return fail("Some fields need attention.", fieldErrorsFrom(parsed.error.issues));
 
   try {
-    const before = await db.post.findUnique({ where: { id } });
+    const before = await repos.posts.find(id);
     if (!before) return fail("Post not found.");
 
     if (parsed.data.slug !== before.slug && (await slugTaken(parsed.data.slug, id))) {
@@ -237,19 +217,14 @@ export async function updatePostAction(_previous: ActionState, formData: FormDat
     };
     const previous = snapshotOf(before);
     const extra = computed(parsed.data.content);
-    const updated = await db.$transaction(async (tx) => {
-      // The updatedAt filter is the concurrency check: no match (P2025) means
-      // someone else saved since this editor loaded, so nothing is written.
-      const row = await tx.post
-        .update({ where: { id, updatedAt: submittedUpdatedAt }, data: { ...next, ...extra } })
-        .catch((error: unknown) => {
-          throw isNotFoundError(error) ? new UpdateConflictError() : error;
-        });
+    const updated = await withTx(async (tx) => {
+      // The updatedAt check is the concurrency check: no match means someone
+      // else saved since this editor loaded, so nothing is written.
+      const row = await tx.posts.updateIfUnchanged(id, submittedUpdatedAt, { ...next, ...extra });
+      if (!row) throw new UpdateConflictError();
       // A save that changed nothing editable leaves no revision behind.
       if (!sameSnapshot(previous, next)) {
-        await tx.postRevision.create({
-          data: { postId: id, title: previous.title, data: previous, reason: "update", createdById: auth.user.id },
-        });
+        await tx.postRevisions.create({ postId: id, title: previous.title, data: previous, reason: "update", createdById: auth.user.id });
       }
       await audit(
         { action: "post.updated", actor: auth.user, entityType: "Post", entityId: id, before, after: row },
@@ -271,7 +246,7 @@ export async function updatePostAction(_previous: ActionState, formData: FormDat
     return { ...done("Post updated."), updatedAt: updated.updatedAt.toISOString() };
   } catch (error) {
     if (error instanceof UpdateConflictError) return fail(UPDATE_CONFLICT_MESSAGE);
-    if (isUniqueConstraintError(error)) {
+    if (error instanceof UniqueViolation) {
       return fail("Some fields need attention.", { slug: "This slug is already in use." });
     }
     log.error("update post failed", { error: error instanceof Error ? error.message : String(error) });
@@ -296,8 +271,8 @@ export async function restorePostRevisionAction(_previous: ActionState, formData
 
   try {
     const [before, revision] = await Promise.all([
-      db.post.findUnique({ where: { id: postId } }),
-      db.postRevision.findFirst({ where: { id: revisionId, postId }, select: { data: true } }),
+      repos.posts.find(postId),
+      repos.postRevisions.findData(revisionId, postId),
     ]);
     if (!before || !revision) return fail("Revision not found.");
 
@@ -308,20 +283,15 @@ export async function restorePostRevisionAction(_previous: ActionState, formData
     }
     // The cover may have been deleted from the library since; restore without it.
     if (snapshot.coverMediaId) {
-      const cover = await db.mediaAsset.findUnique({ where: { id: snapshot.coverMediaId }, select: { id: true } });
+      const cover = await repos.media.find(snapshot.coverMediaId);
       if (!cover) snapshot.coverMediaId = null;
     }
 
     const extra = computed(snapshot.content);
-    const restored = await db.$transaction(async (tx) => {
-      const row = await tx.post
-        .update({ where: { id: postId, updatedAt: before.updatedAt }, data: { ...snapshot, ...extra } })
-        .catch((error: unknown) => {
-          throw isNotFoundError(error) ? new UpdateConflictError() : error;
-        });
-      await tx.postRevision.create({
-        data: { postId, title: before.title, data: snapshotOf(before), reason: "restore", createdById: auth.user.id },
-      });
+    const restored = await withTx(async (tx) => {
+      const row = await tx.posts.updateIfUnchanged(postId, before.updatedAt, { ...snapshot, ...extra });
+      if (!row) throw new UpdateConflictError();
+      await tx.postRevisions.create({ postId, title: before.title, data: snapshotOf(before), reason: "restore", createdById: auth.user.id });
       await audit(
         {
           action: "post.restored",
@@ -346,7 +316,7 @@ export async function restorePostRevisionAction(_previous: ActionState, formData
     return { ...done("Revision restored."), updatedAt: restored.updatedAt.toISOString() };
   } catch (error) {
     if (error instanceof UpdateConflictError) return fail(UPDATE_CONFLICT_MESSAGE);
-    if (isUniqueConstraintError(error)) return fail("Another post now uses this revision's slug.");
+    if (error instanceof UniqueViolation) return fail("Another post now uses this revision's slug.");
     log.error("restore post revision failed", { error: error instanceof Error ? error.message : String(error) });
     return fail("Something went wrong. Please try again.");
   }
@@ -356,11 +326,11 @@ export async function restorePostRevisionAction(_previous: ActionState, formData
  * public cache if it was ever visible. Shared by deletePostAction and
  * bulkDeletePostsAction, same split as applyStatus/setPostStatusAction. */
 async function deleteOne(id: string, actor: { id: string; email: string }): Promise<boolean> {
-  const before = await db.post.findUnique({ where: { id } });
+  const before = await repos.posts.find(id);
   if (!before) return false;
 
-  await db.$transaction(async (tx) => {
-    await tx.post.delete({ where: { id } });
+  await withTx(async (tx) => {
+    await tx.posts.delete(id);
     await audit({ action: "post.deleted", actor, entityType: "Post", entityId: id, before, after: null }, tx);
   });
 
@@ -414,13 +384,13 @@ async function applyStatus(
   actor: { id: string; email: string }
 ): Promise<ActionState> {
   try {
-    const before = await db.post.findUnique({ where: { id } });
+    const before = await repos.posts.find(id);
     if (!before) return fail("Post not found.");
 
     const data = statusData(action, publishAt);
 
-    const updated = await db.$transaction(async (tx) => {
-      const row = await tx.post.update({ where: { id }, data });
+    const updated = await withTx(async (tx) => {
+      const row = await tx.posts.update(id, data);
       await audit(
         {
           action: STATUS_AUDIT_ACTION[action],
@@ -513,13 +483,13 @@ export async function bulkPostStatusAction(_previous: ActionState, formData: For
   // three round trips per post), all or nothing in a single transaction.
   const action = actionParsed.data;
   try {
-    const befores = await db.post.findMany({ where: { id: { in: parsedIds.ids } } });
+    const befores = await repos.posts.findMany(parsedIds.ids);
     if (befores.length === 0) return fail("None of the selected posts exist any more.");
     const data = statusData(action, null);
     const ids = befores.map((post) => post.id);
 
-    await db.$transaction(async (tx) => {
-      await tx.post.updateMany({ where: { id: { in: ids } }, data });
+    await withTx(async (tx) => {
+      await tx.posts.updateMany(ids, data);
       await auditMany(
         befores.map((before) => ({
           action: STATUS_AUDIT_ACTION[action],
@@ -563,11 +533,11 @@ export async function bulkDeletePostsAction(_previous: ActionState, formData: Fo
 
   // Same shape as the bulk status change: one read, one delete, one audit insert.
   try {
-    const befores = await db.post.findMany({ where: { id: { in: parsedIds.ids } } });
+    const befores = await repos.posts.findMany(parsedIds.ids);
     if (befores.length === 0) return fail("None of the selected posts exist any more.");
 
-    await db.$transaction(async (tx) => {
-      await tx.post.deleteMany({ where: { id: { in: befores.map((post) => post.id) } } });
+    await withTx(async (tx) => {
+      await tx.posts.deleteMany(befores.map((post) => post.id));
       await auditMany(
         befores.map((before) => ({
           action: "post.deleted",

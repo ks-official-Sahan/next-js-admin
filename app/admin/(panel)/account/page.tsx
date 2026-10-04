@@ -13,7 +13,7 @@ import { formatDateTime, relativeTime } from "@/lib/admin/format";
 import { ROLE_LABEL } from "@/lib/admin/roles";
 import { requireUser } from "@/lib/auth/dal";
 import { listSessions } from "@/lib/auth/session-store";
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
 
 export const metadata: Metadata = { title: "Account" };
 
@@ -22,10 +22,7 @@ export default async function AccountPage() {
   const user = await requireUser({ allowPasswordChange: true });
 
   const [profile, sessions] = await Promise.all([
-    db.user.findUnique({
-      where: { id: user.id },
-      select: { name: true, bio: true, mfaEnabled: true, lastLoginAt: true },
-    }),
+    repos.users.findProfile(user.id),
     listSessions({ userId: user.id, limit: 50 }),
   ]);
   const mfaEnabled = profile?.mfaEnabled ?? false;

@@ -1,4 +1,5 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Repos } from "@/lib/data/repos";
+import { UniqueViolation } from "@/lib/data/errors";
 
 import { allSections } from "./registry";
 import type { SectionDefinition } from "./types";
@@ -10,8 +11,8 @@ import type { SectionDefinition } from "./types";
 // that has any row, so running it twice or after an edit changes nothing
 // (design notes, sections 7 and 8).
 
-/** The slice of the Prisma client the import uses, so a test can pass a fake. */
-export type ContentSeedDb = Pick<PrismaClient, "contentBlock">;
+/** The repository the import uses, so a test can pass a fake. */
+export type ContentSeedDb = Pick<Repos, "contentBlocks">;
 
 export interface ContentSeedSummary {
   created: number;
@@ -27,9 +28,7 @@ export async function seedContent(
   const summary: ContentSeedSummary = { created: 0, skipped: 0 };
 
   for (const definition of definitions) {
-    const existing = await db.contentBlock.count({
-      where: { pageSlug: definition.page, sectionSlug: definition.key },
-    });
+    const existing = await db.contentBlocks.countSection(definition.page, definition.key);
     if (existing > 0) {
       summary.skipped += 1;
       continue;
@@ -38,21 +37,19 @@ export async function seedContent(
     // Parse so a default that drifted from its schema fails here, not on a page.
     const data = definition.schema.parse(definition.defaults());
     try {
-      await db.contentBlock.create({
-        data: {
-          pageSlug: definition.page,
-          sectionSlug: definition.key,
-          version: 1,
-          data: data as never,
-          status: "PUBLISHED",
-          note: NOTE,
-          publishedAt: new Date(),
-        },
+      await db.contentBlocks.create({
+        pageSlug: definition.page,
+        sectionSlug: definition.key,
+        version: 1,
+        data,
+        status: "PUBLISHED",
+        note: NOTE,
+        publishedAt: new Date(),
       });
       summary.created += 1;
     } catch (error) {
       // Someone saved the same section between the count and the insert.
-      if ((error as { code?: string }).code === "P2002") summary.skipped += 1;
+      if (error instanceof UniqueViolation) summary.skipped += 1;
       else throw error;
     }
   }

@@ -3,10 +3,11 @@
 // It prints a summary and never prints a secret.
 
 import { db } from "../lib/db/prisma";
+import { createRepos } from "../lib/data/prisma";
 import { runSeed } from "../lib/db/seed";
 
 async function main(): Promise<void> {
-  const summary = await runSeed(db);
+  const summary = await runSeed(createRepos(db));
   console.log(JSON.stringify(summary));
 }
 

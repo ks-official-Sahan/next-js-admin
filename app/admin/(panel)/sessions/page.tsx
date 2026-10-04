@@ -13,7 +13,7 @@ import { hasPermission, requirePermission } from "@/lib/auth/dal";
 import type { RoleName } from "@/lib/auth/permissions";
 import { canManage } from "@/lib/auth/rbac-rules";
 import { listSessions } from "@/lib/auth/session-store";
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
 
 export const metadata: Metadata = { title: "Sessions" };
 
@@ -28,12 +28,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
   const sessions = await listSessions({ includeEnded, limit: 200 });
   // Roles of the people shown, to decide which buttons this actor may use.
   const roles = new Map<string, RoleName>(
-    (
-      await db.user.findMany({
-        where: { id: { in: [...new Set(sessions.map((session) => session.userId))] } },
-        select: { id: true, role: true },
-      })
-    ).map((user) => [user.id, user.role as RoleName])
+    (await repos.users.findRefs([...new Set(sessions.map((session) => session.userId))])).map((user) => [user.id, user.role])
   );
   const now = clock();
   const isLive = (session: (typeof sessions)[number]) => !session.revokedAt && session.expiresAt.getTime() > now;

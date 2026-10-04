@@ -8,7 +8,7 @@ import { sendEmail } from "@/lib/email";
 import { mfaCode } from "@/lib/email/templates";
 
 import { AUTH_SECRET } from "./kit";
-import { prismaAuthAdapter } from "./prisma-adapter";
+import { authAdapter } from "@/lib/data";
 
 // Emailed one-time codes for sign-in, enabling and disabling MFA.
 
@@ -23,7 +23,7 @@ const sendEmailAdapter = (
 ) => sendEmail(message as Parameters<typeof sendEmail>[0], context);
 
 export const { issueChallenge, verifyChallenge, consumeChallenge, challengeOwner } = createMfa({
-  adapter: prismaAuthAdapter,
+  adapter: authAdapter,
   authSecret: AUTH_SECRET,
   limit: limitAdapter,
   sendEmail: sendEmailAdapter,

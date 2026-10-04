@@ -16,7 +16,7 @@ import { removeImageToken } from "@sahan-sac/blog-kit/ai-image-tokens";
 import { blogSite } from "@/lib/ai/blog-site";
 import { mediaLibrarySink } from "@/lib/ai/image-sink";
 import { MEDIA_UPLOAD_FOLDER } from "@/lib/media/folder";
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
 import { ensureUniqueSlug, slugify } from "@sahan-sac/blog-kit/slug";
 import { log } from "@/lib/log";
 
@@ -133,8 +133,8 @@ export async function POST(request: NextRequest) {
         // Uniqueness only needs to check slugs that could collide with a
         // suffixed variant of this candidate, not the whole table.
         const base = slugify(post.title) || "post";
-        const nearby = await db.post.findMany({ where: { slug: { startsWith: base } }, select: { slug: true } });
-        const slug = ensureUniqueSlug(base, new Set(nearby.map((row) => row.slug)));
+        const nearby = await repos.posts.slugsStartingWith(base);
+        const slug = ensureUniqueSlug(base, new Set(nearby));
 
         send("content", {
           title: post.title,

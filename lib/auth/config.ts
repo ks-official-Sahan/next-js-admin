@@ -8,7 +8,7 @@ import { after } from "next/server";
 import { auditSafe } from "@/lib/admin/audit";
 import { limit, LIMITS } from "@/lib/cache/ratelimit";
 import { kv } from "@/lib/cache/redis";
-import { db } from "@/lib/db/prisma";
+import { authAdapter, repos } from "@/lib/data";
 import { seedOwner } from "@/lib/db/seed";
 import { sendEmail } from "@/lib/email";
 import { mfaCode, newLogin } from "@/lib/email/templates";
@@ -17,7 +17,6 @@ import { log } from "@/lib/log";
 
 import { AUTH_SECRET, PRODUCTION } from "./kit";
 import { authKit } from "./kit-config";
-import { prismaAuthAdapter } from "./prisma-adapter";
 
 // Built once per module load; deps only ever wrap already-configured app
 // singletons (db, kv, env), so there is nothing request-scoped to defer here.
@@ -36,20 +35,20 @@ const sendEmailAdapter = (
   context: { actor: { id: string; email: string } }
 ) => sendEmail(message as Parameters<typeof sendEmail>[0], context);
 
-const sessionStoreImpl = createSessionStore({ adapter: prismaAuthAdapter, kv, authSecret: AUTH_SECRET });
+const sessionStoreImpl = createSessionStore({ adapter: authAdapter, kv, authSecret: AUTH_SECRET });
 const mfaImpl = createMfa({
-  adapter: prismaAuthAdapter,
+  adapter: authAdapter,
   authSecret: AUTH_SECRET,
   limit: limitAdapter,
   sendEmail: sendEmailAdapter,
   audit: auditSafe,
   renderMfaCode: mfaCode,
 });
-const bootstrap = () => ensureBootstrapOwner(prismaAuthAdapter, () => seedOwner(db, process.env, "bootstrap"), log);
+const bootstrap = () => ensureBootstrapOwner(authAdapter, () => seedOwner(repos, process.env, "bootstrap"), log);
 
 export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth(() =>
   createAuthConfig({
-    adapter: prismaAuthAdapter,
+    adapter: authAdapter,
     authSecret: AUTH_SECRET,
     keyPrefix: authKit.keyPrefix,
     sessionCookieName: authKit.sessionCookieName(PRODUCTION),

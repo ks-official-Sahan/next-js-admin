@@ -4,10 +4,11 @@
 // Not run against the real database by this agent (design notes, Step 12).
 
 import { seedBlog } from "../lib/blog/seed";
+import { createRepos } from "../lib/data/prisma";
 import { db } from "../lib/db/prisma";
 
 async function main(): Promise<void> {
-  const summary = await seedBlog(db);
+  const summary = await seedBlog(createRepos(db));
   console.log(JSON.stringify(summary));
 }
 

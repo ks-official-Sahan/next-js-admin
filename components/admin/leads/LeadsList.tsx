@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { Inquiry } from "@prisma/client";
+import type { InquiryRow as Inquiry } from "@/lib/data/inquiries";
 
 import { cn } from "@/lib/utils";
 import { badgeClass, buttonVariants, fieldClass, tableClass, tdClass, thClass } from "@/components/admin/ui/styles";

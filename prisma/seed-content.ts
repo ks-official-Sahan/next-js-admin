@@ -4,10 +4,11 @@
 // (published), prints a summary, and never prints a secret.
 
 import { seedContent } from "../lib/cms/seed";
+import { createRepos } from "../lib/data/prisma";
 import { db } from "../lib/db/prisma";
 
 async function main(): Promise<void> {
-  const summary = await seedContent(db);
+  const summary = await seedContent(createRepos(db));
   console.log(JSON.stringify(summary));
 }
 

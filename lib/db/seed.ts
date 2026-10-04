@@ -2,7 +2,7 @@
 // Running them twice is safe, and neither ever overwrites something the owner
 // changed. Design notes: section 7.
 
-import type { PrismaClient } from "@prisma/client";
+import type { Repos } from "../data/repos";
 
 import { hashPassword } from "../auth/password";
 import {
@@ -13,8 +13,8 @@ import {
   type RoleName,
 } from "../auth/permissions";
 
-/** The slice of the Prisma client the seeds use, so tests can pass a fake. */
-export type SeedDb = Pick<PrismaClient, "user" | "rolePermission" | "setting">;
+/** The repositories the seeds use, so tests can pass a fake. */
+export type SeedDb = Pick<Repos, "users" | "rolePermissions" | "settings">;
 
 type Env = Record<string, string | undefined>;
 
@@ -39,19 +39,17 @@ export async function seedOwner(
   const password = env.ADMIN_PASSWORD;
   if (!email || !password) return "missing-env";
 
-  const existing = await db.user.findUnique({ where: { email }, select: { id: true } });
-  if (existing) return "exists";
+  if (await db.users.existsByEmail(email)) return "exists";
 
-  if (mode === "bootstrap" && (await db.user.count()) > 0) return "skipped-users-exist";
+  if (mode === "bootstrap" && (await db.users.count()) > 0) return "skipped-users-exist";
 
-  await db.user.create({
-    data: {
-      email,
-      name: env.ADMIN_NAME?.trim() || null,
-      passwordHash: await hashPassword(password),
-      role: "DEVELOPER",
-      mustChangePassword: true,
-    },
+  await db.users.create({
+    email,
+    name: env.ADMIN_NAME?.trim() || null,
+    passwordHash: await hashPassword(password),
+    role: "DEVELOPER",
+    mustChangePassword: true,
+    createdById: null,
   });
   return "created";
 }
@@ -92,12 +90,12 @@ export async function seedRolePermissions(
   const addedIn = options.addedIn ?? PERMISSION_ADDED_IN;
   const version = options.version ?? RBAC_SEED_VERSION;
 
-  const stored = await db.setting.findUnique({ where: { key: SEED_VERSION_KEY } });
+  const stored = await db.settings.find(SEED_VERSION_KEY);
   const storedVersion = readVersion(stored?.value);
 
   let inserted = 0;
   for (const role of ["MANAGER", "EDITOR"] as const) {
-    const existingRows = await db.rolePermission.count({ where: { role } });
+    const existingRows = await db.rolePermissions.countForRole(role);
     const firstSeed = storedVersion === 0 && existingRows === 0;
 
     let wanted: Permission[] = [];
@@ -108,19 +106,11 @@ export async function seedRolePermissions(
     }
     if (wanted.length === 0) continue;
 
-    const result = await db.rolePermission.createMany({
-      data: wanted.map((permission) => ({ role, permission })),
-      skipDuplicates: true,
-    });
-    inserted += result.count;
+    inserted += await db.rolePermissions.grantMany(wanted.map((permission) => ({ role, permission })));
   }
 
   if (storedVersion < version) {
-    await db.setting.upsert({
-      where: { key: SEED_VERSION_KEY },
-      create: { key: SEED_VERSION_KEY, value: { version } },
-      update: { value: { version } },
-    });
+    await db.settings.upsert(SEED_VERSION_KEY, { version }, null);
   }
   return { inserted, version };
 }

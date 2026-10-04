@@ -1,6 +1,6 @@
 import "server-only";
 
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
 import { kv, kvBackend } from "@/lib/cache/redis";
 import { log } from "@/lib/log";
 import { checkIndexNowKeyFile } from "@/lib/seo/indexnow";
@@ -40,7 +40,7 @@ export async function checkDatabase(): Promise<IntegrationStatus> {
   const configured = Boolean(process.env.DATABASE_URL);
   if (!configured) return { name: "Database", configured, reachable: null };
   try {
-    await db.$queryRawUnsafe("SELECT 1");
+    await repos.maintenance.ping();
     return { name: "Database", configured, reachable: true };
   } catch (err) {
     log.warn("integration health: database ping failed", { error: String(err) });

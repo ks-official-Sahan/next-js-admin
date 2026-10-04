@@ -8,7 +8,7 @@ import { done, fail, fieldErrorsFrom, formValues, type ActionState } from "@/lib
 import { RESET_TTL_MINUTES, createToken } from "@/lib/auth/invite-token";
 import { limit } from "@/lib/cache/ratelimit";
 import { clientIp, UNKNOWN_IP } from "@/lib/security/ip";
-import { db } from "@/lib/db/prisma";
+import { repos, withTx } from "@/lib/data";
 import { sendEmail } from "@/lib/email";
 import { passwordReset } from "@/lib/email/templates";
 import { getEnv } from "@/lib/env";
@@ -37,10 +37,7 @@ export async function requestPasswordResetAction(_previous: ActionState, formDat
   if (ip !== UNKNOWN_IP && !(await limit("reset:ip", ip)).ok) return fail("Too many attempts. Try again later.");
   if (!(await limit("reset:email", email)).ok) return done(GENERIC);
 
-  const user = await db.user.findUnique({
-    where: { email },
-    select: { id: true, name: true, disabledAt: true },
-  });
+  const user = await repos.users.findRefByEmail(email);
 
   // Silently do nothing for an unknown or disabled account, but still return
   // the generic message: the response must look identical either way.
@@ -49,19 +46,14 @@ export async function requestPasswordResetAction(_previous: ActionState, formDat
     if (secret) {
       const { token, hash } = createToken(secret);
       try {
-        const row = await db.$transaction(async (tx) => {
-          await tx.authToken.updateMany({
-            where: { purpose: "PASSWORD_RESET", userId: user.id, usedAt: null, revokedAt: null },
-            data: { revokedAt: new Date() },
-          });
-          const created = await tx.authToken.create({
-            data: {
-              purpose: "PASSWORD_RESET",
-              email,
-              userId: user.id,
-              tokenHash: hash,
-              expiresAt: new Date(Date.now() + RESET_TTL_MINUTES * 60 * 1000),
-            },
+        const row = await withTx(async (tx) => {
+          await tx.authTokens.revokeOpenForUser("PASSWORD_RESET", user.id);
+          const created = await tx.authTokens.create({
+            purpose: "PASSWORD_RESET",
+            email,
+            userId: user.id,
+            tokenHash: hash,
+            expiresAt: new Date(Date.now() + RESET_TTL_MINUTES * 60 * 1000),
           });
           await audit(
             { action: "auth.password.reset_requested_self", actor: { id: user.id, email }, entityType: "User", entityId: user.id },
@@ -79,7 +71,7 @@ export async function requestPasswordResetAction(_previous: ActionState, formDat
           { to: email, subject: rendered.subject, html: rendered.html, text: rendered.text, category: "security" },
           { actor: { id: user.id, email } }
         );
-        if (!sent.ok) await db.authToken.update({ where: { id: row.id }, data: { revokedAt: new Date() } });
+        if (!sent.ok) await repos.authTokens.revoke(row.id);
       } catch {
         // Fall through to the generic message regardless of what failed.
       }

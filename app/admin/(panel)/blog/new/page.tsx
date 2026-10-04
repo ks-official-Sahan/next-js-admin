@@ -1,7 +1,7 @@
 import { blogAiEnabled, blogAiImagesEnabled } from "@/lib/ai/availability";
 import { hasPermission, requirePermission } from "@/lib/auth/dal";
 import { createPostAction } from "@/lib/actions/blog";
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
 import { SiteMetadata } from "@/config/site";
 
 import BlogEditorForm from "@/components/admin/blog/BlogEditorForm";
@@ -9,13 +9,10 @@ import BlogEditorForm from "@/components/admin/blog/BlogEditorForm";
 export const metadata = { title: "New post" };
 
 async function loadTaxonomy() {
-  const [topicRows, tagRows] = await Promise.all([
-    db.post.findMany({ distinct: ["topic"], select: { topic: true }, orderBy: { topic: "asc" } }),
-    db.post.findMany({ select: { tags: true }, take: 200 }),
-  ]);
+  const [topics, tagLists] = await Promise.all([repos.posts.topics(), repos.posts.tagLists(200)]);
   return {
-    topics: topicRows.map((row) => row.topic).filter(Boolean),
-    tags: [...new Set(tagRows.flatMap((row) => row.tags))].sort(),
+    topics: topics.filter(Boolean),
+    tags: [...new Set(tagLists.flat())].sort(),
   };
 }
 

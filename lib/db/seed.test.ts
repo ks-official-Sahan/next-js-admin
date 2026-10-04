@@ -15,64 +15,46 @@ interface UserRow {
   mustChangePassword: boolean;
 }
 
-/** In-memory stand-in for the parts of Prisma the seeds use. */
+/** In-memory stand-in for the repositories the seeds use. */
 function fakeDb() {
   const users: UserRow[] = [];
   const grants: Array<{ role: string; permission: string }> = [];
   const settings = new Map<string, unknown>();
 
   const client = {
-    user: {
-      async findUnique({ where }: { where: { email: string } }) {
-        return users.find((user) => user.email === where.email) ?? null;
+    users: {
+      async existsByEmail(email: string) {
+        return users.some((user) => user.email === email);
       },
       async count() {
         return users.length;
       },
-      async create({ data }: { data: Omit<UserRow, "id"> }) {
+      async create(data: Omit<UserRow, "id">) {
         const row = { id: `user-${users.length + 1}`, ...data };
         users.push(row);
-        return row;
+        return { id: row.id };
       },
     },
-    rolePermission: {
-      async count({ where }: { where: { role: string } }) {
-        return grants.filter((grant) => grant.role === where.role).length;
+    rolePermissions: {
+      async countForRole(role: string) {
+        return grants.filter((grant) => grant.role === role).length;
       },
-      async createMany({
-        data,
-        skipDuplicates,
-      }: {
-        data: Array<{ role: string; permission: string }>;
-        skipDuplicates?: boolean;
-      }) {
+      async grantMany(data: Array<{ role: string; permission: string }>) {
         let count = 0;
         for (const row of data) {
-          const duplicate = grants.some(
-            (grant) => grant.role === row.role && grant.permission === row.permission
-          );
-          if (duplicate && skipDuplicates) continue;
+          if (grants.some((grant) => grant.role === row.role && grant.permission === row.permission)) continue;
           grants.push({ ...row });
           count += 1;
         }
-        return { count };
+        return count;
       },
     },
-    setting: {
-      async findUnique({ where }: { where: { key: string } }) {
-        return settings.has(where.key) ? { key: where.key, value: settings.get(where.key) } : null;
+    settings: {
+      async find(key: string) {
+        return settings.has(key) ? { key, value: settings.get(key) } : null;
       },
-      async upsert({
-        where,
-        create,
-        update,
-      }: {
-        where: { key: string };
-        create: { key: string; value: unknown };
-        update: { value: unknown };
-      }) {
-        settings.set(where.key, settings.has(where.key) ? update.value : create.value);
-        return {};
+      async upsert(key: string, value: unknown) {
+        settings.set(key, value);
       },
     },
   };

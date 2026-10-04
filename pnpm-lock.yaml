@@ -39,8 +39,8 @@ importers:
         specifier: ^0.2.0
         version: 0.2.0
       '@sahan-sac/auth-kit':
-        specifier: ^0.3.1
-        version: 0.3.1(next-auth@5.0.0-beta.32(next@16.3.6(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(nodemailer@10.0.10)(react@19.2.8))(next@16.3.6(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)
+        specifier: ^0.4.0
+        version: 0.4.0(next-auth@5.0.0-beta.32(next@16.3.6(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(nodemailer@10.0.10)(react@19.2.8))(next@16.3.6(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)
       '@sahan-sac/blog-kit':
         specifier: ^0.2.0
         version: 0.2.0
@@ -1052,13 +1052,29 @@ packages:
     resolution: {integrity: sha512-P+yPLNMsKxMdHVQbONUOCv4U/onnj6Klt+epVFv+o2K4OGURJ9GfXDMPI+wnID0KYqcSsyrfIUWeMbUjH56RZQ==}
     engines: {node: '>=20'}
 
-  '@sahan-sac/auth-kit@0.3.1':
-    resolution: {integrity: sha512-eBujD17COM5kgIusreMTTq5FtdccfzHgZU6BTNGaPphginY4CUV/U6KO4y30bsRCq15EeyWSh8ZUnqfvknZHcQ==}
+  '@sahan-sac/auth-kit@0.4.0':
+    resolution: {integrity: sha512-9efnbnqVVQHLUguCWDr/kuXuvVBkuOsRW9WMInq3bDDtgvprcxZkpQnyXa32mcchQmF1+8e5GfWseDaPWNlH8A==}
     engines: {node: '>=20'}
     peerDependencies:
+      better-auth: ^1.7.6
+      drizzle-orm: '>=0.44.0 <1'
+      hono: ^4.6.0
       next: ^16.3.5
       next-auth: 5.0.0-beta.32
       react: ^19.0.0
+    peerDependenciesMeta:
+      better-auth:
+        optional: true
+      drizzle-orm:
+        optional: true
+      hono:
+        optional: true
+      next:
+        optional: true
+      next-auth:
+        optional: true
+      react:
+        optional: true
 
   '@sahan-sac/blog-kit@0.2.0':
     resolution: {integrity: sha512-m8IOQZRZHhYXXp+XNEljlKcQLcUamXmx6GBuem9uAd3WXjCoeqdkfTPG7MaXBOYBwRkwLBE3CkYMeM3J1vs+qQ==}
@@ -3539,6 +3555,10 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
+  ua-parser-js@1.0.41:
+    resolution: {integrity: sha512-LbBDqdIC5s8iROCUjMbW1f5dJQTEFB1+KO9ogbvlb3nm9n4YHa5p4KTvFPWvh2Hs8gZMBuiB1/8+pdfe/tDPug==}
+    hasBin: true
+
   ufo@1.6.4:
     resolution: {integrity: sha512-JFNbkD1Svwe0KvGi8GOeLcP4kAWQ609twvCdcHxq1oSL8svv39ZuSvajcD8B+5D0eL4+s1Is2D/O6KN3qcTeRA==}
 
@@ -4428,11 +4448,13 @@ snapshots:
       server-only: 0.0.1
       zod: 4.6.5
 
-  '@sahan-sac/auth-kit@0.3.1(next-auth@5.0.0-beta.32(next@16.3.6(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(nodemailer@10.0.10)(react@19.2.8))(next@16.3.6(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)':
+  '@sahan-sac/auth-kit@0.4.0(next-auth@5.0.0-beta.32(next@16.3.6(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(nodemailer@10.0.10)(react@19.2.8))(next@16.3.6(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@upstash/ratelimit': 2.2.0(@upstash/redis@1.39.0)
       '@upstash/redis': 1.39.0
       bcryptjs: 3.0.3
+      ua-parser-js: 1.0.41
+    optionalDependencies:
       next: 16.3.6(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       next-auth: 5.0.0-beta.32(next@16.3.6(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(nodemailer@10.0.10)(react@19.2.8)
       react: 19.2.8
@@ -7200,6 +7222,8 @@ snapshots:
       - supports-color
 
   typescript@5.9.3: {}
+
+  ua-parser-js@1.0.41: {}
 
   ufo@1.6.4: {}
 

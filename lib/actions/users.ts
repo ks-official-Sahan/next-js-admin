@@ -13,14 +13,13 @@ import { ROLES, type RoleName } from "@/lib/auth/permissions";
 import { assignableRoles } from "@/lib/auth/rbac-rules";
 import { invalidateSessionState, invalidateUserSessionState, revokeUserSessions } from "@/lib/auth/session-store";
 import { limit } from "@/lib/cache/ratelimit";
-import { db } from "@/lib/db/prisma";
+import { repos, withTx } from "@/lib/data";
 import { sendEmail } from "@/lib/email";
 import { invite, passwordReset } from "@/lib/email/templates";
 import { getEnv } from "@/lib/env";
 import { absoluteUrl } from "@/lib/site-url";
 import { checkChangeRole, checkDelete, checkInvite, checkReset, checkSetDisabled } from "@/lib/users/rules";
 import { countActiveDevelopers, findUserRef } from "@/lib/users/service";
-import { lockDevelopers } from "@/lib/users/tx";
 
 // Every change to another account. Order in each function: authorize, validate,
 // check the rules, write the change and its audit row in one transaction, then
@@ -63,35 +62,24 @@ export async function inviteUser(_previous: ActionState, formData: FormData): Pr
   if (!allowed.ok) return fail(allowed.error);
   if (!(await limit("invite:actor", actor.id)).ok) return fail("You sent many invitations. Try again in an hour.");
 
-  if (await db.user.findUnique({ where: { email: parsed.data.email }, select: { id: true } })) {
+  if (await repos.users.existsByEmail(parsed.data.email)) {
     return fail("An account with that email already exists.", { email: "Already has an account." });
   }
 
   const { token, hash } = createToken(authSecret());
   const expiresAt = new Date(Date.now() + INVITE_TTL_HOURS * 3600 * 1000);
   try {
-    const row = await db.$transaction(async (tx) => {
+    const row = await withTx(async (tx) => {
       // One open invitation per address: a new one replaces the old link.
-      await tx.authToken.updateMany({
-        where: {
-          purpose: "INVITE",
-          email: parsed.data.email,
-          usedAt: null,
-          revokedAt: null,
-          // Never cancel an invitation for a role this actor could not have sent.
-          OR: [{ role: { in: [...assignableRoles(actor.role)] } }, { createdById: actor.id }],
-        },
-        data: { revokedAt: new Date() },
-      });
-      const created = await tx.authToken.create({
-        data: {
-          purpose: "INVITE",
-          email: parsed.data.email,
-          role: parsed.data.role,
-          tokenHash: hash,
-          createdById: actor.id,
-          expiresAt,
-        },
+      // Never cancel an invitation for a role this actor could not have sent.
+      await tx.authTokens.revokeOpenInvitesTo(parsed.data.email, { roles: assignableRoles(actor.role), createdById: actor.id });
+      const created = await tx.authTokens.create({
+        purpose: "INVITE",
+        email: parsed.data.email,
+        role: parsed.data.role,
+        tokenHash: hash,
+        createdById: actor.id,
+        expiresAt,
       });
       await audit(
         {
@@ -117,7 +105,7 @@ export async function inviteUser(_previous: ActionState, formData: FormData): Pr
       { actor }
     );
     if (!sent.ok) {
-      await db.authToken.update({ where: { id: row.id }, data: { revokedAt: new Date() } });
+      await repos.authTokens.revoke(row.id);
       return fail("The invitation could not be emailed, so it was cancelled. Check the email settings and try again.");
     }
   } catch {
@@ -136,16 +124,12 @@ export async function revokeInvite(_previous: ActionState, formData: FormData): 
   if (typeof id !== "string" || !id) return fail("Missing invitation.");
 
   try {
-    const revoked = await db.$transaction(async (tx) => {
-      const row = await tx.authToken.findFirst({
-        where: { id, purpose: "INVITE", usedAt: null, revokedAt: null },
-        select: { id: true, email: true, role: true },
-      });
+    const revoked = await withTx(async (tx) => {
+      const row = await tx.authTokens.findOpenInvite(id);
       if (!row) return null;
       // A manager may only cancel invitations for roles they could have sent.
-      if (!checkInvite(access.user, (row.role ?? "EDITOR") as RoleName).ok) return null;
-      const result = await tx.authToken.updateMany({ where: { id, revokedAt: null, usedAt: null }, data: { revokedAt: new Date() } });
-      if (result.count === 0) return null;
+      if (!checkInvite(access.user, row.role ?? "EDITOR").ok) return null;
+      if ((await tx.authTokens.revokeIfOpen(id)) === 0) return null;
       await audit(
         { action: "invite.revoked", actor: access.user, entityType: "AuthToken", entityId: id, before: { email: row.email, role: row.role } },
         tx
@@ -177,24 +161,21 @@ export async function createUser(_previous: ActionState, formData: FormData): Pr
   const policy = checkPassword(parsed.data.password, { email: parsed.data.email, name: parsed.data.name });
   if (!policy.ok) return fail("Choose a stronger password.", { password: policy.problems.join(" ") });
 
-  if (await db.user.findUnique({ where: { email: parsed.data.email }, select: { id: true } })) {
+  if (await repos.users.existsByEmail(parsed.data.email)) {
     return fail("An account with that email already exists.", { email: "Already has an account." });
   }
 
   try {
     const passwordHash = await hashPassword(parsed.data.password);
-    await db.$transaction(async (tx) => {
-      const created = await tx.user.create({
-        data: {
-          email: parsed.data.email,
-          name: parsed.data.name || null,
-          role: parsed.data.role,
-          passwordHash,
-          // The creator knows this password, so the new user must replace it at first sign-in.
-          mustChangePassword: true,
-          createdById: actor.id,
-        },
-        select: { id: true },
+    await withTx(async (tx) => {
+      const created = await tx.users.create({
+        email: parsed.data.email,
+        name: parsed.data.name || null,
+        role: parsed.data.role,
+        passwordHash,
+        // The creator knows this password, so the new user must replace it at first sign-in.
+        mustChangePassword: true,
+        createdById: actor.id,
       });
       await audit(
         {
@@ -233,20 +214,20 @@ export async function changeRole(_previous: ActionState, formData: FormData): Pr
   if (!verdict.ok) return fail(verdict.error);
 
   try {
-    await db.$transaction(async (tx) => {
+    await withTx(async (tx) => {
       // Locked and re-read: the checks above ran on a snapshot that may be stale.
-      const activeDevelopers = await lockDevelopers(tx);
-      const fresh = await tx.user.findUnique({ where: { id: target.id }, select: { role: true, disabledAt: true } });
+      const activeDevelopers = await tx.users.lockActiveDevelopers();
+      const fresh = await tx.users.findAccessState(target.id);
       if (!fresh) throw new Refused("That user does not exist.");
       const again = checkChangeRole({
         actor: access.user,
-        target: { id: target.id, role: fresh.role as RoleName, disabled: Boolean(fresh.disabledAt) },
+        target: { id: target.id, role: fresh.role, disabled: Boolean(fresh.disabledAt) },
         activeDevelopers,
         newRole: parsed.data,
       });
       if (!again.ok) throw new Refused(again.error);
 
-      await tx.user.update({ where: { id: target.id }, data: { role: parsed.data } });
+      await tx.users.update(target.id, { role: parsed.data });
       await audit(
         {
           action: "user.role_changed",
@@ -286,26 +267,21 @@ export async function setDisabled(_previous: ActionState, formData: FormData): P
   if (!verdict.ok) return fail(verdict.error);
 
   try {
-    await db.$transaction(async (tx) => {
-      const activeDevelopers = await lockDevelopers(tx);
-      const fresh = await tx.user.findUnique({ where: { id: target.id }, select: { role: true, disabledAt: true } });
+    await withTx(async (tx) => {
+      const activeDevelopers = await tx.users.lockActiveDevelopers();
+      const fresh = await tx.users.findAccessState(target.id);
       if (!fresh) throw new Refused("That user does not exist.");
       const again = checkSetDisabled({
         actor: access.user,
-        target: { id: target.id, role: fresh.role as RoleName, disabled: Boolean(fresh.disabledAt) },
+        target: { id: target.id, role: fresh.role, disabled: Boolean(fresh.disabledAt) },
         activeDevelopers,
         disabled,
       });
       if (!again.ok) throw new Refused(again.error);
 
-      await tx.user.update({ where: { id: target.id }, data: { disabledAt: disabled ? new Date() : null } });
+      await tx.users.update(target.id, { disabledAt: disabled ? new Date() : null });
       // Invitations a disabled person sent stop working with their account.
-      if (disabled) {
-        await tx.authToken.updateMany({
-          where: { purpose: "INVITE", createdById: target.id, usedAt: null, revokedAt: null },
-          data: { revokedAt: new Date() },
-        });
-      }
+      if (disabled) await tx.authTokens.revokeOpenInvitesSentBy(target.id);
       await audit(
         {
           action: disabled ? "user.disabled" : "user.enabled",
@@ -364,23 +340,21 @@ export async function deleteUser(_previous: ActionState, formData: FormData): Pr
   if (!verdict.ok) return fail(verdict.error);
 
   // The rows go with the user, so note the ids first and drop their cached state after.
-  const sessionIds = (await db.userSession.findMany({ where: { userId: target.id }, select: { id: true } })).map(
-    (row) => row.id
-  );
+  const sessionIds = await repos.sessions.listIdsForUser(target.id);
   try {
-    await db.$transaction(async (tx) => {
-      const activeDevelopers = await lockDevelopers(tx);
-      const fresh = await tx.user.findUnique({ where: { id: target.id }, select: { role: true, disabledAt: true } });
+    await withTx(async (tx) => {
+      const activeDevelopers = await tx.users.lockActiveDevelopers();
+      const fresh = await tx.users.findAccessState(target.id);
       if (!fresh) throw new Refused("That user does not exist.");
       const again = checkDelete({
         actor: access.user,
-        target: { id: target.id, role: fresh.role as RoleName, disabled: Boolean(fresh.disabledAt) },
+        target: { id: target.id, role: fresh.role, disabled: Boolean(fresh.disabledAt) },
         activeDevelopers,
       });
       if (!again.ok) throw new Refused(again.error);
 
-      await tx.authToken.deleteMany({ where: { OR: [{ userId: target.id }, { purpose: "INVITE", createdById: target.id, usedAt: null }] } });
-      await tx.user.delete({ where: { id: target.id } });
+      await tx.authTokens.deleteForUser(target.id);
+      await tx.users.delete(target.id);
       await audit(
         {
           action: "user.deleted",
@@ -420,20 +394,15 @@ export async function sendReset(_previous: ActionState, formData: FormData): Pro
 
   const { token, hash } = createToken(authSecret());
   try {
-    const row = await db.$transaction(async (tx) => {
-      await tx.authToken.updateMany({
-        where: { purpose: "PASSWORD_RESET", userId: target.id, usedAt: null, revokedAt: null },
-        data: { revokedAt: new Date() },
-      });
-      const created = await tx.authToken.create({
-        data: {
-          purpose: "PASSWORD_RESET",
-          email: target.email,
-          userId: target.id,
-          tokenHash: hash,
-          createdById: access.user.id,
-          expiresAt: new Date(Date.now() + RESET_TTL_MINUTES * 60 * 1000),
-        },
+    const row = await withTx(async (tx) => {
+      await tx.authTokens.revokeOpenForUser("PASSWORD_RESET", target.id);
+      const created = await tx.authTokens.create({
+        purpose: "PASSWORD_RESET",
+        email: target.email,
+        userId: target.id,
+        tokenHash: hash,
+        createdById: access.user.id,
+        expiresAt: new Date(Date.now() + RESET_TTL_MINUTES * 60 * 1000),
       });
       await audit(
         {
@@ -458,7 +427,7 @@ export async function sendReset(_previous: ActionState, formData: FormData): Pro
       { actor: access.user }
     );
     if (!sent.ok) {
-      await db.authToken.update({ where: { id: row.id }, data: { revokedAt: new Date() } });
+      await repos.authTokens.revoke(row.id);
       return fail("The reset link could not be emailed, so it was cancelled. Check the email settings and try again.");
     }
   } catch {

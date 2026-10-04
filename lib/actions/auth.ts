@@ -12,7 +12,7 @@ import { challengeOwner, issueChallenge, verifyChallenge, type IssueResult } fro
 import { MFA_TTL_MINUTES, normalizeCode } from "@/lib/auth/mfa-rules";
 import { safeCallbackUrl } from "@/lib/auth/safe-callback-url";
 import { revokeSession } from "@/lib/auth/session-store";
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
 
 // Sign-in and sign-out as Server Functions. They stay POST requests to the
 // admin route, so the proxy origin check and the Next origin check both apply
@@ -98,10 +98,7 @@ export async function startSignIn(_previous: SignInState, formData: FormData): P
   if (refused?.code === "mfa_required") {
     // The password was right (Auth.js only says so after the limiter and the hash
     // check), so it is safe to look the account up and send it a code.
-    const user = await db.user.findUnique({
-      where: { email: String(email).trim().toLowerCase() },
-      select: { id: true, email: true, name: true, disabledAt: true },
-    });
+    const user = await repos.users.findRefByEmail(String(email).trim().toLowerCase());
     if (!user || user.disabledAt) return { error: GENERIC };
     const issued = await issueChallenge({ userId: user.id, email: user.email, name: user.name, purpose: "SIGN_IN" });
     return issued.ok ? codeStep(issued.challengeId, user.email) : issueError(issued);

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
 import { log } from "@/lib/log";
 
 // Dashboard helper: queries for the admin dashboard widgets.
@@ -12,18 +12,7 @@ import { log } from "@/lib/log";
  */
 export async function getRecentActivity(limit = 10) {
   try {
-    return await db.auditLog.findMany({
-      take: limit,
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        action: true,
-        createdAt: true,
-        actorEmail: true,
-        entityType: true,
-        entityId: true,
-      },
-    });
+    return await repos.dashboard.recentActivity(limit);
   } catch {
     return [];
   }
@@ -37,8 +26,8 @@ export async function getRecentActivity(limit = 10) {
 export async function getContentCounts(): Promise<{ drafts: number; unpublished: number }> {
   try {
     const [blocks, posts] = await Promise.all([
-      db.contentBlock.count({ where: { status: "DRAFT" } }),
-      db.post.count({ where: { status: { in: ["DRAFT", "SCHEDULED"] } } }),
+      repos.dashboard.countDraftBlocks(),
+      repos.dashboard.countUnpublishedPosts(),
     ]);
     return { drafts: blocks, unpublished: blocks + posts };
   } catch {
@@ -51,9 +40,7 @@ export async function getContentCounts(): Promise<{ drafts: number; unpublished:
  */
 export async function getNewInquiriesCount() {
   try {
-    return await db.inquiry.count({
-      where: { status: "NEW" },
-    });
+    return await repos.dashboard.countNewInquiries();
   } catch {
     return 0;
   }
@@ -65,7 +52,7 @@ export async function getNewInquiriesCount() {
 export async function getSystemHealth() {
   // Both probes run at once: the dashboard waits for the slower one, not the sum.
   const [database, redis] = await Promise.allSettled([
-    db.$queryRaw`SELECT 1`,
+    repos.maintenance.ping(),
     import("@/lib/cache/redis").then(({ kv }) => kv.get("health-check")),
   ]);
   return { database: database.status === "fulfilled", redis: redis.status === "fulfilled" };
@@ -101,13 +88,7 @@ export async function getEmailHealth() {
  */
 export async function getUserSecurityStatus(userId: string) {
   try {
-    const user = await db.user.findUnique({
-      where: { id: userId },
-      select: {
-        mfaEnabled: true,
-        mustChangePassword: true,
-      },
-    });
+    const user = await repos.users.findSecurityStatus(userId);
     return user ?? { mfaEnabled: false, mustChangePassword: false };
   } catch {
     return { mfaEnabled: false, mustChangePassword: false };

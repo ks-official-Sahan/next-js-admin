@@ -10,6 +10,7 @@ import { audit } from "../lib/admin/audit";
 import { hashPassword } from "../lib/auth/password";
 import { checkPassword } from "../lib/auth/password-policy";
 import { revokeUserSessions } from "../lib/auth/session-store";
+import { createRepos } from "../lib/data/prisma";
 import { db } from "../lib/db/prisma";
 
 const ACTOR = { id: null, email: "cli" } as const;
@@ -88,7 +89,7 @@ async function clearMfa(email: string) {
         after: { mfaEnabled: false },
         meta: { via: "cli", email: user.email },
       },
-      tx
+      createRepos(tx)
     );
   });
   console.log(`Two-factor sign-in is off for ${user.email}.`);
@@ -121,7 +122,7 @@ async function setPassword(email: string) {
         entityId: user.id,
         meta: { via: "cli", email: user.email },
       },
-      tx
+      createRepos(tx)
     );
   });
   // The new hash already invalidates older sessions by fingerprint; this also ends the rows.

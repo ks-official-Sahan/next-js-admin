@@ -5,9 +5,8 @@ import { z } from "zod";
 import { audit } from "@/lib/admin/audit";
 import { authorizeAction } from "@/lib/actions/guard";
 import { done, fail, fieldErrorsFrom, formValues, type ActionState } from "@/lib/actions/state";
-import type { RoleName } from "@/lib/auth/permissions";
 import { roleCan } from "@/lib/auth/rbac";
-import { db } from "@/lib/db/prisma";
+import { repos, withTx } from "@/lib/data";
 import { log } from "@/lib/log";
 
 const LEADS_PATH = "/admin/leads";
@@ -38,21 +37,14 @@ export async function changeInquiryStatus(
   }
 
   try {
-    const inquiry = await db.inquiry.findUnique({
-      where: { id: parsed.data.inquiryId },
-      select: { id: true, status: true },
-    });
+    const inquiry = await repos.inquiries.findById(parsed.data.inquiryId);
 
     if (!inquiry) {
       return fail("Inquiry not found.");
     }
 
-    await db.$transaction(async (tx) => {
-      const updated = await tx.inquiry.update({
-        where: { id: inquiry.id },
-        data: { status: parsed.data.status },
-        select: { id: true, status: true },
-      });
+    await withTx(async (tx) => {
+      const updated = await tx.inquiries.update(inquiry.id, { status: parsed.data.status });
 
       await audit(
         {
@@ -94,21 +86,14 @@ export async function addInquiryNote(
   }
 
   try {
-    const inquiry = await db.inquiry.findUnique({
-      where: { id: parsed.data.inquiryId },
-      select: { id: true, notes: true },
-    });
+    const inquiry = await repos.inquiries.findById(parsed.data.inquiryId);
 
     if (!inquiry) {
       return fail("Inquiry not found.");
     }
 
-    await db.$transaction(async (tx) => {
-      const updated = await tx.inquiry.update({
-        where: { id: inquiry.id },
-        data: { notes: parsed.data.note || null },
-        select: { id: true, notes: true },
-      });
+    await withTx(async (tx) => {
+      const updated = await tx.inquiries.update(inquiry.id, { notes: parsed.data.note || null });
 
       await audit(
         {
@@ -137,13 +122,10 @@ export async function addInquiryNote(
  * them on the leads screen (which itself gates on that permission).
  */
 async function checkAssignee(assigneeId: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  const assignee = await db.user.findUnique({
-    where: { id: assigneeId },
-    select: { id: true, role: true, disabledAt: true },
-  });
+  const assignee = await repos.users.findAccessState(assigneeId);
   if (!assignee) return { ok: false, error: "Assignee not found." };
   if (assignee.disabledAt) return { ok: false, error: "That user's account is disabled." };
-  if (!(await roleCan(assignee.role as RoleName, "manageLeads"))) {
+  if (!(await roleCan(assignee.role, "manageLeads"))) {
     return { ok: false, error: "That user's role cannot manage leads." };
   }
   return { ok: true };
@@ -169,10 +151,7 @@ export async function assignInquiry(
   }
 
   try {
-    const inquiry = await db.inquiry.findUnique({
-      where: { id: parsed.data.inquiryId },
-      select: { id: true, assigneeId: true },
-    });
+    const inquiry = await repos.inquiries.findById(parsed.data.inquiryId);
 
     if (!inquiry) {
       return fail("Inquiry not found.");
@@ -183,12 +162,8 @@ export async function assignInquiry(
       if (!checked.ok) return fail(checked.error);
     }
 
-    await db.$transaction(async (tx) => {
-      const updated = await tx.inquiry.update({
-        where: { id: inquiry.id },
-        data: { assigneeId: parsed.data.assigneeId || null },
-        select: { id: true, assigneeId: true },
-      });
+    await withTx(async (tx) => {
+      const updated = await tx.inquiries.update(inquiry.id, { assigneeId: parsed.data.assigneeId || null });
 
       await audit(
         {
@@ -224,17 +199,14 @@ export async function deleteInquiry(
   }
 
   try {
-    const inquiry = await db.inquiry.findUnique({
-      where: { id: inquiryId },
-      select: { id: true, name: true, email: true },
-    });
+    const inquiry = await repos.inquiries.findById(inquiryId);
 
     if (!inquiry) {
       return fail("Inquiry not found.");
     }
 
-    await db.$transaction(async (tx) => {
-      await tx.inquiry.delete({ where: { id: inquiry.id } });
+    await withTx(async (tx) => {
+      await tx.inquiries.delete(inquiry.id);
 
       await audit(
         {

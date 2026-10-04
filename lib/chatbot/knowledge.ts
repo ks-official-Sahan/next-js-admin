@@ -5,7 +5,7 @@ import { buildKnowledge, profileSection, trainingSection, type KnowledgeSource }
 import { cached } from "@/lib/cache/cached";
 import { loadOrNull } from "@/lib/cache/fallback";
 import { TAGS } from "@/lib/cache/tags";
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
 import { log } from "@/lib/log";
 import { getPosts } from "@/lib/blog/queries";
 import { getPageContent } from "@/lib/cms/loaders";
@@ -44,12 +44,7 @@ async function siteContent(): Promise<string> {
 }
 
 async function trainingEntries(): Promise<string> {
-  const entries = await db.chatTrainingEntry.findMany({
-    where: { isActive: true },
-    orderBy: { priority: "desc" },
-    take: 50,
-    select: { question: true, answer: true },
-  });
+  const entries = await repos.chatTraining.listActive(50);
   return trainingSection(entries);
 }
 

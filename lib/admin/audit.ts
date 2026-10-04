@@ -1,12 +1,12 @@
 import "server-only";
 
-import type { Prisma } from "@prisma/client";
 import { headers } from "next/headers";
 
 import type { AuditEvent } from "@sahan-sac/auth-kit";
 import { clientIp, UNKNOWN_IP } from "@sahan-sac/auth-kit/security";
 
-import { db } from "@/lib/db/prisma";
+import { repos, type Repos } from "@/lib/data";
+import type { AuditRow } from "@/lib/data/audit";
 import { AUDIT_SENSITIVE_KEY, log, redact as redactValue } from "@/lib/log";
 
 // The one writer for the audit trail (design notes, section 6.9).
@@ -14,20 +14,17 @@ import { AUDIT_SENSITIVE_KEY, log, redact as redactValue } from "@/lib/log";
 
 export type { AuditEvent };
 
-export interface AuditClient {
-  auditLog: {
-    create(args: { data: Prisma.AuditLogUncheckedCreateInput }): Promise<unknown>;
-  };
-}
+/** Where an audit row goes: the repositories (shared, or one transaction's from withTx). */
+export type AuditTarget = Pick<Repos, "audit">;
 
 /** Removes password, token, secret, hash, code and similar values from a payload. */
 export function redact(value: unknown): unknown {
   return redactValue(value, AUDIT_SENSITIVE_KEY);
 }
 
-function json(value: unknown): Prisma.InputJsonValue | undefined {
+function json(value: unknown): unknown {
   if (value === undefined || value === null) return undefined;
-  return redact(value) as Prisma.InputJsonValue;
+  return redact(value);
 }
 
 async function requestContext(): Promise<{ ip?: string; userAgent?: string }> {
@@ -44,13 +41,9 @@ async function requestContext(): Promise<{ ip?: string; userAgent?: string }> {
   }
 }
 
-export interface AuditManyClient {
-  auditLog: {
-    createMany(args: { data: Prisma.AuditLogCreateManyInput[] }): Promise<unknown>;
-  };
-}
+export type AuditManyTarget = Pick<Repos, "audit">;
 
-function row(event: AuditEvent, context: { ip?: string; userAgent?: string }): Prisma.AuditLogUncheckedCreateInput {
+function row(event: AuditEvent, context: { ip?: string; userAgent?: string }): AuditRow {
   return {
     action: event.action,
     actorId: event.actor?.id ?? null,
@@ -66,9 +59,10 @@ function row(event: AuditEvent, context: { ip?: string; userAgent?: string }): P
 }
 
 /** Writes one row. Throws when the write fails. */
-export async function audit(event: AuditEvent, client: AuditClient = db): Promise<void> {
+export async function audit(event: AuditEvent, client: AuditTarget = repos): Promise<void> {
   const context = event.ip || event.userAgent ? {} : await requestContext();
-  await client.auditLog.create({ data: row(event, context) });
+  const data = row(event, context);
+  await client.audit.create(data);
 }
 
 /**
@@ -76,17 +70,18 @@ export async function audit(event: AuditEvent, client: AuditClient = db): Promis
  * interactive transaction one round trip per row would add up fast (and can
  * outrun the transaction timeout). Throws when the write fails.
  */
-export async function auditMany(events: AuditEvent[], client: AuditManyClient = db): Promise<void> {
+export async function auditMany(events: AuditEvent[], client: AuditManyTarget = repos): Promise<void> {
   if (events.length === 0) return;
   const context = await requestContext();
-  await client.auditLog.createMany({ data: events.map((event) => row(event, context)) });
+  const rows = events.map((event) => row(event, context));
+  await client.audit.createMany(rows);
 }
 
 /**
  * For sign-in and sign-out, where a failed audit write must not turn a working
  * login into an outage. The failure itself is logged.
  */
-export async function auditSafe(event: AuditEvent, client?: AuditClient): Promise<void> {
+export async function auditSafe(event: AuditEvent, client?: AuditTarget): Promise<void> {
   try {
     await audit(event, client);
   } catch (error) {

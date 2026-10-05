@@ -7,14 +7,13 @@ import { audit, auditSafe } from "@/lib/admin/audit";
 import { retryMessage } from "@/lib/admin/rate-limited";
 import { authorizeAction } from "@/lib/actions/guard";
 import { done, fail, fieldErrorsFrom, formValues, type ActionState } from "@/lib/actions/state";
-import { unstable_update } from "@/lib/auth/config";
 import type { AuthUser } from "@/lib/auth/dal";
+import { keepSessionAfterPasswordChange } from "@/lib/auth/engine";
 import { consumeChallenge, issueChallenge, verifyChallenge } from "@/lib/auth/mfa";
 import { MFA_TTL_MINUTES, normalizeCode } from "@/lib/auth/mfa-rules";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { checkPassword } from "@/lib/auth/password-policy";
 import { invalidateSessionState, invalidateUserSessionState, revokeSession, revokeUserSessions } from "@/lib/auth/session-store";
-import { passwordFingerprint } from "@/lib/auth/session-state";
 import { createToken, RESET_TTL_MINUTES } from "@/lib/auth/invite-token";
 import { limit } from "@/lib/cache/ratelimit";
 import { repos, withTx } from "@/lib/data";
@@ -130,13 +129,13 @@ export async function changePassword(_previous: ActionState, formData: FormData)
       await audit({ action: "auth.password.changed", actor: user, entityType: "User", entityId: user.id }, tx);
     });
 
-    // Every other session ends. This one stays: its cookie gets the new fingerprint.
+    // Every other session ends. This one stays.
     const ended = await revokeUserSessions(
       user.id,
       { userId: user.id, reason: "password_changed" },
       { exceptSid: user.sid }
     );
-    await unstable_update({ pwf: passwordFingerprint(passwordHash, secret()) });
+    await keepSessionAfterPasswordChange(passwordHash);
     await invalidateSessionState(user.sid);
     if (ended.length > 0) {
       // Session store mutation already succeeded; an audit failure here must

@@ -1,13 +1,12 @@
 "use server";
 
-import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
 
 import { auditSafe } from "@/lib/admin/audit";
 import { retryMessage } from "@/lib/admin/rate-limited";
 import { hasValidUnlock } from "@/lib/admin/unlock-request";
-import { signIn, signOut } from "@/lib/auth/config";
 import { getOptionalUser } from "@/lib/auth/dal";
+import { attemptSignIn, signOutAndRedirect } from "@/lib/auth/engine";
 import { challengeOwner, issueChallenge, verifyChallenge, type IssueResult } from "@/lib/auth/mfa";
 import { MFA_TTL_MINUTES, normalizeCode } from "@/lib/auth/mfa-rules";
 import { safeCallbackUrl } from "@/lib/auth/safe-callback-url";
@@ -47,29 +46,6 @@ const EXPIRED = "That code expired. Sign in again.";
 
 function messageFor(code: string | null | undefined): string {
   return (code && MESSAGES[code]) || GENERIC;
-}
-
-function codeOf(error: unknown): string | null {
-  if (error instanceof AuthError) {
-    const code = (error as AuthError & { code?: string }).code;
-    return typeof code === "string" ? code : "invalid";
-  }
-  return null;
-}
-
-/** `signIn` reports a refusal by throwing or, depending on the version, by returning a URL. */
-async function attemptSignIn(credentials: Record<string, string>): Promise<{ code: string } | null> {
-  try {
-    const result = await signIn("credentials", { ...credentials, redirect: false });
-    if (typeof result === "string" && result.includes("error=")) {
-      return { code: new URL(result, "http://local").searchParams.get("code") ?? "invalid" };
-    }
-    return null;
-  } catch (error) {
-    const code = codeOf(error);
-    if (code === null) throw error;
-    return { code };
-  }
 }
 
 const codeStep = (challengeId: string, email: string, notice?: string): SignInState => ({
@@ -171,5 +147,5 @@ export async function signOutAction(): Promise<void> {
       entityId: user.sid,
     });
   }
-  await signOut({ redirectTo: "/" });
+  await signOutAndRedirect("/");
 }

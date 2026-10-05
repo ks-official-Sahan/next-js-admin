@@ -53,6 +53,54 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+  variants:
+    name: Variant — ${{ matrix.auth }} + ${{ matrix.orm }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        auth: [next-auth, better-auth]
+        orm: [prisma, drizzle]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      # The same step create-admin runs after downloading the template.
+      - name: Apply the variant
+        run: node cli/apply-variants.mjs --auth ${{ matrix.auth }} --orm ${{ matrix.orm }}
+
+      # The variant changes package.json, so the lockfile is updated, not frozen.
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Type check
+        run: pnpm exec tsc --noEmit
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
   cli:
     name: CLI — tests
     runs-on: ubuntu-latest

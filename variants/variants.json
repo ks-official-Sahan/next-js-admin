@@ -1,0 +1,75 @@
+{
+  "$comment": "Read by create-admin (cli/lib/variants.mjs). The repo itself is next-auth + Prisma with the Drizzle implementation alongside. For each choice: copy `overlay` over the project, then delete `remove`, then edit package.json (a null value deletes the key) and .env.example. `combos` overlays apply when both choices match.",
+  "auth": {
+    "next-auth": {},
+    "better-auth": {
+      "overlay": "variants/auth/better-auth",
+      "remove": [
+        "app/api/auth/[...nextauth]",
+        "types/next-auth.d.ts"
+      ],
+      "dependencies": {
+        "better-auth": "^1.7.6",
+        "next-auth": null
+      },
+      "env": {
+        "remove": [
+          "AUTH_TRUST_HOST",
+          "AUTH_DEBUG"
+        ]
+      }
+    }
+  },
+  "orm": {
+    "prisma": {
+      "remove": [
+        "lib/data/drizzle",
+        "lib/db/drizzle.ts",
+        "lib/db/schema.ts",
+        "drizzle.config.ts",
+        "lib/data/schema-parity.test.ts",
+        "lib/data/test-support/drizzle-ddl.ts"
+      ],
+      "dependencies": {
+        "drizzle-orm": null
+      },
+      "devDependencies": {
+        "drizzle-kit": null
+      },
+      "scripts": {
+        "db:drizzle:push": null
+      }
+    },
+    "drizzle": {
+      "overlay": "variants/orm/drizzle",
+      "remove": [
+        "lib/data/prisma",
+        "lib/db/prisma.ts",
+        "prisma",
+        "prisma.config.ts",
+        "lib/data/schema-parity.test.ts",
+        "lib/data/test-support/prisma-ddl.ts"
+      ],
+      "dependencies": {
+        "@prisma/adapter-neon": null,
+        "@prisma/client": null
+      },
+      "devDependencies": {
+        "@prisma/adapter-pg": null,
+        "@electric-sql/pglite-socket": null,
+        "prisma": null
+      },
+      "scripts": {
+        "postinstall": null,
+        "db:generate": null,
+        "db:push": "drizzle-kit push",
+        "db:drizzle:push": null
+      }
+    }
+  },
+  "combos": {
+    "better-auth+drizzle": {
+      "overlay": "variants/combos/better-auth+drizzle"
+    }
+  }
+}

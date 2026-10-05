@@ -29,7 +29,8 @@ point at your own database and deploy.
 ## Stack
 
 Next.js 16 (App Router, Turbopack, `proxy.ts` instead of middleware), React
-19, Prisma 7 (`@prisma/adapter-neon`, works with any Postgres), next-auth 5,
+19, Prisma 7 (`@prisma/adapter-neon`, works with any Postgres) or Drizzle,
+next-auth 5 or Better Auth (see [Auth engine and ORM](#auth-engine-and-orm)),
 Upstash Redis, TanStack Query (admin only), Tailwind CSS 3, TipTap 3. Package
 manager: pnpm.
 
@@ -47,10 +48,28 @@ npm create @sahan-sac/admin@latest my-app
 cd my-app
 ```
 
-This downloads the template, generates fresh random secrets into
-`.env.local`, and optionally installs dependencies and runs `git init` for
-you. See [`cli/README.md`](cli/README.md) for the full option list
-(`--ref`, `--pm`, `--no-install`, `--no-git`).
+This downloads the template, asks for the auth engine and the ORM (or takes
+`--auth` and `--orm`), generates fresh random secrets into `.env.local`, and
+optionally installs dependencies and runs `git init` for you. See
+[`cli/README.md`](cli/README.md) for the full option list (`--ref`, `--pm`,
+`--auth`, `--orm`, `--no-install`, `--no-git`).
+
+### Auth engine and ORM
+
+| Choice | Values | Default |
+| --- | --- | --- |
+| `--auth` | `next-auth` (Auth.js 5, JWT pointing at a session row), `better-auth` (Better Auth, session row with a cookie token) | `next-auth` |
+| `--orm` | `prisma`, `drizzle` | `prisma` |
+
+All four combinations use the same tables and behave the same: auth-kit's
+`authorize` decides every sign-in (hidden login, lockout, emailed MFA codes,
+known-device email, audit) on either engine, and the data layer
+(`lib/data`) has one implementation per ORM behind the same repositories.
+A project can switch engine or ORM later without a data migration.
+
+This repository is the `next-auth` + `prisma` combination with the Drizzle
+implementation alongside; `variants/` holds what the other choices change,
+and CI builds and tests all four.
 
 ### Option B: "Use this template" on GitHub
 
@@ -59,9 +78,13 @@ Click **Use this template** on the
 clone your new repo, then:
 
 ```sh
+node cli/apply-variants.mjs --auth next-auth --orm prisma   # or better-auth / drizzle
 cp .env.example .env.local
 pnpm install
 ```
+
+`apply-variants` makes the same changes the CLI makes; run it once, before
+the first install.
 
 ## Environment setup
 
@@ -84,8 +107,8 @@ against). The schema defaults to `public` — only set `?schema=<name>` on
 projects (see `lib/db/url.ts`).
 
 ```sh
-pnpm db:push     # create tables (fresh project — no migration history needed)
-# or: pnpm exec prisma migrate deploy   # if you're using migrations
+pnpm db:push     # create tables (prisma db push, or drizzle-kit push on Drizzle)
+# or, on Prisma: pnpm exec prisma migrate deploy   # if you're using migrations
 ```
 
 ## Owner bootstrap
@@ -151,12 +174,9 @@ npm (see below).
 
 ## Dependencies
 
-`package.json` depends on `@sahan-sac/auth-kit` as `"^0.1.0"` — a normal npm
-dependency, not a workspace package. **It is not published yet.** Until it
-is, `pnpm install` in this repo (and the CI `app` job) will fail at
-resolving that dependency; the CLI's own install and tests are unaffected.
-There is no committed lockfile for the same reason — one is generated on
-first install once the package is published.
+`package.json` depends on `@sahan-sac/auth-kit` (and the other
+`@sahan-sac/*` kits) as normal npm dependencies, not workspace packages.
+The Better Auth variant needs `@sahan-sac/auth-kit` 0.5.0 or later.
 
 ## License
 

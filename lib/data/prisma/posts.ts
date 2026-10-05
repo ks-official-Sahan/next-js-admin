@@ -50,7 +50,9 @@ export function postRepo(client: DbClient): PostRepo {
     },
     async slugsStartingWith(prefix) {
       const rows = await client.post.findMany({ where: { slug: { startsWith: prefix } }, select: { slug: true } });
-      return rows.map((row) => row.slug);
+      // Prisma cannot escape LIKE wildcards, so `_` or `%` in the prefix may match
+      // more rows; keep only the true prefix matches.
+      return rows.map((row) => row.slug).filter((slug) => slug.startsWith(prefix));
     },
     async topics() {
       const rows = await client.post.findMany({ distinct: ["topic"], select: { topic: true }, orderBy: { topic: "asc" } });

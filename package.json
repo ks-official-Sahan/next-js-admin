@@ -18,7 +18,8 @@
     "db:seed": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx prisma/seed.ts",
     "db:seed-content": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx prisma/seed-content.ts",
     "db:seed-media": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx prisma/seed-media.ts",
-    "db:seed-blog": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx prisma/seed-blog.ts"
+    "db:seed-blog": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx prisma/seed-blog.ts",
+    "db:drizzle:push": "drizzle-kit push"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.71",
@@ -50,6 +51,7 @@
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
+    "drizzle-orm": "^0.45.3",
     "gsap": "^3.13.0",
     "lucide-react": "^0.445.0",
     "marked": "^18.0.14",
@@ -72,6 +74,9 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite-socket": "^0.2.11",
+    "@prisma/adapter-pg": "^7.10.0",
     "@types/node": "^22",
     "@types/nodemailer": "^8.0.2",
     "@types/react": "~19.2.7",
@@ -79,6 +84,7 @@
     "@types/sanitize-html": "^2.16.1",
     "@types/turndown": "^5.0.6",
     "@types/ws": "^8.18.1",
+    "drizzle-kit": "^0.31.11",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.3.5",
     "eslint-plugin-react-hooks": "latest",

@@ -39,8 +39,8 @@ importers:
         specifier: ^0.2.0
         version: 0.2.0
       '@sahan-sac/auth-kit':
-        specifier: ^0.4.1
-        version: 0.4.1(drizzle-orm@0.45.3(@electric-sql/pglite@0.5.8)(@neondatabase/serverless@1.1.0)(@prisma/client@7.10.0(prisma@7.10.0(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@5.9.3))(typescript@5.9.3))(@types/pg@8.23.1)(@upstash/redis@1.39.0)(mysql2@3.15.3)(pg@8.23.1)(postgres@3.4.7)(prisma@7.10.0(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@5.9.3)))(next-auth@5.0.0-beta.32(next@16.3.6(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(nodemailer@10.0.10)(react@19.2.8))(next@16.3.6(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)
+        specifier: ^0.5.0
+        version: 0.5.0(drizzle-orm@0.45.3(@electric-sql/pglite@0.5.8)(@neondatabase/serverless@1.1.0)(@prisma/client@7.10.0(prisma@7.10.0(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@5.9.3))(typescript@5.9.3))(@types/pg@8.23.1)(@upstash/redis@1.39.0)(mysql2@3.15.3)(pg@8.23.1)(postgres@3.4.7)(prisma@7.10.0(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@5.9.3)))(next-auth@5.0.0-beta.32(next@16.3.6(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(nodemailer@10.0.10)(react@19.2.8))(next@16.3.6(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)
       '@sahan-sac/blog-kit':
         specifier: ^0.2.0
         version: 0.2.0
@@ -1420,8 +1420,8 @@ packages:
     resolution: {integrity: sha512-P+yPLNMsKxMdHVQbONUOCv4U/onnj6Klt+epVFv+o2K4OGURJ9GfXDMPI+wnID0KYqcSsyrfIUWeMbUjH56RZQ==}
     engines: {node: '>=20'}
 
-  '@sahan-sac/auth-kit@0.4.1':
-    resolution: {integrity: sha512-Jkjcd0UkCQR/Bq++Lr/w8adx05UBsPuVMcncJOQQarnRqP9YUMl7HAeJWo2YkTRJBdQAj6zWnbB9GuTM0Qk3zA==}
+  '@sahan-sac/auth-kit@0.5.0':
+    resolution: {integrity: sha512-xCQNJzSpsoNrwXEhUALz0shlHDGMVBj6yu3aF5lemaX/voqrtUzOUmg060VpzUZCY7Q+p891TFWxl6vF6k9D6w==}
     engines: {node: '>=20'}
     peerDependencies:
       better-auth: ^1.7.6
@@ -5202,7 +5202,7 @@ snapshots:
       server-only: 0.0.1
       zod: 4.6.5
 
-  '@sahan-sac/auth-kit@0.4.1(drizzle-orm@0.45.3(@electric-sql/pglite@0.5.8)(@neondatabase/serverless@1.1.0)(@prisma/client@7.10.0(prisma@7.10.0(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@5.9.3))(typescript@5.9.3))(@types/pg@8.23.1)(@upstash/redis@1.39.0)(mysql2@3.15.3)(pg@8.23.1)(postgres@3.4.7)(prisma@7.10.0(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@5.9.3)))(next-auth@5.0.0-beta.32(next@16.3.6(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(nodemailer@10.0.10)(react@19.2.8))(next@16.3.6(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)':
+  '@sahan-sac/auth-kit@0.5.0(drizzle-orm@0.45.3(@electric-sql/pglite@0.5.8)(@neondatabase/serverless@1.1.0)(@prisma/client@7.10.0(prisma@7.10.0(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@5.9.3))(typescript@5.9.3))(@types/pg@8.23.1)(@upstash/redis@1.39.0)(mysql2@3.15.3)(pg@8.23.1)(postgres@3.4.7)(prisma@7.10.0(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@5.9.3)))(next-auth@5.0.0-beta.32(next@16.3.6(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(nodemailer@10.0.10)(react@19.2.8))(next@16.3.6(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@upstash/ratelimit': 2.2.0(@upstash/redis@1.39.0)
       '@upstash/redis': 1.39.0

@@ -74,6 +74,8 @@ model User {
   id                 String    @id @default(cuid())
   // Stored lowercase; the service layer normalises before every write.
   email              String    @unique
+  // Read by the Better Auth engine; the app's own flows never set it.
+  emailVerified      Boolean   @default(false)
   name               String?
   passwordHash       String
   role               Role      @default(EDITOR)
@@ -110,10 +112,12 @@ model RolePermission {
   @@map("role_permissions")
 }
 
-// One row per signed-in browser. `id` is the `sid` claim in the JWT. This table
+// One row per signed-in browser. `id` is the `sid` claim in the JWT (next-auth
+// engine); `token` is the session cookie value (Better Auth engine). This table
 // is authoritative for revocation; Redis only caches the state for 30 seconds.
 model UserSession {
   id           String    @id @default(cuid())
+  token        String?   @unique
   userId       String
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   ip           String?
@@ -123,6 +127,7 @@ model UserSession {
   device       String?
   mfaVerified  Boolean   @default(false)
   createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @default(now()) @updatedAt
   lastSeenAt   DateTime  @default(now())
   expiresAt    DateTime
   revokedAt    DateTime?

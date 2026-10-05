@@ -11,7 +11,7 @@ import { ensureUniqueSlug, slugify } from "@sahan-sac/blog-kit/slug";
 
 // Idempotent import of `UpdatesContent.posts` as published posts. Only runs when the Post table is empty, so an
 // edited or newly authored post is never touched or duplicated. Called from
-// prisma/seed-blog.ts, never run against the real database by this agent.
+// scripts/db/seed-blog.ts, never run against the real database by this agent.
 
 type SeedClient = Pick<Repos, "posts">;
 

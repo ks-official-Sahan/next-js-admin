@@ -5,7 +5,7 @@ import { isSafeHref } from "@/lib/cms/href";
 import { isValidSlug, SLUG_MAX_LENGTH } from "@sahan-sac/blog-kit/slug";
 
 // Zod schemas for a post (design notes, Step 12). Shared by
-// lib/actions/blog.ts (admin writes) and prisma/seed-blog.ts (import). The
+// lib/actions/blog.ts (admin writes) and scripts/db/seed-blog.ts (import). The
 // editor sends `content` (raw TipTap HTML); `contentHtml`, `contentText` and
 // `readMinutes` are computed on save (sanitizeRich + computeReadMinutes), never
 // accepted from the client.

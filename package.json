@@ -14,11 +14,11 @@
     "test": "node --conditions=react-server --import tsx --test \"lib/**/*.test.ts\"",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
-    "db:admin": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx prisma/admin-cli.ts",
-    "db:seed": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx prisma/seed.ts",
-    "db:seed-content": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx prisma/seed-content.ts",
-    "db:seed-media": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx prisma/seed-media.ts",
-    "db:seed-blog": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx prisma/seed-blog.ts",
+    "db:admin": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/db/admin-cli.ts",
+    "db:seed": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/db/seed.ts",
+    "db:seed-content": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/db/seed-content.ts",
+    "db:seed-media": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/db/seed-media.ts",
+    "db:seed-blog": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/db/seed-blog.ts",
     "db:drizzle:push": "drizzle-kit push"
   },
   "dependencies": {

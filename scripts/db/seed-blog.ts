@@ -1,14 +1,13 @@
 // CLI entry for the blog import. Run through the package script:
-//   db:seed-blog = node --env-file-if-exists=.env.local --conditions=react-server --import tsx prisma/seed-blog.ts
+//   db:seed-blog = node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/db/seed-blog.ts
 // Idempotent: only writes when the Post table is empty (lib/blog/seed.ts).
 // Not run against the real database by this agent (design notes, Step 12).
 
-import { seedBlog } from "../lib/blog/seed";
-import { createRepos } from "../lib/data/prisma";
-import { db } from "../lib/db/prisma";
+import { seedBlog } from "../../lib/blog/seed";
+import { repos } from "../../lib/data";
 
 async function main(): Promise<void> {
-  const summary = await seedBlog(createRepos(db));
+  const summary = await seedBlog(repos);
   console.log(JSON.stringify(summary));
 }
 

@@ -3,7 +3,9 @@ import { test } from "node:test";
 
 import type { PGlite } from "@electric-sql/pglite";
 
-import { drizzleDdl, pgliteWith, prismaDdl } from "./test-support/pg";
+import { drizzleDdl } from "./test-support/drizzle-ddl";
+import { pgliteWith } from "./test-support/pg";
+import { prismaDdl } from "./test-support/prisma-ddl";
 
 // prisma/schema.prisma and lib/db/schema.ts must build the same database:
 // same tables, columns, types, defaults, enums, indexes and constraints. Then

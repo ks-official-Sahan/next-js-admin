@@ -6,12 +6,11 @@
 // It exists for the case the admin itself cannot help: a lost mailbox with MFA
 // on, or a locked-out owner (design notes, step 7).
 
-import { audit } from "../lib/admin/audit";
-import { hashPassword } from "../lib/auth/password";
-import { checkPassword } from "../lib/auth/password-policy";
-import { revokeUserSessions } from "../lib/auth/session-store";
-import { createRepos } from "../lib/data/prisma";
-import { db } from "../lib/db/prisma";
+import { audit } from "../../lib/admin/audit";
+import { hashPassword } from "../../lib/auth/password";
+import { checkPassword } from "../../lib/auth/password-policy";
+import { revokeUserSessions } from "../../lib/auth/session-store";
+import { authAdapter, repos, withTx } from "../../lib/data";
 
 const ACTOR = { id: null, email: "cli" } as const;
 const CTRL_C = String.fromCharCode(3);
@@ -62,23 +61,25 @@ function readSecret(question: string): Promise<string> {
 }
 
 async function findUser(email: string) {
-  const user = await db.user.findUnique({
-    where: { email: email.trim().toLowerCase() },
-    select: { id: true, email: true, mfaEnabled: true },
-  });
-  if (!user) {
+  const ref = await repos.users.findRefByEmail(email.trim().toLowerCase());
+  const status = ref && (await repos.users.findSecurityStatus(ref.id));
+  if (!ref || !status) {
     console.error("No account has that email.");
     process.exit(1);
   }
-  return user;
+  return { id: ref.id, email: ref.email, mfaEnabled: status.mfaEnabled };
 }
 
 async function clearMfa(email: string) {
   const user = await findUser(email);
-  await db.$transaction(async (tx) => {
-    await tx.user.update({ where: { id: user.id }, data: { mfaEnabled: false } });
-    // Codes already in the mailbox must not work after this.
-    await tx.mfaChallenge.updateMany({ where: { userId: user.id, consumedAt: null }, data: { consumedAt: new Date() } });
+  // Codes already in the mailbox must not work after this. Expiring them first
+  // is safe to repeat, so a failed transaction below only needs a rerun.
+  const now = new Date();
+  for (const purpose of ["SIGN_IN", "ENABLE", "DISABLE"] as const) {
+    await authAdapter.expireOpenMfaChallenges(user.id, purpose, now);
+  }
+  await withTx(async (tx) => {
+    await tx.users.update(user.id, { mfaEnabled: false });
     await audit(
       {
         action: "auth.mfa.disabled",
@@ -89,7 +90,7 @@ async function clearMfa(email: string) {
         after: { mfaEnabled: false },
         meta: { via: "cli", email: user.email },
       },
-      createRepos(tx)
+      tx
     );
   });
   console.log(`Two-factor sign-in is off for ${user.email}.`);
@@ -104,16 +105,10 @@ async function setPassword(email: string) {
     process.exit(1);
   }
   const passwordHash = await hashPassword(password);
-  await db.$transaction(async (tx) => {
+  await withTx(async (tx) => {
     // The operator knows this password, so the owner must choose their own at the next sign-in.
-    await tx.user.update({
-      where: { id: user.id },
-      data: { passwordHash, passwordChangedAt: new Date(), mustChangePassword: true },
-    });
-    await tx.authToken.updateMany({
-      where: { purpose: "PASSWORD_RESET", userId: user.id, usedAt: null, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
+    await tx.users.update(user.id, { passwordHash, passwordChangedAt: new Date(), mustChangePassword: true });
+    await tx.authTokens.revokeOpenForUser("PASSWORD_RESET", user.id);
     await audit(
       {
         action: "auth.password.changed",
@@ -122,7 +117,7 @@ async function setPassword(email: string) {
         entityId: user.id,
         meta: { via: "cli", email: user.email },
       },
-      createRepos(tx)
+      tx
     );
   });
   // The new hash already invalidates older sessions by fingerprint; this also ends the rows.

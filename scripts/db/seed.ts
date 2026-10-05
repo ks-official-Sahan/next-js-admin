@@ -1,13 +1,12 @@
 // CLI entry for the idempotent seeds. Run through the package script:
-//   db:seed = node --env-file-if-exists=.env.local --conditions=react-server --import tsx prisma/seed.ts
+//   db:seed = node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/db/seed.ts
 // It prints a summary and never prints a secret.
 
-import { db } from "../lib/db/prisma";
-import { createRepos } from "../lib/data/prisma";
-import { runSeed } from "../lib/db/seed";
+import { repos } from "../../lib/data";
+import { runSeed } from "../../lib/db/seed";
 
 async function main(): Promise<void> {
-  const summary = await runSeed(createRepos(db));
+  const summary = await runSeed(repos);
   console.log(JSON.stringify(summary));
 }
 

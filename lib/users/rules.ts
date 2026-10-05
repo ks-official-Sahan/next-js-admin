@@ -74,3 +74,59 @@ export function checkInvite(actor: Person, role: RoleName): Check {
   if (!assignableRoles(actor.role).includes(role)) return refuse("You are not allowed to give that role.");
   return ok;
 }
+
+/** Signing someone out everywhere: the same reach as managing them. */
+export const checkSignOut = (context: Context): Check => manage(context);
+
+export const BULK_USER_OPS = ["role", "disable", "enable", "sign-out", "delete"] as const;
+export type BulkUserOp = (typeof BULK_USER_OPS)[number];
+
+export interface BulkTarget extends Subject {
+  email: string;
+}
+
+export interface BulkPlan<T extends BulkTarget = BulkTarget> {
+  apply: T[];
+  skipped: { target: T; reason: string }[];
+}
+
+/**
+ * The single-user rule, run for each target in turn. The enabled-developer
+ * count goes down as the plan takes developers away, so a bulk action can
+ * never remove the last developer even when every row on its own would pass.
+ */
+export function planBulk<T extends BulkTarget>(input: {
+  op: BulkUserOp;
+  actor: Person;
+  targets: readonly T[];
+  activeDevelopers: number;
+  /** The new role, for `op: "role"`. */
+  role?: RoleName;
+}): BulkPlan<T> {
+  const { op, actor, role } = input;
+  let developers = input.activeDevelopers;
+  const plan: BulkPlan<T> = { apply: [], skipped: [] };
+  for (const target of input.targets) {
+    const context: Context = { actor, target, activeDevelopers: developers };
+    const verdict =
+      op === "role"
+        ? role
+          ? checkChangeRole({ ...context, newRole: role })
+          : refuse("Choose a role.")
+        : op === "disable"
+          ? checkSetDisabled({ ...context, disabled: true })
+          : op === "enable"
+            ? checkSetDisabled({ ...context, disabled: false })
+            : op === "delete"
+              ? checkDelete(context)
+              : checkSignOut(context);
+    if (!verdict.ok) {
+      plan.skipped.push({ target, reason: verdict.error });
+      continue;
+    }
+    plan.apply.push(target);
+    const enabledDeveloper = target.role === "DEVELOPER" && !target.disabled;
+    if (enabledDeveloper && (op === "disable" || op === "delete" || (op === "role" && role !== "DEVELOPER"))) developers -= 1;
+  }
+  return plan;
+}

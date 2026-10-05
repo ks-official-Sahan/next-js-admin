@@ -211,6 +211,7 @@ export default function BlogEditorForm({
   const [generatedByAI, setGeneratedByAI] = useState(false);
   const [seoBusy, setSeoBusy] = useState(false);
   const [seoError, setSeoError] = useState<string | null>(null);
+  const seoRequestRef = useRef<AbortController | null>(null);
   const [noindex, setNoindex] = useState(initial.noindex ?? false);
   const [previewOpen, setPreviewOpen] = useState(false);
 
@@ -349,10 +350,9 @@ export default function BlogEditorForm({
 
   function handleAiPatch(patch: AiPatch) {
     switch (patch.type) {
-      case "start":
-        setGeneratedByAI(true);
-        break;
       case "meta":
+        // Flagged only once AI content actually lands, not when a run that may fail or be cancelled starts.
+        setGeneratedByAI(true);
         setTitle(patch.title);
         setSlug(patch.slug);
         setSlugTouched(true);
@@ -363,7 +363,7 @@ export default function BlogEditorForm({
         setTags(patch.tags);
         break;
       case "body":
-        setContent(patch.html);
+        setContent((current) => patch.update(current));
         break;
       case "featuredAlt":
         setCoverAlt((current) => current || patch.alt);
@@ -376,12 +376,23 @@ export default function BlogEditorForm({
         setCoverSrc(patch.url);
         setCoverAlt(patch.alt);
         break;
-      case "error":
-        break;
     }
   }
 
+  // Leaving the editor stops a running SEO suggestion on the server too.
+  useEffect(() => {
+    const request = seoRequestRef;
+    return () => request.current?.abort();
+  }, []);
+
+  /** Suggest SEO; while one is running the same button cancels it. */
   async function suggestSeo() {
+    if (seoRequestRef.current) {
+      seoRequestRef.current.abort();
+      return;
+    }
+    const controller = new AbortController();
+    seoRequestRef.current = controller;
     setSeoBusy(true);
     setSeoError(null);
     try {
@@ -389,18 +400,23 @@ export default function BlogEditorForm({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ title, contentText: excerpt || content.replace(/<[^>]+>/g, " ").slice(0, 4000) }),
+        signal: controller.signal,
       });
-      const data = (await response.json()) as { ok: boolean; seoTitle?: string; seoDescription?: string; excerpt?: string; error?: string };
-      if (!data.ok || !data.seoTitle) {
-        setSeoError(data.error || "Could not suggest SEO fields.");
+      // A 404 (AI switched off) has no JSON body; a 429 says when to retry.
+      const data = (await response.json().catch(() => null)) as
+        | { ok: boolean; seoTitle?: string; seoDescription?: string; excerpt?: string; error?: string }
+        | null;
+      if (!data?.ok || !data.seoTitle) {
+        setSeoError(data?.error || "Could not suggest SEO fields.");
         return;
       }
       setSeoTitle(data.seoTitle);
       setSeoDescription(data.seoDescription || "");
       if (!excerpt && data.excerpt) setExcerpt(data.excerpt);
     } catch {
-      setSeoError("The AI assistant is unreachable right now.");
+      if (!controller.signal.aborted) setSeoError("The AI assistant is unreachable right now.");
     } finally {
+      if (seoRequestRef.current === controller) seoRequestRef.current = null;
       setSeoBusy(false);
     }
   }

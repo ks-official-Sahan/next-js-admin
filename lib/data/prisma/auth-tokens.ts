@@ -47,12 +47,26 @@ export function authTokenRepo(client: DbClient): AuthTokenRepo {
     async revokeOpenInvitesSentBy(userId) {
       await revokeWhere({ purpose: "INVITE", createdById: userId, ...open });
     },
+    async revokeOpenInvitesSentByAny(userIds) {
+      if (userIds.length === 0) return;
+      await revokeWhere({ purpose: "INVITE", createdById: { in: userIds }, ...open });
+    },
+    async rotateOpenInvite(id, tokenHash, expiresAt) {
+      const { count } = await client.authToken.updateMany({ where: { id, purpose: "INVITE", ...open }, data: { tokenHash, expiresAt } });
+      return count;
+    },
     async claim(id, now) {
       const { count } = await client.authToken.updateMany({ where: { id, ...open, expiresAt: { gt: now } }, data: { usedAt: now } });
       return count;
     },
     async deleteForUser(userId) {
       await client.authToken.deleteMany({ where: { OR: [{ userId }, { purpose: "INVITE", createdById: userId, usedAt: null }] } });
+    },
+    async deleteForUsers(userIds) {
+      if (userIds.length === 0) return;
+      await client.authToken.deleteMany({
+        where: { OR: [{ userId: { in: userIds } }, { purpose: "INVITE", createdById: { in: userIds }, usedAt: null }] },
+      });
     },
   };
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import ActionForm, { Field, SubmitButton } from "@/components/admin/ui/ActionForm";
+import { PasswordField } from "@/components/admin/ui/PasswordField";
 import { setPasswordAction } from "@/lib/actions/set-password";
 
 export default function SetPasswordForm({
@@ -18,17 +19,16 @@ export default function SetPasswordForm({
       {/* Lets a password manager file the new password under the right account. */}
       <input type="text" name="username" value={email} autoComplete="username" readOnly hidden />
       {askName ? <Field label="Your name" name="name" autoComplete="name" maxLength={80} /> : null}
-      <Field
+      <PasswordField
         label="New password"
         name="password"
-        type="password"
         autoComplete="new-password"
         required
         maxLength={128}
         autoFocus
         hint="At least 12 characters, mixing three of: lower case, upper case, digits, symbols."
       />
-      <Field label="Repeat the password" name="confirm" type="password" autoComplete="new-password" required maxLength={128} />
+      <PasswordField label="Repeat the password" name="confirm" autoComplete="new-password" required maxLength={128} />
       <SubmitButton className="w-full" pendingLabel="Saving...">
         Save password
       </SubmitButton>

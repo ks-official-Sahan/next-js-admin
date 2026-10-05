@@ -8,12 +8,13 @@ import { rateLimitedResponse } from "@/lib/admin/rate-limited";
 import { checkOrigin } from "@/lib/security/check-origin";
 import { getEnv } from "@/lib/env";
 import { realBlogDeps } from "@sahan-sac/blog-kit/deps";
+import { MAX_INSTRUCTIONS_LENGTH, MAX_RESOURCES_LENGTH } from "@sahan-sac/blog-kit/prompts";
 import { generateBlogPost } from "@sahan-sac/blog-kit/generate";
 import { generateBlogImage } from "@sahan-sac/blog-kit/images";
 import { imageConfigFromEnv } from "@sahan-sac/ai-core/image";
 
 import { removeImageToken } from "@sahan-sac/blog-kit/ai-image-tokens";
-import { blogSite } from "@/lib/ai/blog-site";
+import { blogSiteWithGuidance } from "@/lib/ai/context";
 import { mediaLibrarySink } from "@/lib/ai/image-sink";
 import { MEDIA_UPLOAD_FOLDER } from "@/lib/media/folder";
 import { repos } from "@/lib/data";
@@ -49,6 +50,10 @@ const bodySchema = z.object({
   length: z.enum(["Short", "Medium", "Long"]),
   featuredImage: z.boolean().default(true),
   inlineImages: z.boolean().default(true),
+  // Per-post steering from the assistant's "Instructions and references" panel.
+  // Pasted text only: no URL is ever fetched for it.
+  instructions: z.string().trim().max(MAX_INSTRUCTIONS_LENGTH).optional(),
+  resources: z.string().trim().max(MAX_RESOURCES_LENGTH).optional(),
 });
 
 const notFound = () => new NextResponse(null, { status: 404, headers: { "Cache-Control": "no-store" } });
@@ -87,6 +92,7 @@ export async function POST(request: NextRequest) {
 
   const input = parsed.data;
   const env = getEnv();
+  const site = await blogSiteWithGuidance();
   const actor = { id: user.id, email: user.email };
   const encoder = new TextEncoder();
 
@@ -113,11 +119,16 @@ export async function POST(request: NextRequest) {
 
       try {
         send("stage", { stage: "writing" });
-        const result = await generateBlogPost(input, realBlogDeps(env, blogSite), {
+        // The admin cancelling (or closing the tab) aborts request.signal,
+        // which stops the model calls instead of letting them run to the
+        // deadline for nobody.
+        const result = await generateBlogPost(input, realBlogDeps(env, site), {
           onStatus: (status) => {
             send("provider_status", status);
           },
+          signal: request.signal,
         });
+        if (request.signal.aborted) return;
         if (!result.ok) {
           send("error", { error: result.error });
           return;

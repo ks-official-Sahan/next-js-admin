@@ -60,9 +60,15 @@ export default function RichEditor({ value, onChange, className }: RichEditorPro
   });
 
   // The value prop can change under the editor (loading a different post,
-  // or an AI-drafted body replacing the current one) without remounting it.
+  // an AI-drafted body replacing the current one, or an AI image landing
+  // while the admin types) without remounting it. A focused editor keeps its
+  // caret where it was instead of jumping to the end of the document.
   useEffect(() => {
-    if (editor && value !== editor.getHTML()) editor.commands.setContent(value, { emitUpdate: false });
+    if (!editor || value === editor.getHTML()) return;
+    const { from, to } = editor.state.selection;
+    const focused = editor.isFocused;
+    editor.commands.setContent(value, { emitUpdate: false });
+    if (focused) editor.commands.setTextSelection({ from, to });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to `value` changing from outside
   }, [value]);
 

@@ -44,6 +44,18 @@ export function authTokenRepo(client: DbClient): AuthTokenRepo {
     async revokeOpenInvitesSentBy(userId) {
       await revokeWhere(and(eq(authTokens.purpose, "INVITE"), eq(authTokens.createdById, userId), open()));
     },
+    async revokeOpenInvitesSentByAny(userIds) {
+      if (userIds.length === 0) return;
+      await revokeWhere(and(eq(authTokens.purpose, "INVITE"), inArray(authTokens.createdById, userIds), open()));
+    },
+    async rotateOpenInvite(id, tokenHash, expiresAt) {
+      const rows = await client
+        .update(authTokens)
+        .set({ tokenHash, expiresAt })
+        .where(and(eq(authTokens.id, id), eq(authTokens.purpose, "INVITE"), open()))
+        .returning({ id: authTokens.id });
+      return rows.length;
+    },
     async claim(id, now) {
       const rows = await client
         .update(authTokens)
@@ -59,6 +71,17 @@ export function authTokenRepo(client: DbClient): AuthTokenRepo {
           or(
             eq(authTokens.userId, userId),
             and(eq(authTokens.purpose, "INVITE"), eq(authTokens.createdById, userId), isNull(authTokens.usedAt))
+          )
+        );
+    },
+    async deleteForUsers(userIds) {
+      if (userIds.length === 0) return;
+      await client
+        .delete(authTokens)
+        .where(
+          or(
+            inArray(authTokens.userId, userIds),
+            and(eq(authTokens.purpose, "INVITE"), inArray(authTokens.createdById, userIds), isNull(authTokens.usedAt))
           )
         );
     },

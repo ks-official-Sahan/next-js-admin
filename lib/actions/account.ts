@@ -15,13 +15,13 @@ import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { checkPassword } from "@/lib/auth/password-policy";
 import { invalidateSessionState, invalidateUserSessionState, revokeSession, revokeUserSessions } from "@/lib/auth/session-store";
 import { createToken, RESET_TTL_MINUTES } from "@/lib/auth/invite-token";
+import { emailLink } from "@/lib/auth/links";
 import { limit } from "@/lib/cache/ratelimit";
 import { repos, withTx } from "@/lib/data";
 import { sendEmail } from "@/lib/email";
 import { emailChangeVerify, mfaToggled, passwordChanged, type Rendered } from "@/lib/email/templates";
 import { getEnv } from "@/lib/env";
 import { requestDetails } from "@/lib/security/request-device";
-import { absoluteUrl } from "@/lib/site-url";
 
 // The signed-in user's own account. A user whose password was set by someone else
 // may use these before anything else, which is how they choose their own
@@ -209,7 +209,7 @@ export async function requestEmailChangeAction(_previous: ActionState, formData:
 
   const rendered = emailChangeVerify({
     name: user.name,
-    url: absoluteUrl(`/admin/confirm-email?token=${encodeURIComponent(token)}`),
+    url: await emailLink(token),
     expiresMinutes: RESET_TTL_MINUTES,
   });
   const sent = await sendEmail(

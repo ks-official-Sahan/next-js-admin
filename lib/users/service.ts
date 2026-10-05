@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { RoleName } from "@/lib/auth/permissions";
-import type { UserListItem } from "@/lib/data/users";
+import type { UserListItem, UserPage, UserQuery } from "@/lib/data/users";
 import { repos } from "@/lib/data";
 
 // Reads for the users screen. Rules live in rules.ts; changes are made by the
@@ -11,6 +11,11 @@ export type { UserListItem };
 
 export async function listUsers(): Promise<UserListItem[]> {
   return repos.users.list();
+}
+
+/** One page of the users screen: search, filters and sort run in the database. */
+export async function searchUsers(query: UserQuery): Promise<UserPage> {
+  return repos.users.search(query);
 }
 
 export interface PendingInvite {

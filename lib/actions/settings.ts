@@ -10,6 +10,7 @@ import { auditSafe } from "@/lib/admin/audit";
 import { isIpAllowed, isValidAllowlistEntry } from "@/lib/security/allowlist";
 import { clientIp, UNKNOWN_IP } from "@/lib/security/ip";
 import {
+  aiContextSchema,
   chatbotConfigSchema,
   DEFAULT_SETTINGS,
   emailRoutingSchema,
@@ -164,12 +165,31 @@ export async function updateEmailRoutingAction(_previous: ActionState, formData:
     inboxEmail: textOrUndefined(formData, "inboxEmail"),
     notificationEmail: textOrUndefined(formData, "notificationEmail"),
     autoReplyEnabled: checkbox(formData, "autoReplyEnabled"),
+    authCopyEnabled: checkbox(formData, "authCopyEnabled"),
   });
   if (!parsed.success) return fail("Could not save email routing.", fieldErrorsFrom(parsed.error.issues));
 
   await updateSetting("email.routing", parsed.data, authz.user);
   revalidatePath(ADMIN_SETTINGS_PATH);
   return done("Email routing updated.");
+}
+
+export async function updateAiContextAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+  const authz = await authorizeAction("manageSettings");
+  if (!authz.ok) return fail(authz.error);
+
+  const text = (name: string) => String(formData.get(name) ?? "").replace(/\r\n/g, "\n").trim();
+  const parsed = aiContextSchema.safeParse({
+    global: text("global"),
+    blog: text("blog"),
+    seo: text("seo"),
+    chatbot: text("chatbot"),
+  });
+  if (!parsed.success) return fail("Could not save the AI context.", fieldErrorsFrom(parsed.error.issues));
+
+  await updateSetting("ai.context", parsed.data, authz.user);
+  revalidatePath(ADMIN_SETTINGS_PATH);
+  return done("AI context saved. New AI requests use it now.");
 }
 
 export async function resetSettingAction(_previous: ActionState, formData: FormData): Promise<ActionState> {

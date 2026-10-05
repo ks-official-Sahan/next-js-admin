@@ -38,8 +38,18 @@ export interface AuthTokenRepo {
   revokeOpenInvitesTo(email: string, scope: { roles: readonly RoleName[]; createdById: string }): Promise<void>;
   /** Revokes the open invitations a user sent. */
   revokeOpenInvitesSentBy(userId: string): Promise<void>;
+  /** The same for a bulk action's targets, in one statement. */
+  revokeOpenInvitesSentByAny(userIds: string[]): Promise<void>;
+  /**
+   * Gives an open invitation a new link: the old token stops working at once
+   * and the expiry restarts. Returns 1 when it rotated, 0 when the
+   * invitation was no longer open.
+   */
+  rotateOpenInvite(id: string, tokenHash: string, expiresAt: Date): Promise<number>;
   /** Marks an open, unexpired token used; returns 1 when this call claimed it, else 0. */
   claim(id: string, now: Date): Promise<number>;
   /** Deletes a user's own links and the unused invitations they sent. */
   deleteForUser(userId: string): Promise<void>;
+  /** The same for a bulk action's targets, in one statement. */
+  deleteForUsers(userIds: string[]): Promise<void>;
 }

@@ -13,6 +13,9 @@ runRepoContract("Drizzle", async () => {
   return {
     repos: createRepos(db),
     withTx: (fn) => transaction(db, fn),
+    exec: async (sql, params) => {
+      await pg.query(sql, params);
+    },
     close: () => pg.close(),
   };
 });

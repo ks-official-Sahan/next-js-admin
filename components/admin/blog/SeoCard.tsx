@@ -1,5 +1,7 @@
 "use client";
 
+import { Loader2 } from "lucide-react";
+
 import { Field } from "@/components/admin/ui/ActionForm";
 import { fieldClass } from "@/components/admin/ui/styles";
 import { cn } from "@/lib/utils";
@@ -62,15 +64,27 @@ export default function SeoCard({
           <button
             type="button"
             onClick={onSuggest}
-            disabled={seoBusy || !title}
-            className="rounded-md border border-input bg-background px-3 py-1 text-xs font-medium hover:bg-muted disabled:opacity-60"
+            disabled={!seoBusy && !title}
+            aria-label={seoBusy ? "Suggesting SEO fields. Cancel" : undefined}
+            className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1 text-xs font-medium hover:bg-muted disabled:opacity-60"
           >
-            {seoBusy ? "Suggesting…" : "✨ Suggest SEO"}
+            {seoBusy ? (
+              <>
+                <Loader2 size={12} className="animate-spin motion-reduce:animate-none" aria-hidden />
+                Cancel
+              </>
+            ) : (
+              "✨ Suggest SEO"
+            )}
           </button>
         ) : undefined
       }
     >
-      {seoError ? <p className="mb-2 text-xs text-destructive">{seoError}</p> : null}
+      {seoError ? (
+        <p role="alert" className="mb-2 text-xs text-destructive">
+          {seoError}
+        </p>
+      ) : null}
 
       <label htmlFor="excerpt" className="text-sm font-medium">
         Excerpt (short summary)

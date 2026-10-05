@@ -63,20 +63,9 @@ export async function getSystemHealth() {
  */
 export async function getEmailHealth() {
   try {
-    const { emailConfigFromEnv } = await import("@/lib/email/config");
-    const { emailHealth } = await import("@/lib/email/health");
-    // The typed, validated env (lib/env.ts) defaults EMAIL_PROVIDER to "auto"
-    // when unset. Reading raw process.env here left config.mode undefined
-    // whenever EMAIL_PROVIDER was not set in .env.local, which made
-    // providerOrder() throw and this whole function silently return null —
-    // rendering as "Not configured" even with Resend fully set up.
-    const { getEnv } = await import("@/lib/env");
-    const env = getEnv();
-    const config = emailConfigFromEnv(env);
-    return emailHealth(config, {
-      production: process.env.NODE_ENV === "production",
-      brevoApiKey: Boolean(env.EMAIL_BREVO_API_KEY),
-    });
+    // The same typed env and rules as the settings screen (lib/email).
+    const { getEmailHealth: emailHealthNow } = await import("@/lib/email");
+    return emailHealthNow();
   } catch (err) {
     log.error("email health check failed", { error: String(err) });
     return null;

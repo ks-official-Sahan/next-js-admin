@@ -4,12 +4,13 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
 
-import { auditSafe } from "@/lib/admin/audit";
+import { auditMany, auditSafe } from "@/lib/admin/audit";
 import { authorizeAction } from "@/lib/actions/guard";
 import { done, fail, formValues, type ActionState } from "@/lib/actions/state";
 import { canManage } from "@/lib/auth/rbac-rules";
-import { forceLogoutAll, revokeSession, revokeUserSessions } from "@/lib/auth/session-store";
+import { forceLogoutAll, revokeSession, revokeSessions, revokeUserSessions } from "@/lib/auth/session-store";
 import { repos } from "@/lib/data";
+import { log } from "@/lib/log";
 import { notifyForcedLogout } from "@/lib/users/notify";
 import { findUserRef } from "@/lib/users/service";
 
@@ -53,6 +54,62 @@ export async function revokeSessionAction(_previous: ActionState, formData: Form
   }
   revalidatePath(SESSIONS_PATH);
   return done(ended ? "Session ended. That device is signed out on its next request." : "That session had already ended.");
+}
+
+const BULK_MAX = 100;
+/** Row ids are cuids; anything else in a selection is dropped before it reaches a query. */
+const ROW_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * Ends the selected sessions: the same reach as ending one (your own other
+ * sessions, or the sessions of people you manage, never the current one),
+ * read in one query and ended in one write. Sessions out of reach or already
+ * ended are skipped and counted in the result.
+ */
+export async function endSessions(_previous: ActionState, formData: FormData): Promise<ActionState> {
+  const access = await authorizeAction("revokeSessions");
+  if (!access.ok) return fail(access.error);
+  const { user } = access;
+
+  const ids = [...new Set(formData.getAll("ids").filter((id): id is string => typeof id === "string" && ROW_ID.test(id)))];
+  if (ids.length === 0) return fail("Select at least one session.");
+  if (ids.length > BULK_MAX) return fail(`Select at most ${BULK_MAX} sessions at a time.`);
+
+  const now = Date.now();
+  const rows = await repos.sessions.findManyWithOwner(ids);
+  const allowed = rows.filter(
+    (row) =>
+      row.id !== user.sid &&
+      !row.revokedAt &&
+      row.expiresAt.getTime() > now &&
+      (row.userId === user.id || canManage(user, { id: row.userId, role: row.user.role }))
+  );
+  const skipped = ids.length - allowed.length;
+  if (allowed.length === 0) {
+    return fail("None of those sessions can be ended: they already ended, include this device, or belong to someone you do not manage.");
+  }
+
+  await revokeSessions(
+    allowed.map((row) => row.id),
+    { userId: user.id, reason: "revoked_by_admin" }
+  );
+  // The sessions are already ended; a failed audit write must not report that as a failure.
+  await auditMany(
+    allowed.map((row) => ({
+      action: "auth.session.revoked",
+      actor: user,
+      entityType: "UserSession",
+      entityId: row.id,
+      meta: { userId: row.userId, email: row.user.email, bulk: true },
+    }))
+  ).catch((error: unknown) => log.error("audit write failed", { action: "auth.session.revoked", error: (error as Error).message }));
+
+  revalidatePath(SESSIONS_PATH);
+  revalidatePath("/admin/users");
+  const count = `${allowed.length} ${allowed.length === 1 ? "session" : "sessions"}`;
+  return done(
+    `Ended ${count}. Those devices are signed out on their next request.${skipped > 0 ? ` ${skipped} skipped: already ended, this device, or out of your reach.` : ""}`
+  );
 }
 
 export async function forceLogoutUser(_previous: ActionState, formData: FormData): Promise<ActionState> {

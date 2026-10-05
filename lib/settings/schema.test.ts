@@ -22,10 +22,11 @@ describe("setting keys", () => {
     assert.equal(isSettingKey(""), false);
   });
 
-  test("declares exactly the seven keys the design record lists", () => {
+  test("declares exactly the known keys", () => {
     assert.deepEqual(
       [...ALL_KEYS].sort(),
       [
+        "ai.context",
         "chatbot.config",
         "email.routing",
         "features",
@@ -116,5 +117,14 @@ describe("public settings classification", () => {
     assert.equal(isPublicSetting("features"), true);
     assert.equal(isPublicSetting("chatbot.config"), true);
     assert.equal(isPublicSetting("maintenance"), true);
+  });
+});
+
+describe("ai.context", () => {
+  test("every scope defaults to empty and trims; an overlong scope is rejected", () => {
+    assert.deepEqual(getSettingDefault("ai.context"), { global: "", blog: "", seo: "", chatbot: "" });
+    assert.deepEqual(validateSetting("ai.context", { global: "  Be brief.  " }), { global: "Be brief.", blog: "", seo: "", chatbot: "" });
+    assert.throws(() => validateSetting("ai.context", { blog: "x".repeat(6001) }));
+    assert.equal(isPublicSetting("ai.context"), false);
   });
 });

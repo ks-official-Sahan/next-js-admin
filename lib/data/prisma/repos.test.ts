@@ -20,6 +20,9 @@ runRepoContract("Prisma", async () => {
   return {
     repos: createRepos(prisma),
     withTx: (fn) => prisma.$transaction((tx) => fn(createRepos(tx))),
+    exec: async (sql, params = []) => {
+      await prisma.$executeRawUnsafe(sql, ...params);
+    },
     async close() {
       await prisma.$disconnect();
       await server.stop();

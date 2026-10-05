@@ -11,6 +11,8 @@ import type { Repos } from "../repos";
 export interface RepoHarness {
   repos: Repos;
   withTx<T>(fn: (tx: Repos) => Promise<T>): Promise<T>;
+  /** Raw SQL for seeding rows no repository creates (sessions come from the auth adapter). */
+  exec(sql: string, params?: unknown[]): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -67,6 +69,75 @@ export function runRepoContract(name: string, open: () => Promise<RepoHarness>) 
       await h.repos.users.update(dev.id, { disabledAt: new Date() });
       const list = await h.repos.users.list();
       assert.equal(list.at(-1)?.id, dev.id, "disabled users sort last");
+    });
+
+    test("users screen: search, filters, sort, paging and bulk writes", async () => {
+      const tag = unique("find");
+      const a = await newUser("MANAGER");
+      const b = await newUser("EDITOR");
+      await h.repos.users.updateMany([a.id, b.id], { disabledAt: null });
+      await h.repos.users.update(a.id, { name: `Ann ${tag}` });
+      await h.repos.users.update(b.id, { name: `Bob ${tag}` });
+
+      const byName = await h.repos.users.search({ q: tag.toUpperCase(), sort: "name", dir: "desc", offset: 0, limit: 1 });
+      assert.equal(byName.total, 2);
+      assert.deepEqual(byName.items.map((user) => user.id), [b.id]);
+      const next = await h.repos.users.search({ q: tag, sort: "name", dir: "desc", offset: 1, limit: 1 });
+      assert.deepEqual(next.items.map((user) => user.id), [a.id]);
+      assert.equal((await h.repos.users.search({ q: tag, role: "MANAGER", sort: "default", dir: "asc", offset: 0, limit: 10 })).total, 1);
+      assert.equal((await h.repos.users.search({ q: "100%_", sort: "default", dir: "asc", offset: 0, limit: 10 })).total, 0, "LIKE wildcards are literal");
+
+      await h.repos.users.updateMany([a.id], { disabledAt: new Date() });
+      const disabled = await h.repos.users.search({ q: tag, status: "disabled", sort: "default", dir: "asc", offset: 0, limit: 10 });
+      assert.deepEqual(disabled.items.map((user) => user.id), [a.id]);
+      await h.repos.users.deleteMany([a.id, b.id]);
+      assert.equal((await h.repos.users.search({ q: tag, sort: "default", dir: "asc", offset: 0, limit: 10 })).total, 0);
+    });
+
+    test("sessions screen: keyset paging, live filter, owners for bulk actions", async () => {
+      const owner = await newUser("EDITOR");
+      const now = new Date();
+      const at = (minutesAgo: number) => new Date(now.getTime() - minutesAgo * 60_000);
+      const insert = (id: string, lastSeenAt: Date, expiresAt: Date, revokedAt: Date | null = null) =>
+        h.exec(
+          'INSERT INTO user_sessions (id, "userId", ip, "lastSeenAt", "expiresAt", "revokedAt") VALUES ($1, $2, $3, $4, $5, $6)',
+          [id, owner.id, "10.9.8.7", lastSeenAt, expiresAt, revokedAt]
+        );
+      const ids = [unique("s"), unique("s"), unique("s")];
+      await insert(ids[0], at(1), new Date(now.getTime() + HOUR));
+      await insert(ids[1], at(2), new Date(now.getTime() + HOUR));
+      await insert(ids[2], at(3), new Date(now.getTime() + HOUR), now);
+
+      const first = await h.repos.sessions.search({ userId: owner.id, status: "all", limit: 2, now });
+      assert.deepEqual(first.items.map((row) => row.id), [ids[0], ids[1]]);
+      assert.equal(first.items[0].userEmail, owner.email);
+      assert.ok(first.next);
+      const second = await h.repos.sessions.search({ userId: owner.id, status: "all", limit: 2, now, after: first.next! });
+      assert.deepEqual(second.items.map((row) => row.id), [ids[2]]);
+      assert.equal(second.next, null);
+
+      const active = await h.repos.sessions.search({ q: "10.9.8", userId: owner.id, status: "active", limit: 10, now });
+      assert.deepEqual(active.items.map((row) => row.id), [ids[0], ids[1]]);
+      const ended = await h.repos.sessions.search({ userId: owner.id, status: "ended", limit: 10, now });
+      assert.deepEqual(ended.items.map((row) => row.id), [ids[2]]);
+
+      const targets = await h.repos.sessions.findManyWithOwner([ids[0], ids[2]]);
+      assert.deepEqual(targets.map((row) => row.user.email).sort(), [owner.email, owner.email]);
+      assert.deepEqual((await h.repos.sessions.listLiveForUsers([owner.id], now)).map((row) => row.id).sort(), [ids[0], ids[1]].sort());
+      assert.ok((await h.repos.users.listWithLiveSessions(now)).some((user) => user.id === owner.id));
+    });
+
+    test("invites: rotate an open one, revoke and delete in bulk", async () => {
+      const sender = await newUser("MANAGER");
+      const expiresAt = new Date(Date.now() + HOUR);
+      const invite = await h.repos.authTokens.create({ purpose: "INVITE", email: "r@example.com", tokenHash: unique("hash"), expiresAt, role: "EDITOR", createdById: sender.id });
+      const rotatedHash = unique("hash");
+      assert.equal(await h.repos.authTokens.rotateOpenInvite(invite.id, rotatedHash, expiresAt), 1);
+      assert.equal((await h.repos.authTokens.findByHash(rotatedHash))?.id, invite.id);
+      await h.repos.authTokens.revokeOpenInvitesSentByAny([sender.id]);
+      assert.equal(await h.repos.authTokens.rotateOpenInvite(invite.id, unique("hash"), expiresAt), 0, "a revoked invite never rotates");
+      await h.repos.authTokens.deleteForUsers([sender.id]);
+      assert.equal(await h.repos.authTokens.findByHash(rotatedHash), null);
     });
 
     test("withTx rolls every write back when the callback throws", async () => {

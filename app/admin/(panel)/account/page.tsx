@@ -8,6 +8,7 @@ import {
   PasswordForm,
   ProfileForm,
 } from "@/components/admin/account/AccountForms";
+import SignInLinkCard from "@/components/admin/account/SignInLinkCard";
 import { badgeClass, cardClass } from "@/components/admin/ui/styles";
 import { formatDateTime, relativeTime } from "@/lib/admin/format";
 import { ROLE_LABEL } from "@/lib/admin/roles";
@@ -114,6 +115,8 @@ export default async function AccountPage() {
         </ul>
         <p className="mt-4 text-xs text-muted-foreground">Last sign-in: {formatDateTime(profile?.lastLoginAt)}</p>
       </section>
+
+      <SignInLinkCard audience="self" />
     </div>
   );
 }

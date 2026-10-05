@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getOptionalUser, hasPermission } from "@/lib/auth/dal";
 import { getBrevoDiagnostics, getEmailHealth } from "@/lib/email";
-import { assertAddress, EmailGuardError } from "@/lib/email/guards";
+import { assertAddress, EmailGuardError } from "@sahan-sac/email-kit/guards";
 
 // Read-only report on email: which providers are configured, and, with `messageId`
 // or `email`, what Brevo says happened to a send. Needs the manageSettings

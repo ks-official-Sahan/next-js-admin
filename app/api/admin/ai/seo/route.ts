@@ -8,7 +8,7 @@ import { rateLimitedResponse } from "@/lib/admin/rate-limited";
 import { checkOrigin } from "@/lib/security/check-origin";
 import { getEnv } from "@/lib/env";
 import { realBlogDeps } from "@sahan-sac/blog-kit/deps";
-import { blogSite } from "@/lib/ai/blog-site";
+import { blogSiteWithGuidance } from "@/lib/ai/context";
 import { generateSeoSuggestion } from "@sahan-sac/blog-kit/generate";
 
 // POST /api/admin/ai/seo. Requires generateAI, rate limited per user
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "A title and some content are required." }, { status: 400 });
   }
 
-  const result = await generateSeoSuggestion(parsed.data, realBlogDeps(getEnv(), blogSite));
+  const result = await generateSeoSuggestion(parsed.data, realBlogDeps(getEnv(), await blogSiteWithGuidance("seo")), { signal: request.signal });
   if (!result.ok) return NextResponse.json(result, { status: 502, headers: { "Cache-Control": "no-store" } });
   return NextResponse.json({ ok: true, ...result.seo }, { headers: { "Cache-Control": "no-store" } });
 }

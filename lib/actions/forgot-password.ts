@@ -6,13 +6,13 @@ import { z } from "zod";
 import { audit } from "@/lib/admin/audit";
 import { done, fail, fieldErrorsFrom, formValues, type ActionState } from "@/lib/actions/state";
 import { RESET_TTL_MINUTES, createToken } from "@/lib/auth/invite-token";
+import { accountLink, signInLink } from "@/lib/auth/links";
 import { limit } from "@/lib/cache/ratelimit";
 import { clientIp, UNKNOWN_IP } from "@/lib/security/ip";
 import { repos, withTx } from "@/lib/data";
-import { sendEmail } from "@/lib/email";
+import { sendAccountEmail } from "@/lib/email/account-mail";
 import { passwordReset } from "@/lib/email/templates";
 import { getEnv } from "@/lib/env";
-import { absoluteUrl } from "@/lib/site-url";
 
 // Self-service "forgot password", reachable while signed out (proxy.ts lets
 // FORGOT_PASSWORD_PATH through without a session or the admin unlock cookie's
@@ -62,15 +62,14 @@ export async function requestPasswordResetAction(_previous: ActionState, formDat
           return created;
         });
 
-        const rendered = passwordReset({
-          name: user.name,
-          url: absoluteUrl(`/admin/set-password?token=${encodeURIComponent(token)}`),
-          expiresMinutes: RESET_TTL_MINUTES,
+        const url = await accountLink(token);
+        const signInUrl = (await signInLink()).url;
+        const sent = await sendAccountEmail({
+          to: email,
+          render: (options) => passwordReset({ name: user.name, url, expiresMinutes: RESET_TTL_MINUTES, signInUrl }, options),
+          category: "password-reset",
+          actor: { id: user.id, email },
         });
-        const sent = await sendEmail(
-          { to: email, subject: rendered.subject, html: rendered.html, text: rendered.text, category: "security" },
-          { actor: { id: user.id, email } }
-        );
         if (!sent.ok) await repos.authTokens.revoke(row.id);
       } catch {
         // Fall through to the generic message regardless of what failed.

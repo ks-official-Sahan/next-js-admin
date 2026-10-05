@@ -18,6 +18,7 @@ export const {
   touchSession,
   invalidateUserSessionState,
   revokeSession,
+  revokeSessions,
   revokeUserSessions,
   forceLogoutAll,
   getKnownIps,

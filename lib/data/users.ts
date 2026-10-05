@@ -32,6 +32,28 @@ export interface UserListItem {
   activeSessions: number;
 }
 
+export type UserStatusFilter = "active" | "disabled" | "must-change" | "two-factor" | "no-two-factor";
+export type UserSort = "default" | "name" | "email" | "role" | "last-login" | "created";
+
+/** One page of the users screen, filtered and sorted in the database. */
+export interface UserQuery {
+  /** Case-insensitive match on email or name. */
+  q?: string;
+  role?: RoleName;
+  status?: UserStatusFilter;
+  /** "default": enabled before disabled, then oldest first. */
+  sort: UserSort;
+  dir: "asc" | "desc";
+  offset: number;
+  limit: number;
+}
+
+export interface UserPage {
+  items: UserListItem[];
+  /** Matching rows across every page. */
+  total: number;
+}
+
 export interface NewUser {
   email: string;
   name: string | null;
@@ -64,6 +86,9 @@ export interface UserRepo {
   findSecurityStatus(id: string): Promise<{ mfaEnabled: boolean; mustChangePassword: boolean } | null>;
   /** Enabled first, then oldest first. */
   list(): Promise<UserListItem[]>;
+  search(query: UserQuery): Promise<UserPage>;
+  /** People with at least one live session, for the force-logout list. */
+  listWithLiveSessions(now: Date): Promise<UserRef[]>;
   count(): Promise<number>;
   countActiveDevelopers(): Promise<number>;
   /**
@@ -74,5 +99,8 @@ export interface UserRepo {
   lockActiveDevelopers(): Promise<number>;
   create(input: NewUser): Promise<{ id: string }>;
   update(id: string, patch: UserPatch): Promise<void>;
+  /** One statement for a bulk action's targets (call inside withTx with the audit rows). */
+  updateMany(ids: string[], patch: Pick<UserPatch, "role" | "disabledAt">): Promise<void>;
   delete(id: string): Promise<void>;
+  deleteMany(ids: string[]): Promise<void>;
 }

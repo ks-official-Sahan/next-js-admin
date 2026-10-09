@@ -5,8 +5,8 @@
 
 /** The body as text, or null when it is larger than `limit` bytes. */
 export async function readBodyText(request: Request, limit: number): Promise<string | null> {
-  const declared = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > limit) return null;
+  const header = request.headers.get("content-length");
+  if (header !== null && Number(header) > limit) return null;
   if (!request.body) return "";
 
   const reader = request.body.getReader();

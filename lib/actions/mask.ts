@@ -6,14 +6,16 @@ import { authorizeAction, type Authorized } from "@/lib/actions/guard";
 import { done, fail, type ActionState } from "@/lib/actions/state";
 import { audit } from "@/lib/admin/audit";
 import { AUTH_SECRET } from "@/lib/auth/kit";
+import { maskingEnabled } from "@/lib/auth/mask";
 import { consumeChallenge, issueChallenge, verifyChallenge } from "@/lib/auth/mfa";
 import { CODE_FAILURES, MFA_TTL_MINUTES, normalizeCode, readStepUp, signStepUp } from "@/lib/auth/mfa-rules";
 import { SUPER_ROLE } from "@/lib/auth/permissions";
 import { repos, withTx } from "@/lib/data";
 import { getSetting, updateSetting } from "@/lib/settings/service";
 
-// Developer masking (lib/auth/mask.ts), for developers only: anyone else gets
-// the generic refusal, so the feature never confirms it exists. A change takes
+// Developer masking (lib/auth/mask.ts), for developers only and only while
+// ADMIN_PRESENTATION_MODE is "true": otherwise everyone gets the generic
+// refusal, so the feature never confirms it exists. A change takes
 // two steps after the browser's confirmation: the request emails a step-up
 // code (purpose STEP_UP) bound to that exact change by a signed ticket, and
 // only that code applies it. Codes and changes are audited, and rows a
@@ -38,7 +40,7 @@ function changeOf(action: string): MaskChange | null {
 
 async function developer(): Promise<Authorized> {
   const access = await authorizeAction(null);
-  if (access.ok && access.user.role !== SUPER_ROLE) return { ok: false, error: REFUSED };
+  if (access.ok && (access.user.role !== SUPER_ROLE || !maskingEnabled())) return { ok: false, error: REFUSED };
   return access;
 }
 

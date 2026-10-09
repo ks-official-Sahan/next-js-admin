@@ -27,6 +27,12 @@ const flag = z
 
 const list = text.transform((value) => splitList(value));
 
+// On only for the exact value "true"; unset or anything else is off.
+const strictFlag = z
+  .string()
+  .optional()
+  .transform((value) => value?.trim() === "true");
+
 const schema = z.object({
   // Auth and signing
   AUTH_SECRET: text,
@@ -45,6 +51,8 @@ const schema = z.object({
   // Site domains for email links, in order; the first that answers /api/health is used (lib/site-url.ts).
   SITE_URLS: list,
   ADMIN_ALLOWED_ORIGINS: list,
+  // Developer masking (lib/auth/mask.ts). Off unless exactly "true".
+  ADMIN_PRESENTATION_MODE: strictFlag,
 
   // Data
   DATABASE_URL: text,

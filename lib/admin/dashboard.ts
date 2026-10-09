@@ -1,7 +1,9 @@
 import "server-only";
 
-import { SUPER_ROLE, type RoleName } from "@/lib/auth/permissions";
+import type { RoleName } from "@/lib/auth/permissions";
 import { repos } from "@/lib/data";
+
+import { hiddenAuditRole } from "./audit-query";
 import { log } from "@/lib/log";
 
 // Dashboard helper: queries for the admin dashboard widgets.
@@ -9,11 +11,11 @@ import { log } from "@/lib/log";
 // Design notes, Step 16.
 
 /**
- * Recent audit log entries the viewer may read (see lib/admin/audit-query.ts's auditScope).
+ * Recent audit log entries the viewer may read (see lib/admin/audit-query.ts's hiddenAuditRole).
  */
 export async function getRecentActivity(viewer: { role: RoleName }, limit = 10) {
   try {
-    return await repos.dashboard.recentActivity(limit, viewer.role === SUPER_ROLE ? undefined : SUPER_ROLE);
+    return await repos.dashboard.recentActivity(limit, hiddenAuditRole(viewer));
   } catch {
     return [];
   }

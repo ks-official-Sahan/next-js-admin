@@ -104,7 +104,7 @@ The rule that doesn't change: every Server Action and every
 missing permission looks like a missing page (404), never a 403 — an
 unauthorized admin surface should never confirm it exists.
 
-## Super admins and developer masking
+## Super admins
 
 `SUPER_ADMIN` is the client's top role. Only a developer can give it, and its
 permissions are fixed in code (`FIXED_GRANTS` in `lib/auth/kit-config.ts`),
@@ -113,20 +113,7 @@ cache, running cron jobs, security status and integration health, the IP
 allowlist, and training or switching the chatbot (`manageChatbotTraining`; it
 still sets the tone and greeting). Its rank keeps it from managing, signing
 out or deleting developers and other super admins, and in the matrix it
-changes only roles ranked below it, granting only what it holds. Audit rows
-written by a developer (`audit_logs.actorRole`, the role at the time) never
-reach it: not the audit screen, the CSV export or the dashboard.
-
-A developer can mask themself as a super admin on the **Account** page, or mask
-every developer at once there. Everyone but developers then sees masked
-developers as super admins (users list, filters, sorting, role counts), and
-while no developer is left unmasked the Developer role disappears from their
-screens. Masking is presentation only: what a developer can do never changes,
-and every check uses the real role. Only developers see the toggles and a
-**Masked** badge. Every change asks for confirmation and then a code
-emailed to the developer (a step-up code bound to that one change), and both
-toggles are audited. Tell the client in the
-contract that developer accounts can appear under another role.
+changes only roles ranked below it, granting only what it holds.
 
 ## Auth engine and database upgrades
 
@@ -141,8 +128,8 @@ After updating `@sahan-sac/auth-kit`, run `npx auth-kit db upgrade --apply`
 before deploying (`npx auth-kit doctor` says whether it is needed), then
 `pnpm db:seed`. The upgrade is idempotent and only adds or converts: the
 shared session columns, hashed session tokens (sessions still holding a raw
-token are ended), the `roles` table, `users.masked` and
-`audit_logs.actorRole`. The seed adds missing built-in roles and gives newly
+token are ended), the `roles` table and the
+newer user and audit columns. The seed adds missing built-in roles and gives newly
 split permissions to every role that held the original.
 
 ## Add a user

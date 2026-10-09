@@ -14,6 +14,7 @@ import { badgeClass, cardClass } from "@/components/admin/ui/styles";
 import { formatDateTime, relativeTime } from "@/lib/admin/format";
 import { ROLE_LABEL } from "@/lib/admin/roles";
 import { requireUser } from "@/lib/auth/dal";
+import { maskingEnabled } from "@/lib/auth/mask";
 import { MASK_ROLE, SUPER_ROLE } from "@/lib/auth/permissions";
 import { listSessions } from "@/lib/auth/session-store";
 import { repos } from "@/lib/data";
@@ -25,13 +26,14 @@ export default async function AccountPage() {
   // A user who must change their password lands here, so this page lets them in.
   const user = await requireUser({ allowPasswordChange: true });
 
-  const developer = user.role === SUPER_ROLE;
+  // Developer masking shows only to developers, and only while it is turned on (lib/auth/mask.ts).
+  const maskControls = user.role === SUPER_ROLE && maskingEnabled();
   const [profile, sessions, maskSetting] = await Promise.all([
     repos.users.findProfile(user.id),
     listSessions({ userId: user.id, limit: 50 }),
-    developer ? getSetting("security.mask") : Promise.resolve(null),
+    maskControls ? getSetting("security.mask") : Promise.resolve(null),
   ]);
-  const masked = developer && Boolean(profile?.masked || maskSetting?.global);
+  const masked = maskControls && Boolean(profile?.masked || maskSetting?.global);
   const mfaEnabled = profile?.mfaEnabled ?? false;
   const others = sessions.filter((session) => session.id !== user.sid);
 
@@ -123,7 +125,7 @@ export default async function AccountPage() {
         <p className="mt-4 text-xs text-muted-foreground">Last sign-in: {formatDateTime(profile?.lastLoginAt)}</p>
       </section>
 
-      {developer ? (
+      {maskControls ? (
         <section className={cardClass} aria-labelledby="mask-heading">
           <h2 id="mask-heading" className="text-base font-medium">
             Developer masking

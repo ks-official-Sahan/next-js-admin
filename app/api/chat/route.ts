@@ -21,6 +21,7 @@ import { getEnv } from "@/lib/env";
 import { log } from "@/lib/log";
 import { clientIp, UNKNOWN_IP } from "@/lib/security/ip";
 import { isAllowedOrigin } from "@/lib/security/origin";
+import { readBodyText } from "@/lib/security/read-body";
 import type { ChatbotConfig } from "@/lib/settings/schema";
 import { getPublicSettings } from "@/lib/settings/service";
 
@@ -79,9 +80,9 @@ export async function POST(request: NextRequest) {
     return jsonResponse({ error: "Content-Type must be application/json" }, { status: 415 });
   }
 
-  // Body size limit (~8 KB)
-  const bodyText = await request.text();
-  if (bodyText.length > 8 * 1024) {
+  // Body size limit (8 KB), enforced while reading
+  const bodyText = await readBodyText(request, 8 * 1024);
+  if (bodyText === null) {
     return jsonResponse({ error: "Request body too large" }, { status: 413 });
   }
 

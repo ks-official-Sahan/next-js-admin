@@ -10,3 +10,12 @@
 export function isCrossSiteFetch(header: string | null | undefined): boolean {
   return header === "cross-site";
 }
+
+/**
+ * Stricter, for a GET that changes state for the whole account (sign-out):
+ * only the same origin, a typed URL or bookmark ("none"), or a missing header
+ * pass. A sibling subdomain ("same-site") is refused like another site.
+ */
+export function isSameOriginOrDirect(header: string | null | undefined): boolean {
+  return header === null || header === undefined || header === "same-origin" || header === "none";
+}

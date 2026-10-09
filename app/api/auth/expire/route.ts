@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { LOCKED_PATH, LOGIN_PATH, SESSION_COOKIE } from "@/lib/auth/constants";
 import { SESSION_COOKIES } from "@/lib/auth/session-cookie";
+import { isSameOriginOrDirect } from "@/lib/security/fetch-site";
 
 // A Server Component cannot write cookies [N20], so the data access layer sends a
 // browser whose session was revoked, expired or disabled here. The cookie is
@@ -19,9 +20,9 @@ export function GET(request: NextRequest) {
   const site = request.headers.get("sec-fetch-site");
   const hasSession = request.cookies.has(SESSION_COOKIE);
 
-  // A link on another site must not be able to sign the admin out, and a
-  // stranger typing this URL learns nothing.
-  if (site === "cross-site" || (!hasSession && site !== "same-origin")) return hidden(request);
+  // A link on another site or a sibling subdomain must not be able to sign
+  // the admin out, and a stranger typing this URL learns nothing.
+  if (!isSameOriginOrDirect(site) || (!hasSession && site !== "same-origin")) return hidden(request);
 
   const url = request.nextUrl.clone();
   url.pathname = LOGIN_PATH;

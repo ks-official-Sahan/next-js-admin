@@ -1,11 +1,5 @@
 name: CI
 
-# NOTE: the app job's `pnpm install` cannot succeed until @sahan-sac/auth-kit
-# is published to npm (the template depends on it as "^0.1.0", not a
-# workspace/file dependency — see README.md's "Dependencies" section). Until
-# then this job fails at the install step; that is expected, not a bug in
-# this workflow. The `cli` job is independent of auth-kit and passes on its own.
-
 on:
   push:
     branches: [main]

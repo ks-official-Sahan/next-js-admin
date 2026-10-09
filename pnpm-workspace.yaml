@@ -18,5 +18,5 @@ minimumReleaseAgeExclude:
   - '@sahan-sac/ai-core@0.2.0 || 0.3.0'
   - '@sahan-sac/blog-kit@0.2.0 || 0.3.0'
   - '@sahan-sac/chat-kit@0.2.0 || 0.3.0'
-  - '@sahan-sac/email-kit@0.1.0'
+  - '@sahan-sac/email-kit@0.1.0 || 0.3.0'
   - '@sahan-sac/media-kit@0.2.0'

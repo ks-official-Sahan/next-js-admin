@@ -48,8 +48,8 @@ importers:
         specifier: ^0.3.1
         version: 0.3.1
       '@sahan-sac/email-kit':
-        specifier: ^0.2.0
-        version: 0.2.0(nodemailer@10.0.10)(resend@6.30.0)
+        specifier: ^0.3.0
+        version: 0.3.0(nodemailer@10.0.10)(resend@6.30.0)
       '@sahan-sac/media-kit':
         specifier: ^0.2.1
         version: 0.2.1
@@ -1459,11 +1459,11 @@ packages:
     resolution: {integrity: sha512-1FB2WVUj9dimrjxgNJ+F0WJzRM/yWNxXtjOsJG+9s2czCP0uEWvTD8/FwxCd3CYFJ11lyT6RHMasjay+mFG8oA==}
     engines: {node: '>=20'}
 
-  '@sahan-sac/email-kit@0.2.0':
-    resolution: {integrity: sha512-oywEcsVDLeAZemmirr7tA/em7R8uxr2oLoD868mMFiO3xddbt8NCwdBB8DcLLl5AvJ9Zt+0+wTAkvxBpTEltAA==}
+  '@sahan-sac/email-kit@0.3.0':
+    resolution: {integrity: sha512-U2jochW24BERiQ1dRbURIKVQY4NYJHzhgG7tZ4vchsw2i33YqU0taq4E2ElNqHjAIdhJH//JCODwxBrQfUBvQw==}
     engines: {node: '>=20'}
     peerDependencies:
-      nodemailer: ^10.0.10
+      nodemailer: ^8.0.5 || ^10.0.10
       resend: ^6.28.1
     peerDependenciesMeta:
       nodemailer:
@@ -5247,7 +5247,7 @@ snapshots:
       '@sahan-sac/ai-core': 0.3.1
       server-only: 0.0.1
 
-  '@sahan-sac/email-kit@0.2.0(nodemailer@10.0.10)(resend@6.30.0)':
+  '@sahan-sac/email-kit@0.3.0(nodemailer@10.0.10)(resend@6.30.0)':
     dependencies:
       zod: 4.6.5
     optionalDependencies:

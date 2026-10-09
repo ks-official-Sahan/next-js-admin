@@ -12,6 +12,7 @@ import { notifyOwner, sendAutoReply } from "@/lib/inquiries/notify";
 import { verifyToken } from "@/lib/inquiries/token";
 import { clientIp, UNKNOWN_IP } from "@/lib/security/ip";
 import { isAllowedOrigin } from "@/lib/security/origin";
+import { readBodyText } from "@/lib/security/read-body";
 import { log } from "@/lib/log";
 
 function hashIp(ip: string, secret: string): string {
@@ -28,9 +29,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
   }
 
-  // Body size limit (~16 KB)
-  const bodyText = await request.text();
-  if (bodyText.length > 16 * 1024) {
+  // Body size limit (16 KB), enforced while reading
+  const bodyText = await readBodyText(request, 16 * 1024);
+  if (bodyText === null) {
     return NextResponse.json({ error: "Request body too large" }, { status: 413 });
   }
 

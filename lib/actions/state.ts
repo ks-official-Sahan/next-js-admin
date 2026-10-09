@@ -20,11 +20,16 @@ export interface ActionState {
    * conflict with itself.
    */
   updatedAt?: string;
+  /**
+   * A one-time link the actor may copy (an invitation). Only this response
+   * ever carries it: the database keeps the token's hash, never the link.
+   */
+  link?: string;
 }
 
 export const idleState: ActionState = { ok: false, message: null, error: null };
 
-export const done = (message: string, extra: { challengeId?: string } = {}): ActionState => ({
+export const done = (message: string, extra: { challengeId?: string; link?: string } = {}): ActionState => ({
   ok: true,
   message,
   error: null,

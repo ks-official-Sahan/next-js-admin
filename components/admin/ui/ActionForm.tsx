@@ -19,7 +19,8 @@ type Action = (previous: ActionState, formData: FormData) => Promise<ActionState
 function restoreValues(form: HTMLFormElement | null, values: FormData) {
   for (const element of Array.from(form?.elements ?? [])) {
     if (element instanceof HTMLInputElement) {
-      if (!element.name || ["password", "hidden", "file"].includes(element.type)) continue;
+      // data-secret: a password input currently shown as text (PasswordField).
+      if (!element.name || ["password", "hidden", "file"].includes(element.type) || element.hasAttribute("data-secret")) continue;
       if (element.type === "checkbox" || element.type === "radio") {
         element.checked = values.getAll(element.name).includes(element.value);
         continue;

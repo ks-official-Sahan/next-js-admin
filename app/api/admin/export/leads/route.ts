@@ -3,7 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { audit } from "@/lib/admin/audit";
 import { toCsv } from "@/lib/admin/csv";
 import { getOptionalUser, hasPermission } from "@/lib/auth/dal";
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
+import { log } from "@/lib/log";
 import { isCrossSiteFetch } from "@/lib/security/fetch-site";
 
 export const dynamic = "force-dynamic";
@@ -40,13 +41,7 @@ export async function GET(request: NextRequest) {
   if (!hasPermission(user, "viewLeads") || !hasPermission(user, "exportData")) return notFound();
 
   try {
-    const inquiries = await db.inquiry.findMany({
-      take: MAX_ROWS,
-      orderBy: { createdAt: "desc" },
-      include: {
-        assignee: { select: { name: true } },
-      },
-    });
+    const inquiries = await repos.inquiries.listRecent(MAX_ROWS);
 
     await audit({
       action: "leads.exported",

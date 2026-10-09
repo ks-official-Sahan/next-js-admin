@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 
 import { blogAiEnabled, blogAiImagesEnabled } from "@/lib/ai/availability";
 import { hasPermission, requirePermission } from "@/lib/auth/dal";
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
 import { SiteMetadata } from "@/config/site";
 import ActionForm, { ConfirmSubmitButton } from "@/components/admin/ui/ActionForm";
 import { badgeClass } from "@/components/admin/ui/styles";
@@ -16,13 +16,10 @@ import RevisionHistoryCard from "@/components/admin/blog/RevisionHistoryCard";
 export const metadata = { title: "Edit post" };
 
 async function loadTaxonomy(excludeId: string) {
-  const [topicRows, tagRows] = await Promise.all([
-    db.post.findMany({ distinct: ["topic"], select: { topic: true }, orderBy: { topic: "asc" } }),
-    db.post.findMany({ where: { id: { not: excludeId } }, select: { tags: true }, take: 200 }),
-  ]);
+  const [topics, tagLists] = await Promise.all([repos.posts.topics(), repos.posts.tagLists(200, excludeId)]);
   return {
-    topics: topicRows.map((row) => row.topic).filter(Boolean),
-    tags: [...new Set(tagRows.flatMap((row) => row.tags))].sort(),
+    topics: topics.filter(Boolean),
+    tags: [...new Set(tagLists.flat())].sort(),
   };
 }
 
@@ -32,7 +29,7 @@ export default async function EditBlogPostPage({ params }: { params: Promise<{ i
 
   // One round trip of independent reads: none of them needs the post first.
   const [post, { topics, tags }, revisions] = await Promise.all([
-    db.post.findUnique({ where: { id }, include: { coverMedia: { select: { url: true } } } }),
+    repos.posts.findWithCoverUrl(id),
     loadTaxonomy(id),
     listPostRevisions(id),
   ]);

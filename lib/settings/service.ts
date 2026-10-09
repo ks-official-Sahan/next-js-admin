@@ -4,7 +4,7 @@ import { cached } from "@/lib/cache/cached";
 import { invalidate } from "@/lib/cache/invalidate";
 import { forSettings } from "@/lib/cache/plan";
 import { staticTags } from "@/lib/cache/tags";
-import { db } from "@/lib/db/prisma";
+import { repos, withTx } from "@/lib/data";
 import { audit } from "@/lib/admin/audit";
 import type { AuthUser } from "@/lib/auth/dal";
 import { log } from "@/lib/log";
@@ -39,7 +39,7 @@ async function readSettingRaw<K extends SettingKey>(key: K): Promise<SettingValu
   if (!isSettingKey(key)) return getSettingDefault(key) as SettingValue<K>;
 
   try {
-    const row = await db.setting.findUnique({ where: { key } });
+    const row = await repos.settings.find(key);
     if (!row) return getSettingDefault(key) as SettingValue<K>;
     return validateSetting(key, row.value) as SettingValue<K>;
   } catch (err) {
@@ -72,7 +72,7 @@ export async function collectPublicSettings(): Promise<Partial<Record<SettingKey
 async function readSettingsRaw(keys: SettingKey[]): Promise<Record<SettingKey, unknown>> {
   let rows: { key: string; value: unknown }[] = [];
   try {
-    rows = await db.setting.findMany({ where: { key: { in: keys } }, select: { key: true, value: true } });
+    rows = await repos.settings.findMany(keys);
   } catch (err) {
     log.error("Failed to read settings", { count: keys.length, error: String(err) });
   }
@@ -112,24 +112,20 @@ export async function getAllSettings(): Promise<Record<SettingKey, unknown>> {
 export async function updateSetting<K extends SettingKey>(
   key: K,
   value: SettingValue<K>,
-  actor: Pick<AuthUser, "id" | "email">
+  actor: Pick<AuthUser, "id" | "email"> & Partial<Pick<AuthUser, "role">>
 ): Promise<void> {
   const schema = getSettingSchema(key);
   const validated = schema.parse(value) as SettingValue<K>;
   const before = await readSettingRaw(key);
 
   try {
-    await db.$transaction(async (tx) => {
-      await tx.setting.upsert({
-        where: { key },
-        create: { key, value: validated, updatedById: actor.id },
-        update: { value: validated, updatedById: actor.id },
-      });
+    await withTx(async (tx) => {
+      await tx.settings.upsert(key, validated, actor.id);
 
       await audit(
         {
           action: "settings.updated",
-          actor: { id: actor.id, email: actor.email },
+          actor: { id: actor.id, email: actor.email, role: actor.role },
           entityType: "Setting",
           entityId: key,
           before,

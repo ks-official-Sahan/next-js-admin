@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import SetPasswordForm from "@/components/admin/auth/SetPasswordForm";
 import { hashToken, tokenState, verifyTokenTag } from "@/lib/auth/invite-token";
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
 import { getEnv } from "@/lib/env";
 
 export const metadata: Metadata = {
@@ -28,10 +28,7 @@ export default async function SetPasswordPage({ searchParams }: { searchParams: 
   const random = verifyTokenTag(token, getEnv().AUTH_SECRET);
   if (!token || !random) notFound();
 
-  const row = await db.authToken.findUnique({
-    where: { tokenHash: hashToken(random) },
-    select: { purpose: true, email: true, usedAt: true, revokedAt: true, expiresAt: true },
-  });
+  const row = await repos.authTokens.findByHash(hashToken(random));
   if (!row || tokenState(row, clock()) !== "valid") {
     return (
       <div className={card}>

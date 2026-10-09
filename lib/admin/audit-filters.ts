@@ -1,29 +1,14 @@
-import type { Prisma } from "@prisma/client";
+import type { AuditCursor, AuditFilters } from "@/lib/data/audit";
+
+export type { AuditCursor, AuditFilters };
 
 // The audit log screen and the CSV export share one filter: parse the query
-// string into validated filters, then build the Prisma where clause, with cursor
-// paging on (createdAt, id). Pure, so the builder is unit tested
-// (design notes, step 8).
-
-export interface AuditFilters {
-  /** Part of the actor's email, or an exact actor id. */
-  actor?: string;
-  /** An exact action, or a prefix ending in `*`, for example `auth.*`. */
-  action?: string;
-  entityType?: string;
-  entityId?: string;
-  from?: Date;
-  to?: Date;
-}
-
-export interface AuditCursor {
-  createdAt: Date;
-  id: string;
-}
+// string into validated filters and page by an opaque (createdAt, id) cursor.
+// The database query itself is the audit repository's (lib/data). Pure, so it
+// is unit tested (design notes, step 8).
 
 export const AUDIT_PAGE_SIZE = 50;
 export const AUDIT_MAX_PAGE_SIZE = 200;
-export const AUDIT_ORDER = [{ createdAt: "desc" }, { id: "desc" }] as const;
 
 type Params = Record<string, string | string[] | undefined>;
 
@@ -81,32 +66,6 @@ export function parseAuditFilters(params: Params): {
   const limit = Number.isInteger(requested) ? Math.min(Math.max(requested, 10), AUDIT_MAX_PAGE_SIZE) : AUDIT_PAGE_SIZE;
 
   return { filters, cursor: decodeCursor(one(params.cursor)), limit };
-}
-
-export function buildAuditWhere(filters: AuditFilters, cursor: AuditCursor | null = null): Prisma.AuditLogWhereInput {
-  const and: Prisma.AuditLogWhereInput[] = [];
-
-  if (filters.actor) {
-    and.push({ OR: [{ actorEmail: { contains: filters.actor, mode: "insensitive" } }, { actorId: filters.actor }] });
-  }
-  if (filters.action) {
-    and.push(
-      filters.action.endsWith("*")
-        ? { action: { startsWith: filters.action.slice(0, -1) } }
-        : { action: filters.action }
-    );
-  }
-  if (filters.entityType) and.push({ entityType: filters.entityType });
-  if (filters.entityId) and.push({ entityId: filters.entityId });
-  if (filters.from || filters.to) {
-    and.push({ createdAt: { ...(filters.from ? { gte: filters.from } : {}), ...(filters.to ? { lte: filters.to } : {}) } });
-  }
-  if (cursor) {
-    and.push({
-      OR: [{ createdAt: { lt: cursor.createdAt } }, { createdAt: cursor.createdAt, id: { lt: cursor.id } }],
-    });
-  }
-  return and.length > 0 ? { AND: and } : {};
 }
 
 /** Query string for a filter set, used by links and the export button. */

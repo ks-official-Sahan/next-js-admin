@@ -3,7 +3,7 @@ import "server-only";
 import { cached } from "@/lib/cache/cached";
 import { loadOrNull } from "@/lib/cache/fallback";
 import { isValidPostSlug, TAGS } from "@/lib/cache/tags";
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
 import { extractText, sanitizeRich } from "@/lib/cms/rich-text";
 import { log } from "@/lib/log";
 import { UpdatesContent } from "@/contents/updates";
@@ -91,27 +91,6 @@ export function defaultPosts(): BlogPostView[] {
   });
 }
 
-const SUMMARY_SELECT = {
-  id: true,
-  slug: true,
-  title: true,
-  excerpt: true,
-  // Only read to derive a missing excerpt; never cached with the list.
-  contentText: true,
-  topic: true,
-  tags: true,
-  publishedAt: true,
-  updatedAt: true,
-  readMinutes: true,
-  coverMedia: { select: { url: true, width: true, height: true } },
-  coverAlt: true,
-  seoTitle: true,
-  seoDescription: true,
-  canonicalUrl: true,
-  noindex: true,
-  author: { select: { name: true } },
-} as const;
-
 interface PostRow {
   id: string;
   slug: string;
@@ -173,37 +152,17 @@ function toView(row: FullPostRow): BlogPostView {
   };
 }
 
-// Status is the only visibility gate, exported so a test can assert it never
-// grows a publishAt comparison. A SCHEDULED post stays hidden until
-// lib/cron/jobs.ts's blogPublishJob (or a manual publish) actually promotes
-// it to PUBLISHED (design notes, Step 12).
-export const PUBLISHED_WHERE = { status: "PUBLISHED" } as const;
-
-type PostListDb = Pick<typeof db.post, "findMany">;
-type PostOneDb = Pick<typeof db.post, "findFirst">;
-
-export async function readPublishedPosts(client: PostListDb = db.post): Promise<PostRow[]> {
-  return client.findMany({
-    where: PUBLISHED_WHERE,
-    orderBy: { publishedAt: "desc" },
-    select: SUMMARY_SELECT,
-  });
-}
-
-export async function readPublishedPost(slug: string, client: PostOneDb = db.post): Promise<FullPostRow | null> {
-  return client.findFirst({
-    where: { ...PUBLISHED_WHERE, slug },
-    select: { ...SUMMARY_SELECT, contentHtml: true },
-  });
-}
-
-const cachedSummaries = cached(async () => (await readPublishedPosts()).map(toSummary), ["blog", "list", "v3"], {
+// Status is the only visibility gate (repos.posts.listPublished; the test in
+// lib/data/prisma/posts.test.ts asserts it never grows a publishAt comparison).
+// A SCHEDULED post stays hidden until lib/cron/jobs.ts's blogPublishJob (or a
+// manual publish) actually promotes it to PUBLISHED (design notes, Step 12).
+const cachedSummaries = cached(async () => (await repos.posts.listPublished()).map(toSummary), ["blog", "list", "v3"], {
   tags: [TAGS.blogList],
   revalidate: 300,
 });
 
 function cachedPost(slug: string) {
-  return cached(() => readPublishedPost(slug), ["blog", "post", slug], {
+  return cached((): Promise<FullPostRow | null> => repos.posts.findPublished(slug), ["blog", "post", slug], {
     tags: [TAGS.blogPost(slug), TAGS.blogList],
     revalidate: 300,
   });

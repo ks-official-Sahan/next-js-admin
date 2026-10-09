@@ -12,9 +12,19 @@ test("parseArgs applies defaults with no arguments", () => {
     install: true,
     git: true,
     pm: "pnpm",
+    auth: undefined,
+    orm: undefined,
     help: false,
     version: false,
   });
+});
+
+test("parseArgs reads --auth and --orm and validates them", () => {
+  const result = parseArgs(["--auth", "better-auth", "--orm", "drizzle"], defaults);
+  assert.equal(result.auth, "better-auth");
+  assert.equal(result.orm, "drizzle");
+  assert.throws(() => parseArgs(["--auth", "lucia"], defaults), /--auth must be one of/);
+  assert.throws(() => parseArgs(["--orm"], defaults), /--orm must be one of/);
 });
 
 test("parseArgs reads the positional directory argument", () => {

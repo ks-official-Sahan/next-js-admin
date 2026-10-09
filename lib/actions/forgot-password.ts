@@ -6,13 +6,13 @@ import { z } from "zod";
 import { audit } from "@/lib/admin/audit";
 import { done, fail, fieldErrorsFrom, formValues, type ActionState } from "@/lib/actions/state";
 import { RESET_TTL_MINUTES, createToken } from "@/lib/auth/invite-token";
+import { accountLink, signInLink } from "@/lib/auth/links";
 import { limit } from "@/lib/cache/ratelimit";
 import { clientIp, UNKNOWN_IP } from "@/lib/security/ip";
-import { db } from "@/lib/db/prisma";
-import { sendEmail } from "@/lib/email";
+import { repos, withTx } from "@/lib/data";
+import { sendAccountEmail } from "@/lib/email/account-mail";
 import { passwordReset } from "@/lib/email/templates";
 import { getEnv } from "@/lib/env";
-import { absoluteUrl } from "@/lib/site-url";
 
 // Self-service "forgot password", reachable while signed out (proxy.ts lets
 // FORGOT_PASSWORD_PATH through without a session or the admin unlock cookie's
@@ -37,10 +37,7 @@ export async function requestPasswordResetAction(_previous: ActionState, formDat
   if (ip !== UNKNOWN_IP && !(await limit("reset:ip", ip)).ok) return fail("Too many attempts. Try again later.");
   if (!(await limit("reset:email", email)).ok) return done(GENERIC);
 
-  const user = await db.user.findUnique({
-    where: { email },
-    select: { id: true, name: true, disabledAt: true },
-  });
+  const user = await repos.users.findRefByEmail(email);
 
   // Silently do nothing for an unknown or disabled account, but still return
   // the generic message: the response must look identical either way.
@@ -49,19 +46,14 @@ export async function requestPasswordResetAction(_previous: ActionState, formDat
     if (secret) {
       const { token, hash } = createToken(secret);
       try {
-        const row = await db.$transaction(async (tx) => {
-          await tx.authToken.updateMany({
-            where: { purpose: "PASSWORD_RESET", userId: user.id, usedAt: null, revokedAt: null },
-            data: { revokedAt: new Date() },
-          });
-          const created = await tx.authToken.create({
-            data: {
-              purpose: "PASSWORD_RESET",
-              email,
-              userId: user.id,
-              tokenHash: hash,
-              expiresAt: new Date(Date.now() + RESET_TTL_MINUTES * 60 * 1000),
-            },
+        const row = await withTx(async (tx) => {
+          await tx.authTokens.revokeOpenForUser("PASSWORD_RESET", user.id);
+          const created = await tx.authTokens.create({
+            purpose: "PASSWORD_RESET",
+            email,
+            userId: user.id,
+            tokenHash: hash,
+            expiresAt: new Date(Date.now() + RESET_TTL_MINUTES * 60 * 1000),
           });
           await audit(
             { action: "auth.password.reset_requested_self", actor: { id: user.id, email }, entityType: "User", entityId: user.id },
@@ -70,16 +62,15 @@ export async function requestPasswordResetAction(_previous: ActionState, formDat
           return created;
         });
 
-        const rendered = passwordReset({
-          name: user.name,
-          url: absoluteUrl(`/admin/set-password?token=${encodeURIComponent(token)}`),
-          expiresMinutes: RESET_TTL_MINUTES,
+        const url = await accountLink(token);
+        const signInUrl = (await signInLink()).url;
+        const sent = await sendAccountEmail({
+          to: email,
+          render: (options) => passwordReset({ name: user.name, url, expiresMinutes: RESET_TTL_MINUTES, signInUrl }, options),
+          category: "password-reset",
+          actor: { id: user.id, email },
         });
-        const sent = await sendEmail(
-          { to: email, subject: rendered.subject, html: rendered.html, text: rendered.text, category: "security" },
-          { actor: { id: user.id, email } }
-        );
-        if (!sent.ok) await db.authToken.update({ where: { id: row.id }, data: { revokedAt: new Date() } });
+        if (!sent.ok) await repos.authTokens.revoke(row.id);
       } catch {
         // Fall through to the generic message regardless of what failed.
       }

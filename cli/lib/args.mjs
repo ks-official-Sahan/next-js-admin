@@ -1,6 +1,8 @@
 // @ts-check
 
 /** @typedef {import("./pm.mjs").PackageManager} PackageManager */
+/** @typedef {import("./variants.mjs").AuthEngine} AuthEngine */
+/** @typedef {import("./variants.mjs").Orm} Orm */
 
 /**
  * @typedef {{
@@ -9,10 +11,14 @@
  *   install: boolean,
  *   git: boolean,
  *   pm: PackageManager,
+ *   auth: AuthEngine | undefined,
+ *   orm: Orm | undefined,
  *   help: boolean,
  *   version: boolean,
  * }} ParsedArgs
  */
+
+import { AUTH_VALUES, ORM_VALUES } from "./variants.mjs";
 
 const PM_VALUES = /** @type {const} */ (["pnpm", "npm", "yarn", "bun"]);
 
@@ -34,6 +40,8 @@ export function parseArgs(argv, defaults) {
     install: true,
     git: true,
     pm: defaults.defaultPm,
+    auth: undefined,
+    orm: undefined,
     help: false,
     version: false,
   };
@@ -72,6 +80,22 @@ export function parseArgs(argv, defaults) {
         result.pm = value;
         break;
       }
+      case "--auth": {
+        const value = argv[++i];
+        if (value === undefined || !oneOf(AUTH_VALUES, value)) {
+          throw new Error(`--auth must be one of: ${AUTH_VALUES.join(", ")}`);
+        }
+        result.auth = value;
+        break;
+      }
+      case "--orm": {
+        const value = argv[++i];
+        if (value === undefined || !oneOf(ORM_VALUES, value)) {
+          throw new Error(`--orm must be one of: ${ORM_VALUES.join(", ")}`);
+        }
+        result.orm = value;
+        break;
+      }
       default:
         if (arg.startsWith("-")) {
           throw new Error(`Unknown option: ${arg}`);
@@ -86,6 +110,16 @@ export function parseArgs(argv, defaults) {
   if (positionals.length === 1) result.dir = positionals[0];
 
   return result;
+}
+
+/**
+ * @template {string} T
+ * @param {readonly T[]} values
+ * @param {string} value
+ * @returns {value is T}
+ */
+function oneOf(values, value) {
+  return /** @type {readonly string[]} */ (values).includes(value);
 }
 
 /**
@@ -107,6 +141,8 @@ Arguments:
 Options:
   --ref <git-ref>       Template tag/branch/commit to use (default: v<cli-version>)
   --pm <pnpm|npm|yarn|bun>  Package manager to install with (default: auto-detected)
+  --auth <next-auth|better-auth>  Auth engine (asked if omitted; default: next-auth)
+  --orm <prisma|drizzle>    ORM for the data layer (asked if omitted; default: prisma)
   --no-install           Skip installing dependencies
   --no-git                Skip \`git init\` and the initial commit
   -h, --help              Show this help

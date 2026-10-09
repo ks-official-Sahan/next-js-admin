@@ -4,7 +4,7 @@ import Link from "next/link";
 import EmptyState from "@/components/admin/ui/EmptyState";
 import { badgeClass, buttonVariants, fieldClass, tableClass, tdClass, thClass } from "@/components/admin/ui/styles";
 import { auditQueryString, parseAuditFilters } from "@/lib/admin/audit-filters";
-import { auditActionNames, queryAudit } from "@/lib/admin/audit-query";
+import { auditActionNames, auditScope, queryAudit } from "@/lib/admin/audit-query";
 import { diffValues } from "@/lib/admin/diff";
 import { formatDateTime } from "@/lib/admin/format";
 import { hasPermission, requirePermission } from "@/lib/auth/dal";
@@ -65,7 +65,7 @@ export default async function AuditPage({
   const params = await searchParams;
   const { filters, cursor, limit } = parseAuditFilters(params);
 
-  const [{ rows, nextCursor }, actions] = await Promise.all([queryAudit(filters, cursor, limit), auditActionNames()]);
+  const [{ rows, nextCursor }, actions] = await Promise.all([queryAudit(auditScope(filters, actor), cursor, limit), auditActionNames(actor)]);
   const mayExport = hasPermission(actor, "exportData");
   const filtered = Object.keys(filters).length > 0;
 

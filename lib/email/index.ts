@@ -1,20 +1,32 @@
 import "server-only";
 
+import {
+  createCaptureProvider,
+  createEmailService,
+  emailConfigFromEnv,
+  emailHealth,
+  providerOrder,
+  runBrevoDiagnostics,
+  type BrevoDiagnostics,
+  type DiagnosticsInput,
+  type EmailConfig,
+  type EmailHealth,
+  type EmailMessage,
+  type EmailProvider,
+  type SendOptions,
+  type SendResult,
+} from "@sahan-sac/email-kit";
+import { createSmtpProvider } from "@sahan-sac/email-kit/providers/brevo-smtp";
+import { createResendProvider } from "@sahan-sac/email-kit/providers/resend";
+
 import { auditSafe } from "@/lib/admin/audit";
 import { getEnv } from "@/lib/env";
 
-import { runBrevoDiagnostics, type BrevoDiagnostics, type DiagnosticsInput } from "./brevo-diagnostics";
-import { emailConfigFromEnv, providerOrder, type EmailConfig } from "./config";
-import { emailHealth, type EmailHealth } from "./health";
-import { createSmtpProvider } from "./providers/brevo-smtp";
-import { createCaptureProvider } from "./providers/capture";
-import { createResendProvider } from "./providers/resend";
-import { createEmailService, type SendOptions } from "./service";
-import type { EmailMessage, EmailProvider, SendResult } from "./types";
-
 // The one entry point for mail: sendEmail(). Resend first, Brevo SMTP second,
 // chosen from the environment on every call, so a changed variable applies to the
-// next send. design notes, step 5 and decision D11.
+// next send. Providers, guards and the layout live in @sahan-sac/email-kit;
+// this file only wires the environment and the audit log. Design notes,
+// step 5 and decision D11.
 
 const isProduction = () => process.env.NODE_ENV === "production";
 

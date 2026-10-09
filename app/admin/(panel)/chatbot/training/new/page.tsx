@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 };
 
 export default async function NewTrainingPage() {
-  await requirePermission("manageChatbot");
+  await requirePermission("manageChatbotTraining");
 
   async function create(previous: ActionState, formData: FormData): Promise<ActionState> {
     "use server";

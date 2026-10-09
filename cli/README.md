@@ -27,6 +27,8 @@ Arguments:
 Options:
   --ref <git-ref>           Template tag/branch/commit to use (default: v<cli-version>)
   --pm <pnpm|npm|yarn|bun>  Package manager to install with (default: auto-detected)
+  --auth <next-auth|better-auth>  Auth engine (asked if omitted; default: next-auth)
+  --orm <prisma|drizzle>    ORM for the data layer (asked if omitted; default: prisma)
   --no-install              Skip installing dependencies
   --no-git                  Skip `git init` and the initial commit
   -h, --help                Show help
@@ -40,10 +42,11 @@ A CLI version always scaffolds the matching template tag: `create-admin@0.1.0` d
 1. Refuses to run if `dir` already exists and is not empty.
 2. Downloads `github:ks-official-Sahan/next-js-admin#<ref>` with [giget](https://github.com/unjs/giget).
 3. Removes the scaffold's own `cli/` folder and `.github/workflows/release-cli.yml` — those belong to the template repo, not to your project.
-4. Sets `package.json`'s `name` to a valid npm package name derived from `dir`.
-5. Copies `.env.example` to `.env.local`, filling every `*_SECRET`/`*_SIGNING_KEY` variable with a fresh `crypto.randomBytes(32)` value and leaving provider keys (database, email, AI, Cloudinary, ...) blank for you to fill in.
-6. Optionally installs dependencies and initializes a git repository with one commit.
-7. Prints next steps (set `DATABASE_URL`, push the schema, seed the owner account, start the dev server).
+4. Applies the chosen auth engine and ORM from the template's `variants/variants.json` (`lib/variants.mjs`): copies the overlay files, deletes what the choice does not use, edits `package.json` and `.env.example`, then removes `variants/`. Without a terminal, missing `--auth`/`--orm` take the defaults. A template version older than the variants only works with the defaults.
+5. Sets `package.json`'s `name` to a valid npm package name derived from `dir`.
+6. Copies `.env.example` to `.env.local`, filling every `*_SECRET`/`*_SIGNING_KEY` variable with a fresh `crypto.randomBytes(32)` value and leaving provider keys (database, email, AI, Cloudinary, ...) blank for you to fill in.
+7. Optionally installs dependencies and initializes a git repository with one commit.
+8. Prints next steps (set `DATABASE_URL`, push the schema, seed the owner account, start the dev server).
 
 ## Development
 

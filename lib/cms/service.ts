@@ -1,9 +1,9 @@
 import "server-only";
 
-import type { Prisma } from "@prisma/client";
-
 import { audit, type AuditEvent } from "@/lib/admin/audit";
-import { db } from "@/lib/db/prisma";
+import { repos, withTx, type Repos } from "@/lib/data";
+import type { ContentBlockRow } from "@/lib/data/content";
+import { UniqueViolation } from "@/lib/data/errors";
 import { log } from "@/lib/log";
 
 import { resolveSection } from "./merge";
@@ -23,31 +23,7 @@ export interface Actor {
   email: string;
 }
 
-export interface BlockRow {
-  id: string;
-  version: number;
-  status: BlockStatus;
-  data: unknown;
-  note: string | null;
-  publishedAt: Date | null;
-  updatedAt: Date;
-  createdById: string | null;
-  publishedById: string | null;
-}
-
-const blockSelect = {
-  id: true,
-  version: true,
-  status: true,
-  data: true,
-  note: true,
-  publishedAt: true,
-  updatedAt: true,
-  createdById: true,
-  publishedById: true,
-} as const;
-
-const json = (value: unknown) => value as Prisma.InputJsonValue;
+export type BlockRow = ContentBlockRow;
 
 export type Failure = {
   ok: false;
@@ -87,13 +63,8 @@ function fieldErrorsOf(error: { issues: ReadonlyArray<{ path: ReadonlyArray<Prop
   return out;
 }
 
-async function rowsOf(client: Prisma.TransactionClient | typeof db, page: string, key: string): Promise<BlockRow[]> {
-  const rows = await client.contentBlock.findMany({
-    where: { pageSlug: page, sectionSlug: key },
-    orderBy: { version: "desc" },
-    select: blockSelect,
-  });
-  return rows as BlockRow[];
+function rowsOf(client: Pick<Repos, "contentBlocks">, page: string, key: string): Promise<BlockRow[]> {
+  return client.contentBlocks.listSection(page, key);
 }
 
 // ─── Reading for the editor ──────────────────────────────────────────────────
@@ -109,10 +80,7 @@ export interface SectionSummary {
 }
 
 export async function loadPageSummary(page: CmsPage): Promise<SectionSummary[]> {
-  const rows = (await db.contentBlock.findMany({
-    where: { pageSlug: page, status: { in: ["DRAFT", "PUBLISHED"] } },
-    select: { sectionSlug: true, status: true, version: true, publishedAt: true, updatedAt: true },
-  })) as Array<{ sectionSlug: string; status: BlockStatus; version: number; publishedAt: Date | null; updatedAt: Date }>;
+  const rows = await repos.contentBlocks.listPageStates(page);
 
   return Object.values(sectionsOf(page)).map((definition) => {
     const mine = rows.filter((row) => row.sectionSlug === definition.key);
@@ -151,7 +119,7 @@ export interface EditorSection {
 }
 
 export async function loadEditorSection(definition: SectionDefinition<unknown>): Promise<EditorSection> {
-  const rows = await rowsOf(db, definition.page, definition.key);
+  const rows = await rowsOf(repos, definition.page, definition.key);
   const draft = findDraft(rows);
   const published = findPublished(rows);
   const stored = draft?.data ?? published?.data;
@@ -178,10 +146,7 @@ export async function loadEditorSection(definition: SectionDefinition<unknown>):
 
 /** Draft over published over defaults for every section of a page: the preview. */
 export async function loadPreviewContent<P extends CmsPage>(page: P): Promise<PageContent<P>> {
-  const rows = (await db.contentBlock.findMany({
-    where: { pageSlug: page, status: { in: ["DRAFT", "PUBLISHED"] } },
-    select: { sectionSlug: true, status: true, data: true },
-  })) as Array<{ sectionSlug: string; status: BlockStatus; data: unknown }>;
+  const rows = await repos.contentBlocks.listPageData(page, ["DRAFT", "PUBLISHED"]);
 
   const out: Record<string, unknown> = {};
   for (const [key, definition] of Object.entries(sectionsOf(page))) {
@@ -200,7 +165,7 @@ async function run<T extends { ok: true }>(work: () => Promise<T>): Promise<T | 
   } catch (error) {
     if (error instanceof Abort) return error.failure;
     // Two people creating the first draft at once: the unique version index refuses the second.
-    if ((error as { code?: string })?.code === "P2002") return fail("conflict", CONFLICT);
+    if (error instanceof UniqueViolation) return fail("conflict", CONFLICT);
     log.error("cms change failed", { error: error instanceof Error ? error.message : String(error) });
     return fail("failed", "Something went wrong. Nothing was changed.");
   }
@@ -221,7 +186,7 @@ const auditFor = (
 
 /** Creates the draft or updates it in place, after checking nobody else changed it. */
 async function writeDraft(
-  tx: Prisma.TransactionClient,
+  tx: Repos,
   definition: SectionDefinition<unknown>,
   data: unknown,
   base: string | null,
@@ -237,25 +202,17 @@ async function writeDraft(
   if (action === "update-draft" && draft) {
     // Conditional on the timestamp the editor saw, so a save that lands between the
     // check above and this write still cannot overwrite the other person's draft.
-    const updated = await tx.contentBlock.updateMany({
-      where: { id: draft.id, status: "DRAFT", updatedAt: draft.updatedAt },
-      data: { data: json(data) },
-    });
-    if (updated.count !== 1) throw new Abort(fail("conflict", CONFLICT));
-    const fresh = await tx.contentBlock.findUniqueOrThrow({ where: { id: draft.id }, select: { updatedAt: true } });
-    return { version: draft.version, updatedAt: fresh.updatedAt, before };
+    if (!(await tx.contentBlocks.updateDraftData(draft.id, draft.updatedAt, data))) throw new Abort(fail("conflict", CONFLICT));
+    return { version: draft.version, updatedAt: await tx.contentBlocks.updatedAt(draft.id), before };
   }
 
-  const created = await tx.contentBlock.create({
-    data: {
-      pageSlug: definition.page,
-      sectionSlug: definition.key,
-      version: nextVersion(rows),
-      data: json(data),
-      status: "DRAFT",
-      createdById: actor.id,
-    },
-    select: { version: true, updatedAt: true },
+  const created = await tx.contentBlocks.create({
+    pageSlug: definition.page,
+    sectionSlug: definition.key,
+    version: nextVersion(rows),
+    data,
+    status: "DRAFT",
+    createdById: actor.id,
   });
   return { ...created, before };
 }
@@ -274,7 +231,7 @@ export async function saveDraft(input: {
   if (!parsed.success) return fail("invalid", "Some fields need attention.", fieldErrorsOf(parsed.error));
 
   return run(() =>
-    db.$transaction(async (tx) => {
+    withTx(async (tx) => {
       const written = await writeDraft(tx, definition, parsed.data, input.base, input.actor);
       await audit(
         auditFor("content.draft_saved", input.actor, definition, {
@@ -301,7 +258,7 @@ export async function publishDraft(input: {
   if ("ok" in definition) return definition;
 
   return run(() =>
-    db.$transaction(async (tx) => {
+    withTx(async (tx) => {
       const rows = await rowsOf(tx, definition.page, definition.key);
       const draft = findDraft(rows);
       if (!draft) throw new Abort(fail("nothing", "There is no draft to publish."));
@@ -316,19 +273,13 @@ export async function publishDraft(input: {
       }
 
       const previous = findPublished(rows);
-      if (previous) {
-        await tx.contentBlock.updateMany({ where: { id: previous.id, status: "PUBLISHED" }, data: { status: "SUPERSEDED" } });
-      }
-      const promoted = await tx.contentBlock.updateMany({
-        where: { id: draft.id, status: "DRAFT", updatedAt: draft.updatedAt },
-        data: {
-          status: "PUBLISHED",
-          publishedAt: new Date(),
-          publishedById: input.actor.id,
-          note: input.note?.trim() || null,
-        },
+      if (previous) await tx.contentBlocks.supersede(previous.id);
+      const promoted = await tx.contentBlocks.publishDraft(draft.id, draft.updatedAt, {
+        publishedAt: new Date(),
+        publishedById: input.actor.id,
+        note: input.note?.trim() || null,
       });
-      if (promoted.count !== 1) throw new Abort(fail("conflict", CONFLICT));
+      if (!promoted) throw new Abort(fail("conflict", CONFLICT));
 
       await audit(
         auditFor("content.published", input.actor, definition, {
@@ -342,8 +293,8 @@ export async function publishDraft(input: {
         }),
         tx
       );
-      const fresh = await tx.contentBlock.findUniqueOrThrow({ where: { id: draft.id }, select: { updatedAt: true } });
-      return { ok: true as const, version: draft.version, updatedAt: fresh.updatedAt.toISOString() };
+      const updatedAt = await tx.contentBlocks.updatedAt(draft.id);
+      return { ok: true as const, version: draft.version, updatedAt: updatedAt.toISOString() };
     })
   );
 }
@@ -360,7 +311,7 @@ export async function restoreVersion(input: {
   if ("ok" in definition) return definition;
 
   return run(() =>
-    db.$transaction(async (tx) => {
+    withTx(async (tx) => {
       const rows = await rowsOf(tx, definition.page, definition.key);
       const source = rows.find((row) => row.version === input.version && row.status !== "DRAFT");
       if (!source) throw new Abort(fail("not_found", "That version does not exist."));
@@ -396,17 +347,14 @@ export async function discardDraft(input: {
   if ("ok" in definition) return definition;
 
   const result = await run(() =>
-    db.$transaction(async (tx) => {
+    withTx(async (tx) => {
       const rows = await rowsOf(tx, definition.page, definition.key);
       const draft = findDraft(rows);
       if (!draft) throw new Abort(fail("nothing", "There is no draft to discard."));
       if (input.base === null || draft.updatedAt.toISOString() !== input.base) {
         throw new Abort(fail("conflict", CONFLICT));
       }
-      const removed = await tx.contentBlock.deleteMany({
-        where: { id: draft.id, status: "DRAFT", updatedAt: draft.updatedAt },
-      });
-      if (removed.count !== 1) throw new Abort(fail("conflict", CONFLICT));
+      if (!(await tx.contentBlocks.deleteDraft(draft.id, draft.updatedAt))) throw new Abort(fail("conflict", CONFLICT));
 
       await audit(
         auditFor("content.draft_discarded", input.actor, definition, {

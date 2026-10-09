@@ -1,13 +1,11 @@
 import "server-only";
 
-import type { Prisma } from "@prisma/client";
-
 import { MEDIA_CONFIG, getMediaKind } from "@sahan-sac/media-kit/config";
 import type { CloudinaryClient } from "@sahan-sac/media-kit/cloudinary";
 import { validateMediaUpload, validateMediaMetadata } from "@sahan-sac/media-kit/validation";
 
 import { audit } from "@/lib/admin/audit";
-import { db } from "@/lib/db/prisma";
+import { repos, withTx, type Repos } from "@/lib/data";
 import { log } from "@/lib/log";
 import { MEDIA_UPLOAD_FOLDER } from "@/lib/media/folder";
 
@@ -99,21 +97,19 @@ export async function registerUpload(
     // (fetch, validate, and any cleanup delete above) is already done by this
     // point, so nothing here can leave an audit row for an upload that did
     // not actually get registered.
-    const asset = await db.$transaction(async (tx) => {
-      const created = await tx.mediaAsset.create({
-        data: {
-          provider: "CLOUDINARY",
-          kind: mediaKind,
-          publicId,
-          url: cloudinaryAsset.secure_url,
-          format: cloudinaryAsset.format,
-          width: cloudinaryAsset.width,
-          height: cloudinaryAsset.height,
-          sizeBytes: cloudinaryAsset.bytes,
-          alt: alt || (mediaKind === "IMAGE" ? "" : null), // Empty string for image, null for document
-          folder,
-          createdById: actor.id,
-        },
+    const asset = await withTx(async (tx) => {
+      const created = await tx.media.create({
+        provider: "CLOUDINARY",
+        kind: mediaKind,
+        publicId,
+        url: cloudinaryAsset.secure_url,
+        format: cloudinaryAsset.format,
+        width: cloudinaryAsset.width,
+        height: cloudinaryAsset.height,
+        sizeBytes: cloudinaryAsset.bytes,
+        alt: alt || (mediaKind === "IMAGE" ? "" : null), // Empty string for image, null for document
+        folder,
+        createdById: actor.id,
       });
 
       await audit(
@@ -189,22 +185,20 @@ export async function registerGeneratedImage(
   // left as an orphan no MediaAsset row points at.
   let asset: { id: string; url: string };
   try {
-    asset = await db.$transaction(async (tx) => {
-    const created = await tx.mediaAsset.create({
-      data: {
-        provider: "CLOUDINARY",
-        kind: "IMAGE",
-        publicId: uploaded.public_id,
-        url: uploaded.secure_url,
-        format: uploaded.format || format,
-        width: uploaded.width,
-        height: uploaded.height,
-        sizeBytes: uploaded.bytes || buffer.length,
-        alt: input.alt,
-        title: input.title || null,
-        folder: input.folder,
-        createdById: actor.id,
-      },
+    asset = await withTx(async (tx) => {
+    const created = await tx.media.create({
+      provider: "CLOUDINARY",
+      kind: "IMAGE",
+      publicId: uploaded.public_id,
+      url: uploaded.secure_url,
+      format: uploaded.format || format,
+      width: uploaded.width,
+      height: uploaded.height,
+      sizeBytes: uploaded.bytes || buffer.length,
+      alt: input.alt,
+      title: input.title || null,
+      folder: input.folder,
+      createdById: actor.id,
     });
 
     await audit(
@@ -234,9 +228,7 @@ export async function updateMediaMetadata(
   input: UpdateMediaInput,
   actor: { id: string; email: string }
 ): Promise<{ ok: false; error: string } | { ok: true }> {
-  const asset = await db.mediaAsset.findUnique({
-    where: { id: input.mediaId },
-  });
+  const asset = await repos.media.find(input.mediaId);
 
   if (!asset) return { ok: false, error: "Media not found" };
 
@@ -252,14 +244,11 @@ export async function updateMediaMetadata(
     tags: asset.tags,
   };
 
-  await db.$transaction(async (tx) => {
-    const updated = await tx.mediaAsset.update({
-      where: { id: input.mediaId },
-      data: {
-        alt: input.alt ?? asset.alt,
-        title: input.title ?? asset.title,
-        tags: input.tags ?? asset.tags,
-      },
+  await withTx(async (tx) => {
+    const updated = await tx.media.updateMetadata(input.mediaId, {
+      alt: input.alt ?? asset.alt,
+      title: input.title ?? asset.title,
+      tags: input.tags ?? asset.tags,
     });
 
     await audit(
@@ -290,10 +279,7 @@ export async function deleteMedia(
   actor: { id: string; email: string },
   cloudinaryClient?: CloudinaryClient
 ): Promise<DeleteMediaResult> {
-  const asset = await db.mediaAsset.findUnique({
-    where: { id: mediaId },
-    include: { usages: true },
-  });
+  const asset = await repos.media.findWithUsages(mediaId);
 
   if (!asset) return { ok: false, error: "Media not found" };
 
@@ -317,8 +303,8 @@ export async function deleteMedia(
   }
 
   // Then delete from the database and audit it atomically.
-  await db.$transaction(async (tx) => {
-    await tx.mediaAsset.delete({ where: { id: mediaId } });
+  await withTx(async (tx) => {
+    await tx.media.delete(mediaId);
 
     await audit(
       {
@@ -342,35 +328,17 @@ export async function deleteMedia(
 
 // Record a media usage (call from content/collection editors)
 export async function recordMediaUsage(
-  tx: Prisma.TransactionClient | typeof db,
+  tx: Pick<Repos, "media">,
   input: RecordUsageInput
 ): Promise<void> {
-  await tx.mediaUsage.upsert({
-    where: {
-      mediaId_entityType_entityId_field: {
-        mediaId: input.mediaId,
-        entityType: input.entityType,
-        entityId: input.entityId,
-        field: input.field,
-      },
-    },
-    update: {},
-    create: {
-      mediaId: input.mediaId,
-      entityType: input.entityType,
-      entityId: input.entityId,
-      field: input.field,
-    },
-  });
+  await tx.media.recordUsage({ mediaId: input.mediaId, entityType: input.entityType, entityId: input.entityId, field: input.field });
 }
 
 // Clear all usages for an entity (call when deleting/updating content)
 export async function clearMediaUsage(
-  tx: Prisma.TransactionClient | typeof db,
+  tx: Pick<Repos, "media">,
   entityType: string,
   entityId: string
 ): Promise<void> {
-  await tx.mediaUsage.deleteMany({
-    where: { entityType, entityId },
-  });
+  await tx.media.clearUsage(entityType, entityId);
 }

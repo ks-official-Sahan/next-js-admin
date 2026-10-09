@@ -1,6 +1,8 @@
 import "server-only";
 
 import { aiEnvSchema } from "@sahan-sac/ai-core/env";
+import { emailEnvSchema } from "@sahan-sac/email-kit/env";
+import { presentationModeOn } from "@sahan-sac/auth-kit/rbac/mask";
 import { mediaEnvSchema } from "@sahan-sac/media-kit/env";
 import { z } from "zod";
 
@@ -26,19 +28,6 @@ const flag = z
 
 const list = text.transform((value) => splitList(value));
 
-const port = text.transform((value, ctx) => {
-  if (value === undefined) return undefined;
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
-    ctx.addIssue({ code: "custom", message: "must be a port number" });
-    return z.NEVER;
-  }
-  return parsed;
-});
-
-const emailProvider = text
-  .transform((value) => (value ?? "auto").toLowerCase())
-  .pipe(z.enum(["auto", "resend", "brevo-smtp", "capture"]));
 
 const schema = z.object({
   // Auth and signing
@@ -48,12 +37,18 @@ const schema = z.object({
   INTERNAL_SIGNING_SECRET: text,
   MAINTENANCE_BYPASS_SECRET: text,
   ADMIN_LOGIN_UNLOCK_SECRET: text,
+  // Days a sign-in link (/s/...) stays valid: 1..90, default 14 (lib/auth/links.ts).
+  ADMIN_SIGN_IN_LINK_DAYS: text,
   CRON_SECRET: text,
   ADMIN_EMAIL: text,
   ADMIN_NAME: text,
   ADMIN_PASSWORD: text,
   SITE_URL: text,
+  // Site domains for email links, in order; the first that answers /api/health is used (lib/site-url.ts).
+  SITE_URLS: list,
   ADMIN_ALLOWED_ORIGINS: list,
+  // Developer masking (lib/auth/mask.ts). Off unless exactly "true".
+  ADMIN_PRESENTATION_MODE: z.string().optional().transform(presentationModeOn),
 
   // Data
   DATABASE_URL: text,
@@ -67,22 +62,13 @@ const schema = z.object({
   // @sahan-sac media package, so variable names and defaults never drift.
   ...mediaEnvSchema.shape,
 
-  // Email
-  EMAIL_PROVIDER: emailProvider,
-  RESEND_API_KEY: text,
-  RESEND_SENDER_EMAIL: text,
-  RESEND_SENDER_NAME: text,
+  // Email providers, senders and EMAIL_CC: one schema shared with every
+  // @sahan-sac email package, so variable names and defaults never drift.
+  ...emailEnvSchema.shape,
+  // Contact form routing (the app's own).
   RESEND_RECIPIENT_EMAILS: list,
   RESEND_CC_EMAILS: list,
   RESEND_BCC_EMAILS: list,
-  EMAIL_HOST: text,
-  EMAIL_PORT: port,
-  EMAIL_USE_TLS: flag,
-  EMAIL_HOST_USER: text,
-  EMAIL_HOST_PASSWORD: text,
-  DEFAULT_FROM_EMAIL: text,
-  EMAIL_SENDER_USER: text,
-  EMAIL_BREVO_API_KEY: text,
 
   // AI (blog assistant, chatbot, images): one schema shared with every
   // @sahan-sac AI package, so variable names and defaults never drift.

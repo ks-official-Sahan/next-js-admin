@@ -1,18 +1,17 @@
 "use server";
 
-import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
 
 import { auditSafe } from "@/lib/admin/audit";
 import { retryMessage } from "@/lib/admin/rate-limited";
 import { hasValidUnlock } from "@/lib/admin/unlock-request";
-import { signIn, signOut } from "@/lib/auth/config";
 import { getOptionalUser } from "@/lib/auth/dal";
+import { attemptSignIn, signOutAndRedirect } from "@/lib/auth/engine";
 import { challengeOwner, issueChallenge, verifyChallenge, type IssueResult } from "@/lib/auth/mfa";
 import { MFA_TTL_MINUTES, normalizeCode } from "@/lib/auth/mfa-rules";
 import { safeCallbackUrl } from "@/lib/auth/safe-callback-url";
 import { revokeSession } from "@/lib/auth/session-store";
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
 
 // Sign-in and sign-out as Server Functions. They stay POST requests to the
 // admin route, so the proxy origin check and the Next origin check both apply
@@ -49,29 +48,6 @@ function messageFor(code: string | null | undefined): string {
   return (code && MESSAGES[code]) || GENERIC;
 }
 
-function codeOf(error: unknown): string | null {
-  if (error instanceof AuthError) {
-    const code = (error as AuthError & { code?: string }).code;
-    return typeof code === "string" ? code : "invalid";
-  }
-  return null;
-}
-
-/** `signIn` reports a refusal by throwing or, depending on the version, by returning a URL. */
-async function attemptSignIn(credentials: Record<string, string>): Promise<{ code: string } | null> {
-  try {
-    const result = await signIn("credentials", { ...credentials, redirect: false });
-    if (typeof result === "string" && result.includes("error=")) {
-      return { code: new URL(result, "http://local").searchParams.get("code") ?? "invalid" };
-    }
-    return null;
-  } catch (error) {
-    const code = codeOf(error);
-    if (code === null) throw error;
-    return { code };
-  }
-}
-
 const codeStep = (challengeId: string, email: string, notice?: string): SignInState => ({
   error: null,
   challengeId,
@@ -98,10 +74,7 @@ export async function startSignIn(_previous: SignInState, formData: FormData): P
   if (refused?.code === "mfa_required") {
     // The password was right (Auth.js only says so after the limiter and the hash
     // check), so it is safe to look the account up and send it a code.
-    const user = await db.user.findUnique({
-      where: { email: String(email).trim().toLowerCase() },
-      select: { id: true, email: true, name: true, disabledAt: true },
-    });
+    const user = await repos.users.findRefByEmail(String(email).trim().toLowerCase());
     if (!user || user.disabledAt) return { error: GENERIC };
     const issued = await issueChallenge({ userId: user.id, email: user.email, name: user.name, purpose: "SIGN_IN" });
     return issued.ok ? codeStep(issued.challengeId, user.email) : issueError(issued);
@@ -174,5 +147,5 @@ export async function signOutAction(): Promise<void> {
       entityId: user.sid,
     });
   }
-  await signOut({ redirectTo: "/" });
+  await signOutAndRedirect("/");
 }

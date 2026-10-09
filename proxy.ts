@@ -1,6 +1,17 @@
-import { isUnlockSecret, loginUnlockEnabled, signUnlockCookie, UNLOCK_QUERY, unlockCookieOptions, unlockKeysFromEnv, verifyTokenTag, verifyUnlockCookie } from "@sahan-sac/auth-kit";
+import {
+  isUnlockSecret,
+  loginUnlockEnabled,
+  parseShortLink,
+  resolveShortLink,
+  signUnlockCookie,
+  UNLOCK_QUERY,
+  unlockCookieOptions,
+  unlockKeysFromEnv,
+  verifyTokenTag,
+  verifyUnlockCookie,
+  type ShortLink,
+} from "@sahan-sac/auth-kit";
 import { buildCsp, clientIp, generateNonce, isAllowedOrigin, isScannerPath, parseOriginList, shouldBlockAdminByAllowlist, UNKNOWN_IP } from "@sahan-sac/auth-kit/security";
-import { getToken } from "next-auth/jwt";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { UNLOCK_COOKIE } from "@/lib/admin/login-unlock";
@@ -14,8 +25,9 @@ import {
   signBypassCookie,
   verifyBypassCookie,
 } from "@/lib/admin/maintenance-bypass";
-import { CONFIRM_EMAIL_PATH, FORGOT_PASSWORD_PATH, LOCKED_PATH, LOGIN_PATH, SESSION_COOKIE, SET_PASSWORD_PATH } from "@/lib/auth/constants";
+import { CONFIRM_EMAIL_PATH, FORGOT_PASSWORD_PATH, LOCKED_PATH, LOGIN_PATH, SET_PASSWORD_PATH } from "@/lib/auth/constants";
 import { authKit } from "@/lib/auth/kit-config";
+import { hasSessionCookie } from "@/lib/auth/session-cookie";
 import { limit } from "@/lib/cache/ratelimit";
 import { log } from "@/lib/log";
 import { readKvSetting } from "@/lib/settings/kv";
@@ -46,16 +58,6 @@ function extraOrigins(): string[] {
 /** Explicit config instead of environment-implicit trust (finding #15): the app's own authKit.trustProxy decides, not an ad hoc env read at each call site. */
 function ip(request: NextRequest): string {
   return clientIp(request.headers, authKit.trustProxy);
-}
-
-async function sessionToken(request: NextRequest) {
-  const secret = process.env.AUTH_SECRET;
-  if (!secret) return null;
-  try {
-    return await getToken({ req: request, secret, cookieName: SESSION_COOKIE, salt: SESSION_COOKIE });
-  } catch {
-    return null;
-  }
 }
 
 /** Maintenance flag from the KV mirror; not set or unreadable reads as off. */
@@ -115,11 +117,51 @@ function withCsp(request: NextRequest): NextResponse {
   return response;
 }
 
+function redirectTo(request: NextRequest, path: string): NextResponse {
+  const response = NextResponse.redirect(new URL(path, request.url), 307);
+  response.headers.set("Cache-Control", "no-store");
+  // The target URL carries the token; never pass it on to another site.
+  response.headers.set("Referrer-Policy", "no-referrer");
+  return response;
+}
+
+/**
+ * Short links (@sahan-sac/auth-kit/short-link). Redirects only, so a mail
+ * scanner that opens the link first changes nothing. An account or email link
+ * needs its HMAC tag; the page it lands on still checks the token in the
+ * database. A sign-in link sets the unlock cookie, as ?secret= does, without
+ * the secret ever being in a URL.
+ */
+async function shortLink(request: NextRequest, link: ShortLink, now: number): Promise<NextResponse> {
+  const keys = unlockKeysFromEnv();
+  const callerIp = ip(request);
+  const decision = await resolveShortLink(link, {
+    authSecret: process.env.AUTH_SECRET,
+    unlockGate: loginUnlockEnabled(),
+    keys,
+    now,
+    paths: authKit.paths,
+    // Same bucket and R22 rule as the ?secret= unlock below.
+    rateLimit: async () => callerIp === UNKNOWN_IP || (await limit("unlock:ip", callerIp)).ok,
+  });
+  if (decision.kind === "locked") {
+    if (link.kind === "signIn") log.warn("admin sign-in link refused", { ip: callerIp, reason: decision.reason });
+    return locked(request);
+  }
+  const response = redirectTo(request, decision.location);
+  if (decision.unlock && keys) response.cookies.set(UNLOCK_COOKIE, signUnlockCookie(now, keys), unlockCookieOptions(PRODUCTION));
+  return response;
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
 
   // 1. Scanner paths get a bare 404.
   if (isScannerPath(pathname)) return new NextResponse(null, { status: 404 });
+
+  // 1a. Short links, before maintenance mode: an emailed link works during it too.
+  const short = request.method === "GET" || request.method === "HEAD" ? parseShortLink(pathname, request.nextUrl.search) : null;
+  if (short) return shortLink(request, short, Date.now());
 
   const adminPage = isAdminPage(pathname);
   const adminApi = isAdminApi(pathname);
@@ -250,9 +292,8 @@ export async function proxy(request: NextRequest) {
     return withCsp(request);
   }
 
-  // 4c. Optimistic session check: signature and expiry only.
-  const token = await sessionToken(request);
-  const signedIn = Boolean(token?.sid);
+  // 4c. Optimistic session check (lib/auth/session-cookie.ts); the DAL makes the real one.
+  const signedIn = await hasSessionCookie(request);
 
   if (adminApi) return signedIn ? withCsp(request) : locked(request);
 

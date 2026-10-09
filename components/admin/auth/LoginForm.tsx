@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 
+import { PasswordInput } from "@/components/admin/ui/PasswordField";
 import { completeSignIn, resendSignInCode, startSignIn, type SignInState } from "@/lib/actions/auth";
 
 const initial: SignInState = { error: null };
@@ -105,15 +106,7 @@ export default function LoginForm({ callbackUrl, notice }: { callbackUrl: string
             <label htmlFor="password" className="text-sm font-medium">
               Password
             </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              required
-              maxLength={1024}
-              className={field}
-            />
+            <PasswordInput id="password" name="password" autoComplete="current-password" required maxLength={1024} className="mt-1.5" />
           </div>
 
           {error ? (

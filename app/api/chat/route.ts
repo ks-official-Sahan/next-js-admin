@@ -13,10 +13,10 @@ import {
 } from "@sahan-sac/chat-kit/visitor-cookie";
 
 import { chatbotEnabled as chatbotAvailable } from "@/lib/ai/availability";
+import { chatSiteWithGuidance } from "@/lib/ai/context";
 import { limit } from "@/lib/cache/ratelimit";
 import { getKnowledge } from "@/lib/chatbot/knowledge";
 import { prismaChatStore as store } from "@/lib/chatbot/session";
-import { chatSite } from "@/lib/chatbot/site";
 import { getEnv } from "@/lib/env";
 import { log } from "@/lib/log";
 import { clientIp, UNKNOWN_IP } from "@/lib/security/ip";
@@ -223,7 +223,7 @@ export async function POST(request: NextRequest) {
         history,
         knowledge,
         config: chatbotConfig,
-        site: chatSite,
+        site: await chatSiteWithGuidance(),
         siteHostname: env.SITE_URL ? new URL(env.SITE_URL).hostname : "example.com",
         extraHosts: ["wa.me", "t.me"],
       },

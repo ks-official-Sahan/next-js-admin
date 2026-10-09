@@ -13,6 +13,7 @@ import { parseArgs, HELP_TEXT } from "./lib/args.mjs";
 import { detectPackageManager, installCommand } from "./lib/pm.mjs";
 import { normalizeToNpmName } from "./lib/npm-name.mjs";
 import { renderEnvLocal, listSecretVarNames } from "./lib/env-template.mjs";
+import { applyVariants, AUTH_VALUES, ORM_VALUES } from "./lib/variants.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -45,6 +46,8 @@ async function main() {
   }
 
   const dir = args.dir ?? (await askForDir());
+  const auth = args.auth ?? (await askChoice("Auth engine", AUTH_VALUES));
+  const orm = args.orm ?? (await askChoice("ORM", ORM_VALUES));
   const targetDir = path.resolve(process.cwd(), dir);
 
   await refuseNonEmptyDir(targetDir);
@@ -57,6 +60,8 @@ async function main() {
 
   await removeIfExists(path.join(targetDir, "cli"));
   await removeIfExists(path.join(targetDir, ".github", "workflows", "release-cli.yml"));
+
+  await applyVariants(targetDir, { auth, orm });
 
   const packageJsonPath = path.join(targetDir, "package.json");
   const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8"));
@@ -96,6 +101,30 @@ async function askForDir() {
   try {
     const answer = await rl.question("Project directory: ");
     return answer.trim() || "my-admin-app";
+  } finally {
+    rl.close();
+  }
+}
+
+/**
+ * Asks for one of `values`; the first is the default. Without a terminal
+ * (CI, a pipe) it takes the default without asking.
+ * @template {string} T
+ * @param {string} label
+ * @param {readonly T[]} values
+ * @returns {Promise<T>}
+ */
+async function askChoice(label, values) {
+  if (!process.stdin.isTTY) return values[0];
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    for (;;) {
+      const answer = (await rl.question(`${label} (${values.join(" / ")}) [${values[0]}]: `)).trim();
+      if (!answer) return values[0];
+      const match = values.find((value) => value === answer);
+      if (match) return match;
+      console.log(`Choose one of: ${values.join(", ")}`);
+    }
   } finally {
     rl.close();
   }

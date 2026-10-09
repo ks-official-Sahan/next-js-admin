@@ -48,8 +48,27 @@ export const emailRoutingSchema = z.object({
   inboxEmail: z.string().email().optional(),
   notificationEmail: z.string().email().optional(),
   autoReplyEnabled: z.boolean().default(true),
+  // Send a redacted copy (no links) of account emails to EMAIL_CC. Off has no
+  // effect while EMAIL_CC is empty (lib/email/account-mail.ts).
+  authCopyEnabled: z.boolean().default(true),
 });
 export type EmailRouting = z.infer<typeof emailRoutingSchema>;
+
+// AI: standing guidance the owner writes for the models (voice, facts, do and
+// don't). Global applies everywhere, then each feature's own is added after
+// it (lib/ai/context.ts). Appended after each prompt's fixed rules, so it
+// steers but never overrides them (@sahan-sac/ai-core/guard guidanceSection).
+export const AI_CONTEXT_SCOPES = ["global", "blog", "seo", "chatbot"] as const;
+export type AiContextScope = (typeof AI_CONTEXT_SCOPES)[number];
+export const MAX_AI_CONTEXT_LENGTH = 6000;
+const aiContextText = z.string().trim().max(MAX_AI_CONTEXT_LENGTH, `Use at most ${MAX_AI_CONTEXT_LENGTH} characters.`).default("");
+export const aiContextSchema = z.object({
+  global: aiContextText,
+  blog: aiContextText,
+  seo: aiContextText,
+  chatbot: aiContextText,
+});
+export type AiContext = z.infer<typeof aiContextSchema>;
 
 // RBAC: seed version for tracking permission matrix changes
 export const rbacSeedVersionSchema = z.object({
@@ -69,6 +88,14 @@ export const llmsTxtSchema = z.object({
 });
 export type LlmsTxt = z.infer<typeof llmsTxtSchema>;
 
+// Developer masking (lib/auth/mask.ts): every DEVELOPER shown to everyone
+// else as a SUPER_ADMIN. Developers also mask themselves one by one
+// (users.masked). Developers only, never public.
+export const developerMaskSchema = z.object({
+  global: z.boolean().default(false),
+});
+export type DeveloperMaskSetting = z.infer<typeof developerMaskSchema>;
+
 // Union of all setting keys and their schemas
 export const SETTING_SCHEMAS = {
   "features": featuresSchema,
@@ -76,8 +103,10 @@ export const SETTING_SCHEMAS = {
   "security.ipAllowlist": ipAllowlistSchema,
   "chatbot.config": chatbotConfigSchema,
   "email.routing": emailRoutingSchema,
+  "ai.context": aiContextSchema,
   "rbac.seedVersion": rbacSeedVersionSchema,
   "seo.llmsTxt": llmsTxtSchema,
+  "security.mask": developerMaskSchema,
 } as const;
 
 export type SettingKey = keyof typeof SETTING_SCHEMAS;
@@ -106,8 +135,10 @@ export const DEFAULT_SETTINGS: Record<SettingKey, unknown> = {
   "security.ipAllowlist": getSettingDefault("security.ipAllowlist"),
   "chatbot.config": getSettingDefault("chatbot.config"),
   "email.routing": getSettingDefault("email.routing"),
+  "ai.context": getSettingDefault("ai.context"),
   "rbac.seedVersion": getSettingDefault("rbac.seedVersion"),
   "seo.llmsTxt": getSettingDefault("seo.llmsTxt"),
+  "security.mask": getSettingDefault("security.mask"),
 };
 
 // Public settings: subset safe to expose to client-side or caching layers

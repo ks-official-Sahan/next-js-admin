@@ -157,6 +157,11 @@ describe("isMaintenanceExempt (proxy decision helper)", () => {
     assert.equal(isMaintenanceExempt("/api/cron/blog-publish", false), true);
   });
 
+  test("the health route is exempt, so the domain probe sees the site as up", () => {
+    assert.equal(isMaintenanceExempt("/api/health", false), true);
+    assert.equal(isMaintenanceExempt("/api/healthz", false), false);
+  });
+
   test("a public path is exempt only with a valid bypass cookie", () => {
     assert.equal(isMaintenanceExempt("/", false), false);
     assert.equal(isMaintenanceExempt("/about", false), false);

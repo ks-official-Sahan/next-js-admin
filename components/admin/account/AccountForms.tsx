@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import ActionForm, { Field, SubmitButton } from "@/components/admin/ui/ActionForm";
+import { PasswordField } from "@/components/admin/ui/PasswordField";
 import {
   changePassword,
   confirmMfaDisable,
@@ -30,24 +31,22 @@ export function PasswordForm({ email, forced }: { email: string; forced: boolean
   return (
     <ActionForm action={changePassword} className="space-y-4">
       <input type="text" name="username" value={email} autoComplete="username" readOnly hidden />
-      <Field
+      <PasswordField
         label={forced ? "Password you were given" : "Current password"}
         name="current"
-        type="password"
         autoComplete="current-password"
         required
         maxLength={128}
       />
-      <Field
+      <PasswordField
         label="New password"
         name="next"
-        type="password"
         autoComplete="new-password"
         required
         maxLength={128}
         hint="At least 12 characters, mixing three of: lower case, upper case, digits, symbols."
       />
-      <Field label="Repeat the new password" name="confirm" type="password" autoComplete="new-password" required maxLength={128} />
+      <PasswordField label="Repeat the new password" name="confirm" autoComplete="new-password" required maxLength={128} />
       <SubmitButton pendingLabel="Changing...">Change password</SubmitButton>
     </ActionForm>
   );
@@ -60,10 +59,9 @@ export function EmailChangeForm({ email }: { email: string }) {
         Current address: <span className="font-medium text-foreground">{email}</span>
       </p>
       <Field label="New email" name="newEmail" type="email" autoComplete="email" required maxLength={254} />
-      <Field
+      <PasswordField
         label="Current password"
         name="password"
-        type="password"
         autoComplete="current-password"
         required
         maxLength={128}
@@ -95,7 +93,7 @@ export function MfaFlow({ enabled, email }: { enabled: boolean; email: string })
           if (result.ok && result.challengeId) setChallengeId(result.challengeId);
         }}
       >
-        <Field label="Your password" name="password" type="password" autoComplete="current-password" required maxLength={128} />
+        <PasswordField label="Your password" name="password" autoComplete="current-password" required maxLength={128} />
         <SubmitButton variant={enabled ? "danger" : "primary"} pendingLabel="Sending code...">
           {enabled ? "Email me a code to turn it off" : "Email me a code to turn it on"}
         </SubmitButton>

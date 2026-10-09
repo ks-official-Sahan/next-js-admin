@@ -1,5 +1,6 @@
 import "server-only";
 
+import { signInLink } from "@/lib/auth/links";
 import { sendEmail } from "@/lib/email";
 import { forcedLogout } from "@/lib/email/templates";
 
@@ -13,7 +14,7 @@ export async function notifyForcedLogout(input: {
   by: string;
   reason?: string;
 }): Promise<void> {
-  const rendered = forcedLogout({ name: input.name, by: input.by, reason: input.reason });
+  const rendered = forcedLogout({ name: input.name, by: input.by, reason: input.reason, signInUrl: (await signInLink()).url });
   await sendEmail({
     to: input.to,
     subject: rendered.subject,

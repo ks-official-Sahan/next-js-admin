@@ -4,7 +4,7 @@ import { Container, Group, Button, Stack, Text, TextInput, Select, SimpleGrid, C
 import { Upload, Search } from "lucide-react";
 
 import { getOptionalUser, hasPermission } from "@/lib/auth/dal";
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
 import { notFound } from "next/navigation";
 
 export const metadata: Metadata = {
@@ -16,10 +16,7 @@ async function MediaList() {
   const user = await getOptionalUser();
   if (!user || !hasPermission(user, "viewMedia")) return notFound();
 
-  const assets = await db.mediaAsset.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 100,
-  });
+  const assets = await repos.media.listRecent(100);
 
   if (assets.length === 0) {
     return (

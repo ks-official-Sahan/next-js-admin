@@ -1,8 +1,6 @@
 import "server-only";
 
-import type { Prisma } from "@prisma/client";
-
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
 
 import { ADMIN_POSTS_PAGE_SIZE, type AdminPostListParams, type AdminPostPage } from "./admin-list-params";
 
@@ -13,21 +11,12 @@ import { ADMIN_POSTS_PAGE_SIZE, type AdminPostListParams, type AdminPostPage } f
  * page stays small however long the posts are; rows and total run together.
  */
 export async function listAdminPosts(params: AdminPostListParams): Promise<AdminPostPage> {
-  const where: Prisma.PostWhereInput = {
-    ...(params.q ? { title: { contains: params.q, mode: "insensitive" } } : {}),
-    ...(params.status !== "all" ? { status: params.status } : {}),
-  };
-
-  const [rows, total] = await Promise.all([
-    db.post.findMany({
-      where,
-      orderBy: { updatedAt: "desc" },
-      select: { id: true, slug: true, title: true, topic: true, status: true, publishAt: true, publishedAt: true, updatedAt: true },
-      skip: (params.page - 1) * ADMIN_POSTS_PAGE_SIZE,
-      take: ADMIN_POSTS_PAGE_SIZE,
-    }),
-    db.post.count({ where }),
-  ]);
+  const { rows, total } = await repos.posts.adminPage({
+    q: params.q || undefined,
+    status: params.status !== "all" ? params.status : undefined,
+    skip: (params.page - 1) * ADMIN_POSTS_PAGE_SIZE,
+    take: ADMIN_POSTS_PAGE_SIZE,
+  });
 
   return {
     posts: rows.map((row) => ({

@@ -15,64 +15,57 @@ interface UserRow {
   mustChangePassword: boolean;
 }
 
-/** In-memory stand-in for the parts of Prisma the seeds use. */
+/** In-memory stand-in for the repositories the seeds use. */
 function fakeDb() {
   const users: UserRow[] = [];
   const grants: Array<{ role: string; permission: string }> = [];
   const settings = new Map<string, unknown>();
+  const roles: string[] = [];
 
   const client = {
-    user: {
-      async findUnique({ where }: { where: { email: string } }) {
-        return users.find((user) => user.email === where.email) ?? null;
+    users: {
+      async existsByEmail(email: string) {
+        return users.some((user) => user.email === email);
       },
       async count() {
         return users.length;
       },
-      async create({ data }: { data: Omit<UserRow, "id"> }) {
+      async create(data: Omit<UserRow, "id">) {
         const row = { id: `user-${users.length + 1}`, ...data };
         users.push(row);
-        return row;
+        return { id: row.id };
       },
     },
-    rolePermission: {
-      async count({ where }: { where: { role: string } }) {
-        return grants.filter((grant) => grant.role === where.role).length;
+    roles: {
+      async seedSystem(rows: Array<{ name: string }>) {
+        const missing = rows.filter((row) => !roles.includes(row.name));
+        roles.push(...missing.map((row) => row.name));
+        return missing.length;
       },
-      async createMany({
-        data,
-        skipDuplicates,
-      }: {
-        data: Array<{ role: string; permission: string }>;
-        skipDuplicates?: boolean;
-      }) {
+    },
+    rolePermissions: {
+      async countForRole(role: string) {
+        return grants.filter((grant) => grant.role === role).length;
+      },
+      async rolesWith(permission: string) {
+        return grants.filter((grant) => grant.permission === permission).map((grant) => grant.role);
+      },
+      async grantMany(data: Array<{ role: string; permission: string }>) {
         let count = 0;
         for (const row of data) {
-          const duplicate = grants.some(
-            (grant) => grant.role === row.role && grant.permission === row.permission
-          );
-          if (duplicate && skipDuplicates) continue;
+          if (grants.some((grant) => grant.role === row.role && grant.permission === row.permission)) continue;
           grants.push({ ...row });
           count += 1;
         }
-        return { count };
+        return count;
       },
     },
-    setting: {
-      async findUnique({ where }: { where: { key: string } }) {
-        return settings.has(where.key) ? { key: where.key, value: settings.get(where.key) } : null;
+    settings: {
+      async find(key: string) {
+        return settings.has(key) ? { key, value: settings.get(key) } : null;
       },
-      async upsert({
-        where,
-        create,
-        update,
-      }: {
-        where: { key: string };
-        create: { key: string; value: unknown };
-        update: { value: unknown };
-      }) {
-        settings.set(where.key, settings.has(where.key) ? update.value : create.value);
-        return {};
+      async upsert(key: string, value: unknown) {
+        settings.set(key, value);
       },
     },
   };
@@ -145,15 +138,15 @@ test("seedRolePermissions seeds defaults once and records the version", async ()
   const { db, grants, settings } = fakeDb();
 
   const first = await seedRolePermissions(db);
-  assert.equal(first.inserted, 28 + 8);
-  assert.equal(grants.filter((grant) => grant.role === "MANAGER").length, 28);
+  assert.equal(first.inserted, 29 + 8);
+  assert.equal(grants.filter((grant) => grant.role === "MANAGER").length, 29);
   assert.equal(grants.filter((grant) => grant.role === "EDITOR").length, 8);
-  assert.equal(grants.some((grant) => grant.role === "DEVELOPER"), false);
-  assert.deepEqual(settings.get("rbac.seedVersion"), { version: 1 });
+  assert.equal(grants.some((grant) => grant.role === "DEVELOPER" || grant.role === "SUPER_ADMIN"), false, "fixed roles store no rows");
+  assert.deepEqual(settings.get("rbac.seedVersion"), { version: 2 });
 
   const second = await seedRolePermissions(db);
   assert.equal(second.inserted, 0);
-  assert.equal(grants.length, 36);
+  assert.equal(grants.length, 37);
 });
 
 test("a permission the owner removed is never granted again", async () => {
@@ -174,25 +167,42 @@ test("a permission the owner removed is never granted again", async () => {
 
 test("a newer seed version adds only the new permissions", async () => {
   const { db, grants, settings } = fakeDb();
-  await seedRolePermissions(db); // version 1, everything seeded
+  await seedRolePermissions(db); // the current version, everything seeded
 
-  // Version 2 introduces one permission that both MANAGER and EDITOR default to,
+  // Version 3 introduces one permission that both MANAGER and EDITOR default to,
   // and the owner had removed it from MANAGER before the release.
   const added: Permission = "viewBlog";
   const index = grants.findIndex((grant) => grant.role === "EDITOR" && grant.permission === added);
   grants.splice(index, 1);
 
   const result = await seedRolePermissions(db, {
-    version: 2,
-    addedIn: { [added]: 2 },
+    version: 3,
+    addedIn: { [added]: 3 },
   });
 
   assert.equal(result.inserted, 1, "only EDITOR lacked it, MANAGER already had the row");
   assert.equal(grants.filter((grant) => grant.permission === added && grant.role === "EDITOR").length, 1);
-  assert.deepEqual(settings.get("rbac.seedVersion"), { version: 2 });
+  assert.deepEqual(settings.get("rbac.seedVersion"), { version: 3 });
 
-  const rerun = await seedRolePermissions(db, { version: 2, addedIn: { [added]: 2 } });
+  const rerun = await seedRolePermissions(db, { version: 3, addedIn: { [added]: 3 } });
   assert.equal(rerun.inserted, 0);
+});
+
+test("a permission split out of another goes to every role that held the source", async () => {
+  const { db, grants, settings } = fakeDb();
+  // A version 1 database: MANAGER and a custom role hold manageChatbot, EDITOR does not.
+  settings.set("rbac.seedVersion", { version: 1 });
+  grants.push(
+    { role: "MANAGER", permission: "manageChatbot" },
+    { role: "SUPPORT", permission: "manageChatbot" },
+    { role: "EDITOR", permission: "viewBlog" }
+  );
+
+  const result = await seedRolePermissions(db);
+  const holders = grants.filter((grant) => grant.permission === "manageChatbotTraining").map((grant) => grant.role).sort();
+  assert.deepEqual(holders, ["MANAGER", "SUPPORT"]);
+  assert.equal(result.inserted, 2, "only the split, never the other MANAGER defaults again");
+  assert.equal((await seedRolePermissions(db)).inserted, 0);
 });
 
 test("seeded permissions are always real catalogue keys", async () => {
@@ -206,11 +216,11 @@ test("runSeed runs both seeds and is safe to repeat", async () => {
   const { db, users, grants } = fakeDb();
   const first = await runSeed(db, OWNER_ENV);
   assert.equal(first.owner, "created");
-  assert.equal(first.permissions.inserted, 36);
+  assert.equal(first.permissions.inserted, 37);
 
   const second = await runSeed(db, OWNER_ENV);
   assert.equal(second.owner, "exists");
   assert.equal(second.permissions.inserted, 0);
   assert.equal(users.length, 1);
-  assert.equal(grants.length, 36);
+  assert.equal(grants.length, 37);
 });

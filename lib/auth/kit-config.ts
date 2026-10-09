@@ -2,6 +2,7 @@ import { defineAuthKit, type Person as GenericPerson } from "@sahan-sac/auth-kit
 import type { LimitRule } from "@sahan-sac/auth-kit/cache/ratelimit";
 import {
   canBeGranted as canBeGrantedGeneric,
+  isFixedRole as isFixedRoleGeneric,
   defaultPermissionsFor as defaultPermissionsForGeneric,
   isPermission as isPermissionGeneric,
   isRole as isRoleGeneric,
@@ -28,8 +29,32 @@ import { log } from "@/lib/log";
 // that needs a secret (AUTH_SECRET) lives in `./kit.ts` instead, which wraps
 // the `authKit` this file exports.
 
-export const ROLES = ["DEVELOPER", "MANAGER", "EDITOR"] as const;
-export type RoleName = (typeof ROLES)[number];
+/**
+ * The built-in roles, seeded as system rows of the `roles` table. Roles are
+ * runtime data now (lib/auth/roles.ts loads them), so a role name is a plain
+ * string; these always exist and cannot be renamed or deleted.
+ */
+export const ROLES = ["DEVELOPER", "SUPER_ADMIN", "MANAGER", "EDITOR"] as const;
+export type SystemRole = (typeof ROLES)[number];
+export type RoleName = string;
+/** Holds every permission in code and manages everyone. */
+export const SUPER_ROLE = "DEVELOPER" satisfies SystemRole;
+/**
+ * The customer's top role: its permissions are fixed in code (FIXED_GRANTS),
+ * only a DEVELOPER assigns or manages it, and a masked DEVELOPER is shown to
+ * everyone else as one (lib/auth/mask.ts).
+ */
+export const MASK_ROLE = "SUPER_ADMIN" satisfies SystemRole;
+/** Rank of each built-in role: lower manages higher. Custom roles take any rank from 1. */
+export const SYSTEM_ROLE_RANKS: Record<SystemRole, number> = { DEVELOPER: 0, SUPER_ADMIN: 5, MANAGER: 10, EDITOR: 20 };
+/** The built-in rows of the roles table: the seed, and the fallback when the table cannot be read. */
+export const SYSTEM_ROLE_ROWS = ROLES.map((name) => ({
+  name,
+  label: name.charAt(0) + name.slice(1).toLowerCase().replace(/_/g, " "),
+  description: null,
+  rank: SYSTEM_ROLE_RANKS[name],
+  system: true,
+}));
 
 export const PERMISSIONS = [
   // Dashboard
@@ -57,6 +82,7 @@ export const PERMISSIONS = [
   // Chatbot
   "viewChatHistory",
   "manageChatbot",
+  "manageChatbotTraining",
   // Users
   "viewUsers",
   "inviteUser",
@@ -117,7 +143,8 @@ export const PERMISSION_INFO: Record<Permission, PermissionInfo> = {
   manageLeads: { group: "Leads", label: "Manage leads", description: "Change status, add notes and assign leads." },
   exportData: { group: "Leads", label: "Export data", description: "Download CSV exports of leads, audit log and sessions." },
   viewChatHistory: { group: "Chatbot", label: "View chat history", description: "Read chatbot conversations." },
-  manageChatbot: { group: "Chatbot", label: "Manage chatbot", description: "Edit training entries, switch the bot on or off, set tone and greeting." },
+  manageChatbot: { group: "Chatbot", label: "Configure chatbot", description: "Set the chatbot tone and greeting." },
+  manageChatbotTraining: { group: "Chatbot", label: "Train and switch chatbot", description: "Edit training entries and switch the bot on or off." },
   viewUsers: { group: "Users", label: "View users", description: "See the user list." },
   inviteUser: { group: "Users", label: "Invite users", description: "Send invitations." },
   manageUsers: { group: "Users", label: "Manage users", description: "Change roles, disable and enable users." },
@@ -125,18 +152,37 @@ export const PERMISSION_INFO: Record<Permission, PermissionInfo> = {
   resetPassword: { group: "Users", label: "Reset passwords", description: "Send a password reset link to a user." },
   viewSessions: { group: "Security", label: "View sessions", description: "See signed-in sessions." },
   revokeSessions: { group: "Security", label: "Revoke sessions", description: "Sign out one session." },
-  forceLogout: { group: "Security", label: "Force logout", description: "Sign out every session of a user, or of everyone (DEVELOPER only)." },
+  forceLogout: { group: "Security", label: "Force logout", description: "Sign out every session of a user you manage." },
   viewAuditLogs: { group: "Security", label: "View audit log", description: "Open the audit log." },
   viewSecurityStatus: { group: "Security", label: "View security status", description: "See integration health and security widgets." },
   manageSettings: { group: "Operations", label: "Manage settings", description: "Change settings, site identity, contact details, SEO defaults and maintenance mode." },
   manageIpAllowlist: { group: "Operations", label: "Manage IP allowlist", description: "Edit the admin IP allowlist." },
   clearSystemCache: { group: "Operations", label: "Clear cache", description: "Clear the site cache." },
   manageCron: { group: "Operations", label: "Run cron jobs", description: "Run scheduled jobs from the admin." },
-  managePermissions: { group: "Access", label: "Manage permissions", description: "Edit the role permission matrix. Never grantable to any other role." },
+  managePermissions: { group: "Access", label: "Manage permissions", description: "Add roles and edit what the roles below yours can do." },
 };
 
-/** Permissions no role except DEVELOPER can ever hold. */
+/** Permissions no role edited in the matrix can hold. Only the roles fixed in code (DEVELOPER, SUPER_ADMIN) may. */
 export const NEVER_GRANTABLE: readonly Permission[] = ["managePermissions"];
+
+/** What a SUPER_ADMIN may never do: the operations kept for developers. */
+const SUPER_ADMIN_EXCLUDED: ReadonlySet<Permission> = new Set<Permission>([
+  "clearSystemCache",
+  "manageCron",
+  "viewSecurityStatus",
+  "manageIpAllowlist",
+  "manageChatbotTraining",
+]);
+
+/**
+ * Roles whose permissions are fixed in code: no matrix edit, by anyone,
+ * widens or narrows them. Managing super admins, signing out developers and
+ * reading developers' audit rows are kept from SUPER_ADMIN by its rank and
+ * by the audit filter, not by a permission.
+ */
+export const FIXED_GRANTS: Partial<Record<RoleName, readonly Permission[]>> = {
+  SUPER_ADMIN: PERMISSIONS.filter((permission) => !SUPER_ADMIN_EXCLUDED.has(permission)),
+};
 
 const MANAGER_DENIED: ReadonlySet<Permission> = new Set<Permission>([
   "deleteUser",
@@ -153,13 +199,20 @@ export const DEFAULT_GRANTS: Record<"MANAGER" | "EDITOR", readonly Permission[]>
 };
 
 /** Bump when a release adds permissions, and record them in PERMISSION_ADDED_IN. */
-export const RBAC_SEED_VERSION = 1;
+export const RBAC_SEED_VERSION = 2;
 
 /**
  * Seed version in which a permission first existed. Permissions missing from
  * this map have existed since version 1.
  */
-export const PERMISSION_ADDED_IN: Partial<Record<Permission, number>> = {};
+export const PERMISSION_ADDED_IN: Partial<Record<Permission, number>> = { manageChatbotTraining: 2 };
+
+/**
+ * A permission split out of another. On upgrade every role that held the
+ * source gets it too, custom roles included, so nobody loses what they could
+ * do the day before.
+ */
+export const PERMISSION_SPLIT_FROM: Partial<Record<Permission, Permission>> = { manageChatbotTraining: "manageChatbot" };
 
 // Rate-limit buckets: every one this app uses, however it uses it (auth-kit's
 // own flows plus contact/chat/uploads/AI). No default catalogue is shipped by
@@ -206,22 +259,11 @@ export const authKit = defineAuthKit<RoleName, Permission>({
   },
   keyPrefix: "app:",
   roles: ROLES,
-  superRole: "DEVELOPER",
+  superRole: SUPER_ROLE,
   permissions: PERMISSIONS,
   neverGrantable: NEVER_GRANTABLE,
+  fixedGrants: FIXED_GRANTS,
   defaultGrants: DEFAULT_GRANTS,
-  // DEVELOPER manages everyone, MANAGER only EDITORs, EDITOR nobody, nobody themselves.
-  canManage: (actor, target) => {
-    if (actor.id === target.id) return false;
-    if (actor.role === "DEVELOPER") return true;
-    if (actor.role === "MANAGER") return target.role === "EDITOR";
-    return false;
-  },
-  assignableRoles: (actorRole) => {
-    if (actorRole === "DEVELOPER") return [...ROLES];
-    if (actorRole === "MANAGER") return ["EDITOR"];
-    return [];
-  },
   limits: LIMITS,
   csp: { imgHosts: ["https://res.cloudinary.com"], connectHosts: ["https://api.cloudinary.com"] },
   trustProxy: { hops: trustedProxyHops() },
@@ -235,6 +277,8 @@ export const isPermission = (value: string): value is Permission => isPermission
 export const isRole = (value: string): value is RoleName => isRoleGeneric(authKit, value);
 export const defaultPermissionsFor = (role: RoleName): Permission[] => defaultPermissionsForGeneric(authKit, role);
 export const canBeGranted = (role: RoleName, permission: Permission): boolean => canBeGrantedGeneric(authKit, role, permission);
+/** DEVELOPER and SUPER_ADMIN: their permissions are fixed in code, never edited in the matrix. */
+export const isFixedRole = (role: RoleName): boolean => isFixedRoleGeneric(authKit, role);
 
 // Same, bound convenience wrappers for the matrix engine (rbac-rules.ts) and
 // the "who may manage whom" hierarchy (canManage/assignableRoles, which are
@@ -249,5 +293,3 @@ export const matrixFromRows = (rows: readonly PermissionRow[]): Matrix => matrix
 export const matrixToRows = (matrix: Matrix) => matrixToRowsGeneric(authKit, matrix);
 export const diffMatrix = (before: Matrix, after: Matrix) => diffMatrixGeneric(authKit, before, after);
 export const validateMatrix = (matrix: Matrix): MatrixCheck => validateMatrixGeneric(authKit, matrix);
-export const canManage = authKit.canManage;
-export const assignableRoles = authKit.assignableRoles;

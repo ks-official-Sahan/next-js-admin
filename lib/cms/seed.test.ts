@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { UniqueViolation } from "@/lib/data/errors";
+
 import { allSections } from "./registry";
 import { seedContent, type ContentSeedDb } from "./seed";
 
@@ -13,17 +15,17 @@ interface Row {
   data: unknown;
 }
 
-/** In-memory stand-in for the parts of Prisma the import uses. */
-function fakeDb(rows: Row[] = [], failInsertWith?: { code: string }) {
+/** In-memory stand-in for the parts of the content repository the import uses. */
+function fakeDb(rows: Row[] = [], failInsertWith?: Error) {
   const client = {
-    contentBlock: {
-      async count({ where }: { where: { pageSlug: string; sectionSlug: string } }) {
-        return rows.filter((row) => row.pageSlug === where.pageSlug && row.sectionSlug === where.sectionSlug).length;
+    contentBlocks: {
+      async countSection(page: string, section: string) {
+        return rows.filter((row) => row.pageSlug === page && row.sectionSlug === section).length;
       },
-      async create({ data }: { data: Row }) {
-        if (failInsertWith) throw Object.assign(new Error("unique"), failInsertWith);
-        rows.push(data);
-        return data;
+      async create(data: Row) {
+        if (failInsertWith) throw failInsertWith;
+        rows.push({ ...data, note: data.note ?? null });
+        return { version: data.version, updatedAt: new Date() };
       },
     },
   };
@@ -58,8 +60,8 @@ test("never touches a section that already has a row", async () => {
 
 test("counts a lost race as skipped and rethrows other errors", async () => {
   const [first] = allSections();
-  const race = await seedContent(fakeDb([], { code: "P2002" }).db, [first]);
+  const race = await seedContent(fakeDb([], new UniqueViolation()).db, [first]);
   assert.deepEqual(race, { created: 0, skipped: 1 });
 
-  await assert.rejects(() => seedContent(fakeDb([], { code: "P1001" }).db, [first]), /unique/);
+  await assert.rejects(() => seedContent(fakeDb([], new Error("connection lost")).db, [first]), /connection lost/);
 });

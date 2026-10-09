@@ -1,17 +1,17 @@
 import "server-only";
 
-import { db } from "@/lib/db/prisma";
+import { signInLink } from "@/lib/auth/links";
+import { repos } from "@/lib/data";
+import type { InquiryRow } from "@/lib/data/inquiries";
 import { sendEmail } from "@/lib/email";
 import { contactAutoReply, contactNotify } from "@/lib/email/templates";
 import { getEnv } from "@/lib/env";
-import { absoluteUrl } from "@/lib/site-url";
 import { log } from "@/lib/log";
-import type { Inquiry } from "@prisma/client";
 
-export async function notifyOwner(inquiry: Inquiry): Promise<void> {
+export async function notifyOwner(inquiry: InquiryRow): Promise<void> {
   const env = getEnv();
   const recipients = env.RESEND_RECIPIENT_EMAILS || [];
-  if (recipients.length === 0 || !env.SITE_URL) {
+  if (recipients.length === 0) {
     return;
   }
 
@@ -21,7 +21,8 @@ export async function notifyOwner(inquiry: Inquiry): Promise<void> {
     subject: inquiry.topic || undefined,
     message: inquiry.message,
     receivedAt: inquiry.createdAt.toLocaleString(),
-    adminUrl: absoluteUrl(`/admin/leads/${inquiry.id}`),
+    // The owner may read this on a device that is not unlocked or signed in.
+    adminUrl: (await signInLink(`/admin/leads/${inquiry.id}`)).url,
   });
 
   const result = await sendEmail({
@@ -40,7 +41,7 @@ export async function notifyOwner(inquiry: Inquiry): Promise<void> {
   await updateInquiryEmailStatus(inquiry.id, "emailStatus", result.ok ? "SENT" : "FAILED");
 }
 
-export async function sendAutoReply(inquiry: Inquiry): Promise<void> {
+export async function sendAutoReply(inquiry: InquiryRow): Promise<void> {
   const template = contactAutoReply({ name: inquiry.name });
 
   const result = await sendEmail({
@@ -64,15 +65,13 @@ async function recordEmailEvent(
   try {
     // Record the final result
     const errorText = result.errorClass ? result.errorClass.slice(0, 500) : null;
-    await db.inquiryEmailEvent.create({
-      data: {
-        inquiryId,
-        kind,
-        provider: result.provider || "none",
-        ok: result.ok,
-        messageId: result.messageId || null,
-        error: result.ok ? null : errorText,
-      },
+    await repos.inquiries.addEmailEvent({
+      inquiryId,
+      kind,
+      provider: result.provider || "none",
+      ok: result.ok,
+      messageId: result.messageId || null,
+      error: result.ok ? null : errorText,
     });
   } catch (error) {
     log.error("Failed to record email event", { inquiryId, kind, error: (error as Error).message });
@@ -85,10 +84,7 @@ async function updateInquiryEmailStatus(
   status: "SENT" | "FAILED"
 ): Promise<void> {
   try {
-    await db.inquiry.update({
-      where: { id: inquiryId },
-      data: { [field]: status },
-    });
+    await repos.inquiries.update(inquiryId, { [field]: status });
   } catch (error) {
     log.error("Failed to update inquiry email status", { inquiryId, field, error: (error as Error).message });
   }

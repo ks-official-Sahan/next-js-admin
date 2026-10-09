@@ -19,12 +19,6 @@ datasource db {
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
-enum Role {
-  DEVELOPER
-  MANAGER
-  EDITOR
-}
-
 enum ContentStatus {
   DRAFT
   PUBLISHED
@@ -60,6 +54,7 @@ enum MfaPurpose {
   SIGN_IN
   ENABLE
   DISABLE
+  STEP_UP
 }
 
 enum TokenPurpose {
@@ -74,13 +69,18 @@ model User {
   id                 String    @id @default(cuid())
   // Stored lowercase; the service layer normalises before every write.
   email              String    @unique
+  // Read by the Better Auth engine; the app's own flows never set it.
+  emailVerified      Boolean   @default(false)
   name               String?
   passwordHash       String
-  role               Role      @default(EDITOR)
+  role               String    @default("EDITOR")
+  roleRecord         Role      @relation(fields: [role], references: [name], onDelete: Restrict, onUpdate: Cascade)
   image              String?
   bio                String?   @db.Text
   mfaEnabled         Boolean   @default(false)
   mustChangePassword Boolean   @default(false)
+  // A DEVELOPER shown to everyone else as a SUPER_ADMIN (lib/auth/mask.ts). Presentation only.
+  masked             Boolean   @default(false)
   passwordChangedAt  DateTime  @default(now())
   lastLoginAt        DateTime?
   disabledAt         DateTime?
@@ -95,13 +95,36 @@ model User {
   auditLogs         AuditLog[]
   assignedInquiries Inquiry[]      @relation("InquiryAssignee")
 
+  @@index([role])
   @@map("users")
+}
+
+// Roles are rows, so an admin adds one without a deploy (auth-kit 0.7).
+// `rank` is the hierarchy: a lower rank manages higher ranks. DEVELOPER
+// (rank 0) is also named in code and holds every permission there, so no
+// stored row can lock the owner out. System roles cannot be renamed or deleted.
+model Role {
+  name        String   @id
+  label       String
+  description String?
+  rank        Int
+  system      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]
+  permissions RolePermission[]
+  tokens      AuthToken[]
+
+  @@index([rank])
+  @@map("roles")
 }
 
 // A row means the permission is granted to the role. DEVELOPER always holds
 // every permission in code, so it needs no rows.
 model RolePermission {
-  role        Role
+  role        String
+  roleRecord  Role     @relation(fields: [role], references: [name], onDelete: Cascade, onUpdate: Cascade)
   permission  String
   updatedById String?
   updatedAt   DateTime @default(now()) @updatedAt
@@ -110,10 +133,12 @@ model RolePermission {
   @@map("role_permissions")
 }
 
-// One row per signed-in browser. `id` is the `sid` claim in the JWT. This table
+// One row per signed-in browser. `id` is the `sid` claim in the JWT (next-auth
+// engine); `token` is the session cookie value (Better Auth engine). This table
 // is authoritative for revocation; Redis only caches the state for 30 seconds.
 model UserSession {
   id           String    @id @default(cuid())
+  token        String?   @unique
   userId       String
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   ip           String?
@@ -123,6 +148,7 @@ model UserSession {
   device       String?
   mfaVerified  Boolean   @default(false)
   createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @default(now()) @updatedAt
   lastSeenAt   DateTime  @default(now())
   expiresAt    DateTime
   revokedAt    DateTime?
@@ -143,7 +169,8 @@ model AuthToken {
   email       String
   userId      String?
   // Role granted on acceptance (invites only).
-  role        Role?
+  role        String?
+  roleRecord  Role?        @relation(fields: [role], references: [name], onDelete: SetNull, onUpdate: Cascade)
   tokenHash   String       @unique
   createdById String?
   expiresAt   DateTime
@@ -184,8 +211,9 @@ model AuditLog {
   id         String   @id @default(cuid())
   actorId    String?
   actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
-  // Snapshot, so the trail survives deleting the user.
+  // Snapshots, so the trail survives deleting the user or changing their role.
   actorEmail String?
+  actorRole  String?
   action     String
   entityType String
   entityId   String?

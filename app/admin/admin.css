@@ -23,6 +23,15 @@
   border-radius: 9999px;
 }
 
+/* Opt-out for rows that scroll sideways with their own affordance (the
+   settings chip row): `.no-scrollbar` alone loses to `.admin-root *` above. */
+.admin-root .no-scrollbar {
+  scrollbar-width: none;
+}
+.admin-root .no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* The root not-found renders the public site chrome, so its Mantine stylesheet
    reaches every route under the root layout, admin included. Mantine paints the body from its own variables,
    which would show white behind the dark theme and change the line height.

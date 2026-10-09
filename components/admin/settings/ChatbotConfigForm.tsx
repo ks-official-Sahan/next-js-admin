@@ -6,7 +6,8 @@ import { updateChatbotConfigAction } from "@/lib/actions/settings";
 import type { ChatbotConfig } from "@/lib/settings/schema";
 import { cn } from "@/lib/utils";
 
-export default function ChatbotConfigForm({ value }: { value: ChatbotConfig }) {
+/** `canToggle`: switching the bot needs manageChatbotTraining; the action ignores the box without it. */
+export default function ChatbotConfigForm({ value, canToggle }: { value: ChatbotConfig; canToggle: boolean }) {
   return (
     <ActionForm action={updateChatbotConfigAction} className="space-y-4">
       <label className="flex items-center gap-2 text-sm font-medium">
@@ -14,6 +15,7 @@ export default function ChatbotConfigForm({ value }: { value: ChatbotConfig }) {
           type="checkbox"
           name="enabled"
           defaultChecked={value.enabled}
+          disabled={!canToggle}
           className="size-4 rounded border-input"
         />
         Chatbot answers messages

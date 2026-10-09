@@ -7,22 +7,21 @@ import { audit, auditSafe } from "@/lib/admin/audit";
 import { retryMessage } from "@/lib/admin/rate-limited";
 import { authorizeAction } from "@/lib/actions/guard";
 import { done, fail, fieldErrorsFrom, formValues, type ActionState } from "@/lib/actions/state";
-import { unstable_update } from "@/lib/auth/config";
 import type { AuthUser } from "@/lib/auth/dal";
+import { keepSessionAfterPasswordChange } from "@/lib/auth/engine";
 import { consumeChallenge, issueChallenge, verifyChallenge } from "@/lib/auth/mfa";
-import { MFA_TTL_MINUTES, normalizeCode } from "@/lib/auth/mfa-rules";
+import { CODE_FAILURES, MFA_TTL_MINUTES, normalizeCode } from "@/lib/auth/mfa-rules";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { checkPassword } from "@/lib/auth/password-policy";
 import { invalidateSessionState, invalidateUserSessionState, revokeSession, revokeUserSessions } from "@/lib/auth/session-store";
-import { passwordFingerprint } from "@/lib/auth/session-state";
 import { createToken, RESET_TTL_MINUTES } from "@/lib/auth/invite-token";
+import { emailLink } from "@/lib/auth/links";
 import { limit } from "@/lib/cache/ratelimit";
-import { db } from "@/lib/db/prisma";
+import { repos, withTx } from "@/lib/data";
 import { sendEmail } from "@/lib/email";
 import { emailChangeVerify, mfaToggled, passwordChanged, type Rendered } from "@/lib/email/templates";
 import { getEnv } from "@/lib/env";
 import { requestDetails } from "@/lib/security/request-device";
-import { absoluteUrl } from "@/lib/site-url";
 
 // The signed-in user's own account. A user whose password was set by someone else
 // may use these before anything else, which is how they choose their own
@@ -53,8 +52,8 @@ async function confirmPassword(user: AuthUser, given: unknown): Promise<{ ok: tr
   if (!(await limit("login:acct", `pw:${user.id}`)).ok) {
     return { ok: false, error: "Too many attempts. Wait a while and try again." };
   }
-  const row = await db.user.findUnique({ where: { id: user.id }, select: { passwordHash: true } });
-  if (!row || !(await verifyPassword(given, row.passwordHash))) {
+  const passwordHash = await repos.users.findPasswordHash(user.id);
+  if (!passwordHash || !(await verifyPassword(given, passwordHash))) {
     await auditSafe({ action: "auth.password.check_failed", actor: user, entityType: "User", entityId: user.id });
     return { ok: false, error: "The current password is not correct." };
   }
@@ -74,12 +73,10 @@ export async function updateProfile(_previous: ActionState, formData: FormData):
   if (!parsed.success) return fail("Check the form.", fieldErrorsFrom(parsed.error.issues));
 
   try {
-    const before = await db.user.findUnique({ where: { id: access.user.id }, select: { name: true, bio: true } });
-    await db.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: access.user.id },
-        data: { name: parsed.data.name, bio: parsed.data.bio || null },
-      });
+    const profile = await repos.users.findProfile(access.user.id);
+    const before = profile && { name: profile.name, bio: profile.bio };
+    await withTx(async (tx) => {
+      await tx.users.update(access.user.id, { name: parsed.data.name, bio: parsed.data.bio || null });
       await audit(
         {
           action: "user.profile_updated",
@@ -125,26 +122,20 @@ export async function changePassword(_previous: ActionState, formData: FormData)
 
   const passwordHash = await hashPassword(next);
   try {
-    await db.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: user.id },
-        data: { passwordHash, passwordChangedAt: new Date(), mustChangePassword: false },
-      });
+    await withTx(async (tx) => {
+      await tx.users.update(user.id, { passwordHash, passwordChangedAt: new Date(), mustChangePassword: false });
       // A reset link asked for before this change must not work after it.
-      await tx.authToken.updateMany({
-        where: { purpose: "PASSWORD_RESET", userId: user.id, usedAt: null, revokedAt: null },
-        data: { revokedAt: new Date() },
-      });
+      await tx.authTokens.revokeOpenForUser("PASSWORD_RESET", user.id);
       await audit({ action: "auth.password.changed", actor: user, entityType: "User", entityId: user.id }, tx);
     });
 
-    // Every other session ends. This one stays: its cookie gets the new fingerprint.
+    // Every other session ends. This one stays.
     const ended = await revokeUserSessions(
       user.id,
       { userId: user.id, reason: "password_changed" },
       { exceptSid: user.sid }
     );
-    await unstable_update({ pwf: passwordFingerprint(passwordHash, secret()) });
+    await keepSessionAfterPasswordChange(passwordHash);
     await invalidateSessionState(user.sid);
     if (ended.length > 0) {
       // Session store mutation already succeeded; an audit failure here must
@@ -190,27 +181,22 @@ export async function requestEmailChangeAction(_previous: ActionState, formData:
 
   if (!(await limit("email-change:user", user.id)).ok) return fail("Too many attempts. Wait a while and try again.");
 
-  if (await db.user.findUnique({ where: { email: newEmail }, select: { id: true } })) {
+  if (await repos.users.existsByEmail(newEmail)) {
     return fail("Another account already uses that address.", { newEmail: "Already in use." });
   }
 
   const secretValue = secret();
   const { token, hash } = createToken(secretValue);
   try {
-    await db.$transaction(async (tx) => {
-      await tx.authToken.updateMany({
-        where: { purpose: "EMAIL_CHANGE", userId: user.id, usedAt: null, revokedAt: null },
-        data: { revokedAt: new Date() },
-      });
-      await tx.authToken.create({
-        data: {
-          purpose: "EMAIL_CHANGE",
-          email: newEmail,
-          userId: user.id,
-          tokenHash: hash,
-          createdById: user.id,
-          expiresAt: new Date(Date.now() + RESET_TTL_MINUTES * 60 * 1000),
-        },
+    await withTx(async (tx) => {
+      await tx.authTokens.revokeOpenForUser("EMAIL_CHANGE", user.id);
+      await tx.authTokens.create({
+        purpose: "EMAIL_CHANGE",
+        email: newEmail,
+        userId: user.id,
+        tokenHash: hash,
+        createdById: user.id,
+        expiresAt: new Date(Date.now() + RESET_TTL_MINUTES * 60 * 1000),
       });
       await audit(
         { action: "user.email_change_requested", actor: user, entityType: "User", entityId: user.id, meta: { newEmail } },
@@ -223,7 +209,7 @@ export async function requestEmailChangeAction(_previous: ActionState, formData:
 
   const rendered = emailChangeVerify({
     name: user.name,
-    url: absoluteUrl(`/admin/confirm-email?token=${encodeURIComponent(token)}`),
+    url: await emailLink(token),
     expiresMinutes: RESET_TTL_MINUTES,
   });
   const sent = await sendEmail(
@@ -245,7 +231,7 @@ async function startMfa(purpose: "ENABLE" | "DISABLE", formData: FormData): Prom
   if (!access.ok) return fail(access.error);
   const { user } = access;
 
-  const row = await db.user.findUnique({ where: { id: user.id }, select: { mfaEnabled: true } });
+  const row = await repos.users.findProfile(user.id);
   if (!row) return fail(UNEXPECTED);
   if (purpose === "ENABLE" && row.mfaEnabled) return fail("Two-factor sign-in is already on.");
   if (purpose === "DISABLE" && !row.mfaEnabled) return fail("Two-factor sign-in is already off.");
@@ -266,13 +252,6 @@ async function startMfa(purpose: "ENABLE" | "DISABLE", formData: FormData): Prom
   return done(`A code was sent to ${user.email}. It works for ${MFA_TTL_MINUTES} minutes.`, { challengeId: issued.challengeId });
 }
 
-const CODE_FAILURES = {
-  invalid: "That code is not correct.",
-  locked: "Too many wrong codes. Wait a few minutes and ask for a new one.",
-  expired: "That code expired. Ask for a new one.",
-  consumed: "That code was already used. Ask for a new one.",
-} as const;
-
 async function confirmMfa(purpose: "ENABLE" | "DISABLE", formData: FormData): Promise<ActionState> {
   const access = await authorizeAction(null, OPTIONS);
   if (!access.ok) return fail(access.error);
@@ -291,8 +270,8 @@ async function confirmMfa(purpose: "ENABLE" | "DISABLE", formData: FormData): Pr
 
   const enabled = purpose === "ENABLE";
   try {
-    await db.$transaction(async (tx) => {
-      await tx.user.update({ where: { id: user.id }, data: { mfaEnabled: enabled } });
+    await withTx(async (tx) => {
+      await tx.users.update(user.id, { mfaEnabled: enabled });
       await audit(
         {
           action: enabled ? "auth.mfa.enabled" : "auth.mfa.disabled",
@@ -309,7 +288,7 @@ async function confirmMfa(purpose: "ENABLE" | "DISABLE", formData: FormData): Pr
       // Sessions opened before the second factor existed never passed it: end them,
       // and mark this one, which just did.
       const ended = await revokeUserSessions(user.id, { userId: user.id, reason: "mfa_enabled" }, { exceptSid: user.sid });
-      await db.userSession.update({ where: { id: user.sid }, data: { mfaVerified: true } });
+      await repos.sessions.markMfaVerified(user.sid);
       if (ended.length > 0) {
         // Same rule as above: the session revoke already happened.
         await auditSafe({
@@ -358,8 +337,7 @@ export async function revokeMySession(_previous: ActionState, formData: FormData
   if (sid === user.sid) return fail("Use Sign out to end this session.");
 
   // Only the user's own sessions: the userId in the filter is the guard.
-  const owned = await db.userSession.findFirst({ where: { id: sid, userId: user.id }, select: { id: true } });
-  if (!owned) return fail("That session does not exist.");
+  if (!(await repos.sessions.isOwnedBy(sid, user.id))) return fail("That session does not exist.");
 
   const ended = await revokeSession(sid, { userId: user.id, reason: "revoked_by_user" });
   if (ended) {

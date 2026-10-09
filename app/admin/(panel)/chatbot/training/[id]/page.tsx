@@ -5,7 +5,7 @@ import { notFound, redirect } from "next/navigation";
 import { requirePermission } from "@/lib/auth/dal";
 import { deleteTrainingEntry, updateTrainingEntry } from "@/lib/actions/chatbot";
 import type { ActionState } from "@/lib/actions/state";
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
 import ActionForm, { SubmitButton } from "@/components/admin/ui/ActionForm";
 import { buttonVariants, cardClass } from "@/components/admin/ui/styles";
 import TrainingEntryForm from "@/components/admin/chatbot/TrainingEntryForm";
@@ -17,9 +17,9 @@ export const metadata: Metadata = {
 
 export default async function EditTrainingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  await requirePermission("manageChatbot");
+  await requirePermission("manageChatbotTraining");
 
-  const entry = await db.chatTrainingEntry.findUnique({ where: { id } });
+  const entry = await repos.chatTraining.find(id);
   if (!entry) notFound();
 
   async function update(previous: ActionState, formData: FormData): Promise<ActionState> {

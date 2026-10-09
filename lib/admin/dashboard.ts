@@ -1,6 +1,8 @@
 import "server-only";
 
-import { db } from "@/lib/db/prisma";
+import { hiddenAuditRole } from "@/lib/auth/mask";
+import type { RoleName } from "@/lib/auth/permissions";
+import { repos } from "@/lib/data";
 import { log } from "@/lib/log";
 
 // Dashboard helper: queries for the admin dashboard widgets.
@@ -8,22 +10,11 @@ import { log } from "@/lib/log";
 // Design notes, Step 16.
 
 /**
- * Get recent audit log entries (last 10).
+ * Recent audit log entries the viewer may read (see lib/admin/audit-query.ts's auditScope).
  */
-export async function getRecentActivity(limit = 10) {
+export async function getRecentActivity(viewer: { role: RoleName }, limit = 10) {
   try {
-    return await db.auditLog.findMany({
-      take: limit,
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        action: true,
-        createdAt: true,
-        actorEmail: true,
-        entityType: true,
-        entityId: true,
-      },
-    });
+    return await repos.dashboard.recentActivity(limit, hiddenAuditRole(viewer));
   } catch {
     return [];
   }
@@ -37,8 +28,8 @@ export async function getRecentActivity(limit = 10) {
 export async function getContentCounts(): Promise<{ drafts: number; unpublished: number }> {
   try {
     const [blocks, posts] = await Promise.all([
-      db.contentBlock.count({ where: { status: "DRAFT" } }),
-      db.post.count({ where: { status: { in: ["DRAFT", "SCHEDULED"] } } }),
+      repos.dashboard.countDraftBlocks(),
+      repos.dashboard.countUnpublishedPosts(),
     ]);
     return { drafts: blocks, unpublished: blocks + posts };
   } catch {
@@ -51,9 +42,7 @@ export async function getContentCounts(): Promise<{ drafts: number; unpublished:
  */
 export async function getNewInquiriesCount() {
   try {
-    return await db.inquiry.count({
-      where: { status: "NEW" },
-    });
+    return await repos.dashboard.countNewInquiries();
   } catch {
     return 0;
   }
@@ -65,7 +54,7 @@ export async function getNewInquiriesCount() {
 export async function getSystemHealth() {
   // Both probes run at once: the dashboard waits for the slower one, not the sum.
   const [database, redis] = await Promise.allSettled([
-    db.$queryRaw`SELECT 1`,
+    repos.maintenance.ping(),
     import("@/lib/cache/redis").then(({ kv }) => kv.get("health-check")),
   ]);
   return { database: database.status === "fulfilled", redis: redis.status === "fulfilled" };
@@ -76,20 +65,9 @@ export async function getSystemHealth() {
  */
 export async function getEmailHealth() {
   try {
-    const { emailConfigFromEnv } = await import("@/lib/email/config");
-    const { emailHealth } = await import("@/lib/email/health");
-    // The typed, validated env (lib/env.ts) defaults EMAIL_PROVIDER to "auto"
-    // when unset. Reading raw process.env here left config.mode undefined
-    // whenever EMAIL_PROVIDER was not set in .env.local, which made
-    // providerOrder() throw and this whole function silently return null —
-    // rendering as "Not configured" even with Resend fully set up.
-    const { getEnv } = await import("@/lib/env");
-    const env = getEnv();
-    const config = emailConfigFromEnv(env);
-    return emailHealth(config, {
-      production: process.env.NODE_ENV === "production",
-      brevoApiKey: Boolean(env.EMAIL_BREVO_API_KEY),
-    });
+    // The same typed env and rules as the settings screen (lib/email).
+    const { getEmailHealth: emailHealthNow } = await import("@/lib/email");
+    return emailHealthNow();
   } catch (err) {
     log.error("email health check failed", { error: String(err) });
     return null;
@@ -101,13 +79,7 @@ export async function getEmailHealth() {
  */
 export async function getUserSecurityStatus(userId: string) {
   try {
-    const user = await db.user.findUnique({
-      where: { id: userId },
-      select: {
-        mfaEnabled: true,
-        mustChangePassword: true,
-      },
-    });
+    const user = await repos.users.findSecurityStatus(userId);
     return user ?? { mfaEnabled: false, mustChangePassword: false };
   } catch {
     return { mfaEnabled: false, mustChangePassword: false };

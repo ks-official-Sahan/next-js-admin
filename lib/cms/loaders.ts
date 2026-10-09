@@ -3,7 +3,7 @@ import "server-only";
 import { cached } from "@/lib/cache/cached";
 import { loadOrNull } from "@/lib/cache/fallback";
 import { TAGS } from "@/lib/cache/tags";
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
 import { log } from "@/lib/log";
 
 import { resolveSection } from "./merge";
@@ -27,10 +27,7 @@ function readerFor(page: CmsPage): () => Promise<StoredPage> {
   if (!read) {
     read = cached(
       async () => {
-        const rows = await db.contentBlock.findMany({
-          where: { pageSlug: page, status: "PUBLISHED" },
-          select: { sectionSlug: true, data: true },
-        });
+        const rows = await repos.contentBlocks.listPageData(page, ["PUBLISHED"]);
         return Object.fromEntries(rows.map((row) => [row.sectionSlug, row.data])) as StoredPage;
       },
       ["cms", "page", page],
@@ -71,16 +68,12 @@ function lastModifiedReaderFor(page: CmsPage): () => Promise<string | null> {
   if (!read) {
     read = cached(
       async () => {
-        const row = await db.contentBlock.findFirst({
-          where: { pageSlug: page, status: "PUBLISHED" },
-          orderBy: { updatedAt: "desc" },
-          select: { updatedAt: true },
-        });
+        const updatedAt = await repos.contentBlocks.lastPublishedUpdate(page);
         // ISO string, not a Date: unstable_cache's data cache round-trips
         // through JSON, so a Date instance would come back a string on a
         // cache hit anyway and a string on a miss — returning a string
         // always keeps the type honest for callers.
-        return row ? row.updatedAt.toISOString() : null;
+        return updatedAt ? updatedAt.toISOString() : null;
       },
       ["cms", "page-updated-at", page],
       { tags: [TAGS.cms, TAGS.page(page)] }

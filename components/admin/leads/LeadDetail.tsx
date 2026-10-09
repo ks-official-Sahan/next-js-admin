@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useActionState } from "react";
-import type { Inquiry, InquiryEmailEvent } from "@prisma/client";
+import type { InquiryEmailEventRow as InquiryEmailEvent, InquiryRow as Inquiry } from "@/lib/data/inquiries";
 
 import { changeInquiryStatus, addInquiryNote } from "@/lib/actions/leads";
 import { badgeClass, buttonVariants, cardClass, fieldClass, textareaClass } from "@/components/admin/ui/styles";

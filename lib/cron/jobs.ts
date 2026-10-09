@@ -1,6 +1,6 @@
 import "server-only";
 
-import { db } from "@/lib/db/prisma";
+import { repos, type Repos } from "@/lib/data";
 import { invalidate } from "@/lib/cache/invalidate";
 import { forPostList } from "@/lib/cache/plan";
 import { audit } from "@/lib/admin/audit";
@@ -9,9 +9,9 @@ import { log } from "@/lib/log";
 
 // Shared cron job logic, called by both the /api/cron/* routes (automatic,
 // CRON_SECRET) and the manual "run now" action on the settings screen
-// (manageCron, or manageSettings for audit-prune). Each job accepts an
-// injectable database client so it can be unit tested with a fake, per the
-// project rule that tests never touch the real database. Design:
+// (manageCron, or manageSettings for audit-prune). Each job accepts the
+// repositories it needs (lib/data) so it can be unit tested with a fake, per
+// the project rule that tests never touch the real database. Design:
 // design notes, Step 16.
 
 export const DEFAULT_AUDIT_RETENTION_DAYS = 365;
@@ -27,42 +27,22 @@ const AUDIT_PRUNE_BUDGET_MS = 40_000;
  * sessions screen and cannot be deleted mid-request. */
 export const CLEANUP_GRACE_MS = 24 * 60 * 60 * 1000;
 
-type PostDb = Pick<typeof db.post, "updateMany">;
-type SessionDb = Pick<typeof db.userSession, "deleteMany">;
-type TokenDb = Pick<typeof db.authToken, "deleteMany">;
-type MfaDb = Pick<typeof db.mfaChallenge, "deleteMany">;
-type AuditDb = Pick<typeof db.auditLog, "findMany" | "deleteMany" | "create">;
-
-export type RevisionPruneDb = Pick<typeof db, "$executeRaw">;
-
-export interface BlogPublishDb {
-  post: PostDb;
-}
-
-export interface SessionCleanupDb {
-  userSession: SessionDb;
-  authToken: TokenDb;
-  mfaChallenge: MfaDb;
-}
-
-export interface AuditPruneDb {
-  auditLog: AuditDb;
-}
+export type BlogPublishDb = Pick<Repos, "maintenance">;
+export type SessionCleanupDb = Pick<Repos, "maintenance">;
+export type RevisionPruneDb = Pick<Repos, "maintenance">;
+export type AuditPruneDb = Pick<Repos, "maintenance" | "audit">;
 
 /**
  * Publish scheduled blog posts that have reached their publish time.
  * Flips Post.status from SCHEDULED to PUBLISHED and sets publishedAt.
  * Idempotent: a post already PUBLISHED never matches the where clause again.
  */
-export async function blogPublishJob(client: BlogPublishDb = db): Promise<{ published: number; error?: string }> {
+export async function blogPublishJob(client: BlogPublishDb = repos): Promise<{ published: number; error?: string }> {
   try {
     const now = new Date();
 
     // One statement: the count it returns is the "anything to do?" answer.
-    const result = await client.post.updateMany({
-      where: { status: "SCHEDULED", publishAt: { lte: now } },
-      data: { status: "PUBLISHED", publishedAt: now },
-    });
+    const result = { count: await client.maintenance.publishDuePosts(now) };
 
     if (result.count === 0) {
       log.info("blog publish cron: no posts to publish");
@@ -93,35 +73,26 @@ export async function blogPublishJob(client: BlogPublishDb = db): Promise<{ publ
  * challenges, all past a grace period so nothing is deleted the moment it
  * lapses. Idempotent: a second run finds nothing left to delete.
  */
-export async function sessionCleanupJob(client: SessionCleanupDb = db): Promise<{ deleted: number; error?: string }> {
+export async function sessionCleanupJob(client: SessionCleanupDb = repos): Promise<{ deleted: number; error?: string }> {
   try {
     const now = new Date();
     const cutoff = new Date(now.getTime() - CLEANUP_GRACE_MS);
 
     // Three independent deletes, run together (one round trip of latency).
-    const [sessionResult, tokenResult, mfaResult] = await Promise.all([
+    const [sessions, tokens, mfa] = await Promise.all([
       // Sessions: expired past the grace period, or revoked past the grace period.
-      client.userSession.deleteMany({
-        where: {
-          OR: [{ expiresAt: { lte: cutoff } }, { revokedAt: { lte: cutoff } }],
-        },
-      }),
+      client.maintenance.deleteEndedSessions(cutoff),
       // Invite and reset tokens: expired past the grace period. A used or revoked
       // token with no expiry change stays until it too ages out, which keeps a
       // short audit trail of recently accepted invites.
-      client.authToken.deleteMany({ where: { expiresAt: { lte: cutoff } } }),
+      client.maintenance.deleteExpiredAuthTokens(cutoff),
       // MFA challenges: expired past the grace period.
-      client.mfaChallenge.deleteMany({ where: { expiresAt: { lte: cutoff } } }),
+      client.maintenance.deleteExpiredMfaChallenges(cutoff),
     ]);
 
-    const totalDeleted = sessionResult.count + tokenResult.count + mfaResult.count;
+    const totalDeleted = sessions + tokens + mfa;
 
-    log.info("session cleanup cron: deleted expired records", {
-      sessions: sessionResult.count,
-      tokens: tokenResult.count,
-      mfa: mfaResult.count,
-      total: totalDeleted,
-    });
+    log.info("session cleanup cron: deleted expired records", { sessions, tokens, mfa, total: totalDeleted });
 
     return { deleted: totalDeleted };
   } catch (err) {
@@ -138,7 +109,7 @@ export async function sessionCleanupJob(client: SessionCleanupDb = db): Promise<
  */
 export async function auditPruneJob(
   options: { retentionDays?: number } = {},
-  client: AuditPruneDb = db
+  client: AuditPruneDb = repos
 ): Promise<{ deleted: number; error?: string }> {
   try {
     const retentionDays = options.retentionDays ?? DEFAULT_AUDIT_RETENTION_DAYS;
@@ -150,15 +121,9 @@ export async function auditPruneJob(
     let deleted = 0;
     const started = Date.now();
     for (;;) {
-      const batch = await client.auditLog.findMany({
-        where: { createdAt: { lt: cutoff } },
-        orderBy: { createdAt: "asc" },
-        select: { id: true },
-        take: AUDIT_PRUNE_BATCH,
-      });
+      const batch = await client.maintenance.oldestAuditIdsBefore(cutoff, AUDIT_PRUNE_BATCH);
       if (batch.length === 0) break;
-      const removed = await client.auditLog.deleteMany({ where: { id: { in: batch.map((row) => row.id) } } });
-      deleted += removed.count;
+      deleted += await client.maintenance.deleteAuditRows(batch);
       if (batch.length < AUDIT_PRUNE_BATCH || Date.now() - started > AUDIT_PRUNE_BUDGET_MS) break;
     }
     const result = { count: deleted };
@@ -199,21 +164,12 @@ export async function housekeepingPruneJob(
 }
 
 /**
- * Keeps only the newest REVISIONS_KEPT revisions of each post. One statement:
- * a window function ranks each post's revisions newest first and everything
- * past the cap goes, however many posts have history. Idempotent.
+ * Keeps only the newest REVISIONS_KEPT revisions of each post, in one
+ * statement however many posts have history. Idempotent.
  */
-export async function revisionPruneJob(client: RevisionPruneDb = db): Promise<{ deleted: number; error?: string }> {
+export async function revisionPruneJob(client: RevisionPruneDb = repos): Promise<{ deleted: number; error?: string }> {
   try {
-    const deleted = await client.$executeRaw`
-      DELETE FROM post_revisions
-      WHERE id IN (
-        SELECT id FROM (
-          SELECT id, row_number() OVER (PARTITION BY "postId" ORDER BY "createdAt" DESC) AS rank
-          FROM post_revisions
-        ) ranked
-        WHERE ranked.rank > ${REVISIONS_KEPT}
-      )`;
+    const deleted = await client.maintenance.pruneRevisions(REVISIONS_KEPT);
     if (deleted > 0) log.info("revision prune cron: pruned old post revisions", { count: deleted, kept: REVISIONS_KEPT });
     return { deleted };
   } catch (err) {

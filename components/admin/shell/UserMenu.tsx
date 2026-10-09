@@ -10,6 +10,7 @@ export interface UserMenuUser {
 
 const ROLE_LABEL: Record<string, string> = {
   DEVELOPER: "Developer",
+  SUPER_ADMIN: "Super admin",
   MANAGER: "Manager",
   EDITOR: "Editor",
 };

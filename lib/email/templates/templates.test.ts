@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { EmailGuardError } from "../guards";
+import { EmailGuardError } from "@sahan-sac/email-kit/guards";
 import {
+  accountCreated,
   contactAutoReply,
   contactNotify,
   forcedLogout,
@@ -14,7 +15,7 @@ import {
   passwordReset,
   type Rendered,
 } from "./index";
-import { oneLine } from "./layout";
+import { oneLine } from "@sahan-sac/email-kit/layout";
 
 const XSS = `<script>alert(1)</script><img src=x onerror="alert(2)">`;
 const NAME = `Eve\r\nBcc: victim@example.com ${XSS}`;
@@ -78,6 +79,10 @@ test("the content of each email is what the recipient needs", () => {
   const code = mfaCode({ name: "Jordan", code: "482913", minutes: 10 });
   assert.ok(code.subject.includes("482913"));
   assert.ok(code.text.includes("expires in 10 minutes"));
+  assert.ok(code.subject.startsWith("Your sign-in code"));
+  const stepUp = mfaCode({ name: "Jordan", code: "482913", minutes: 10, purpose: "STEP_UP" });
+  assert.ok(stepUp.subject.startsWith("Your confirmation code"));
+  assert.ok(stepUp.text.includes("confirm a security change"));
 
   const reset = passwordReset({ url: URL_OK, expiresMinutes: 30 });
   assert.ok(reset.text.includes(URL_OK));
@@ -91,4 +96,22 @@ test("the content of each email is what the recipient needs", () => {
 
 test("a missing name falls back to a neutral greeting", () => {
   assert.ok(newLogin({ when: "now" }).text.includes("Hi there"));
+});
+
+test("account emails carry a sign-in link, and their copies carry no link at all", () => {
+  const signInUrl = "https://example.com/s/abc.def";
+  const emails = [
+    (copy: boolean) => invite({ inviterName: "Owner", role: "EDITOR", url: "https://example.com/a/tok.tag", expiresHours: 72, signInUrl }, { copy }),
+    (copy: boolean) => passwordReset({ url: "https://example.com/a/tok.tag", expiresMinutes: 60, signInUrl }, { copy }),
+    (copy: boolean) => accountCreated({ creatorName: "Owner", role: "EDITOR", signInUrl }, { copy }),
+  ];
+  for (const render of emails) {
+    const original = render(false);
+    assert.ok(original.text.includes(signInUrl));
+    const copy = render(true);
+    assert.ok(copy.subject.startsWith("Copy: "));
+    for (const body of [copy.html, copy.text]) {
+      assert.ok(!body.includes("https://example.com/"), body);
+    }
+  }
 });

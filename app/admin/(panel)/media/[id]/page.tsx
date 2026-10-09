@@ -4,7 +4,7 @@ import { AlertTriangle, Trash2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
 import { getOptionalUser, hasPermission } from "@/lib/auth/dal";
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
 import { notFound } from "next/navigation";
 
 export const metadata: Metadata = {
@@ -21,10 +21,7 @@ export default async function MediaDetailPage({ params }: MediaDetailPageProps) 
   const user = await getOptionalUser();
   if (!user || !hasPermission(user, "viewMedia")) return notFound();
 
-  const asset = await db.mediaAsset.findUnique({
-    where: { id },
-    include: { usages: true },
-  });
+  const asset = await repos.media.findWithUsages(id);
 
   if (!asset) return notFound();
 

@@ -9,7 +9,7 @@ import { authKit } from "./kit-config";
 
 const PRODUCTION = process.env.NODE_ENV === "production";
 
-/** Auth.js session cookie. `__Host-`-prefixed in production; also the JWT salt, so getToken() uses the same name. */
+/** Session cookie, either engine. `__Host-`-prefixed in production; on next-auth also the JWT salt, so getToken() uses the same name. */
 export const SESSION_COOKIE = authKit.sessionCookieName(PRODUCTION);
 
 export { SESSION_MAX_AGE_SECONDS };

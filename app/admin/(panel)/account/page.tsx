@@ -8,12 +8,17 @@ import {
   PasswordForm,
   ProfileForm,
 } from "@/components/admin/account/AccountForms";
+import DeveloperMaskCard from "@/components/admin/account/DeveloperMaskCard";
+import SignInLinkCard from "@/components/admin/account/SignInLinkCard";
 import { badgeClass, cardClass } from "@/components/admin/ui/styles";
 import { formatDateTime, relativeTime } from "@/lib/admin/format";
 import { ROLE_LABEL } from "@/lib/admin/roles";
 import { requireUser } from "@/lib/auth/dal";
+import { maskingEnabled } from "@/lib/auth/mask";
+import { MASK_ROLE, SUPER_ROLE } from "@/lib/auth/permissions";
 import { listSessions } from "@/lib/auth/session-store";
-import { db } from "@/lib/db/prisma";
+import { repos } from "@/lib/data";
+import { getSetting } from "@/lib/settings/service";
 
 export const metadata: Metadata = { title: "Account" };
 
@@ -21,13 +26,14 @@ export default async function AccountPage() {
   // A user who must change their password lands here, so this page lets them in.
   const user = await requireUser({ allowPasswordChange: true });
 
-  const [profile, sessions] = await Promise.all([
-    db.user.findUnique({
-      where: { id: user.id },
-      select: { name: true, bio: true, mfaEnabled: true, lastLoginAt: true },
-    }),
+  // Developer masking shows only to developers, and only while it is turned on (lib/auth/mask.ts).
+  const maskControls = user.role === SUPER_ROLE && maskingEnabled();
+  const [profile, sessions, maskSetting] = await Promise.all([
+    repos.users.findProfile(user.id),
     listSessions({ userId: user.id, limit: 50 }),
+    maskControls ? getSetting("security.mask") : Promise.resolve(null),
   ]);
+  const masked = maskControls && Boolean(profile?.masked || maskSetting?.global);
   const mfaEnabled = profile?.mfaEnabled ?? false;
   const others = sessions.filter((session) => session.id !== user.sid);
 
@@ -37,6 +43,7 @@ export default async function AccountPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Account</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {user.email} <span className={`${badgeClass} ml-1`}>{ROLE_LABEL[user.role]}</span>
+          {masked ? <span className={`${badgeClass} ml-1`}>Masked as {ROLE_LABEL[MASK_ROLE]}</span> : null}
         </p>
       </div>
 
@@ -117,6 +124,27 @@ export default async function AccountPage() {
         </ul>
         <p className="mt-4 text-xs text-muted-foreground">Last sign-in: {formatDateTime(profile?.lastLoginAt)}</p>
       </section>
+
+      {maskControls ? (
+        <section className={cardClass} aria-labelledby="mask-heading">
+          <h2 id="mask-heading" className="text-base font-medium">
+            Developer masking
+          </h2>
+          <p className="mb-4 mt-1 text-sm text-muted-foreground">
+            Everyone but developers sees a masked developer as a super admin, and the developer role, its audit rows and
+            its settings stay hidden from them. What you can do never changes. Only developers see this card and who is
+            masked. Every change is confirmed with a code emailed to you, and audited.
+          </p>
+          <DeveloperMaskCard
+            key={`${profile?.masked}-${maskSetting?.global}`}
+            masked={profile?.masked ?? false}
+            global={maskSetting?.global ?? false}
+            email={user.email}
+          />
+        </section>
+      ) : null}
+
+      <SignInLinkCard audience="self" />
     </div>
   );
 }

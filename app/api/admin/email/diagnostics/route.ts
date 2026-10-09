@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getOptionalUser, hasPermission } from "@/lib/auth/dal";
 import { getBrevoDiagnostics, getEmailHealth } from "@/lib/email";
-import { assertAddress, EmailGuardError } from "@/lib/email/guards";
+import { assertAddress, EmailGuardError } from "@sahan-sac/email-kit/guards";
 
 // Read-only report on email: which providers are configured, and, with `messageId`
 // or `email`, what Brevo says happened to a send. Needs the manageSettings
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   const user = await getOptionalUser();
   // A missing permission looks like a missing page, and a user who must still
   // choose a password can use nothing but the account page.
-  if (!user || user.mustChangePassword || !hasPermission(user, "manageSettings")) {
+  if (!user || user.mustChangePassword || !hasPermission(user, "manageSettings") || !hasPermission(user, "viewSecurityStatus")) {
     return json({ error: "not_found" }, 404);
   }
 

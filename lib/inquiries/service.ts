@@ -1,7 +1,7 @@
 import "server-only";
 
-import { db } from "@/lib/db/prisma";
-import type { Inquiry } from "@prisma/client";
+import { repos } from "@/lib/data";
+import type { InquiryRow } from "@/lib/data/inquiries";
 
 export interface CreateInquiryInput {
   name: string;
@@ -16,23 +16,21 @@ export interface CreateInquiryInput {
   spamScore: number;
 }
 
-export async function createInquiry(input: CreateInquiryInput): Promise<Inquiry> {
-  return db.inquiry.create({
-    data: {
-      name: input.name,
-      email: input.email,
-      phone: input.phone || null,
-      topic: input.topic || null,
-      message: input.message,
-      source: input.source,
-      ipHash: input.ipHash || null,
-      userAgent: input.userAgent || null,
-      pagePath: input.pagePath || null,
-      spamScore: input.spamScore,
-      status: input.spamScore > 50 ? "SPAM" : "NEW",
-      emailStatus: "PENDING",
-      autoReplyStatus: "PENDING",
-    },
+export async function createInquiry(input: CreateInquiryInput): Promise<InquiryRow> {
+  return repos.inquiries.create({
+    name: input.name,
+    email: input.email,
+    phone: input.phone || null,
+    topic: input.topic || null,
+    message: input.message,
+    source: input.source,
+    ipHash: input.ipHash || null,
+    userAgent: input.userAgent || null,
+    pagePath: input.pagePath || null,
+    spamScore: input.spamScore,
+    status: input.spamScore > 50 ? "SPAM" : "NEW",
+    emailStatus: "PENDING",
+    autoReplyStatus: "PENDING",
   });
 }
 
@@ -41,28 +39,15 @@ export async function findRecentDuplicate(
   email: string,
   message: string,
   ipHash: string | undefined
-): Promise<Inquiry | null> {
+): Promise<InquiryRow | null> {
   if (!ipHash) return null;
 
   const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-  return db.inquiry.findFirst({
-    where: {
-      email,
-      message,
-      ipHash,
-      createdAt: { gte: tenMinutesAgo },
-    },
-  });
+  return repos.inquiries.findRecentDuplicate({ email, message, ipHash, since: tenMinutesAgo });
 }
 
 export async function getInquiry(id: string) {
-  return db.inquiry.findUnique({
-    where: { id },
-    include: {
-      assignee: { select: { id: true, name: true, email: true } },
-      events: { orderBy: { createdAt: "desc" } },
-    },
-  });
+  return repos.inquiries.findDetail(id);
 }
 
 export async function listInquiries(
@@ -73,34 +58,10 @@ export async function listInquiries(
     offset?: number;
   }
 ) {
-  const limit = filters?.limit ?? 50;
-  const offset = filters?.offset ?? 0;
-
-  const where: Record<string, unknown> = {};
-  if (filters?.status) {
-    where.status = filters.status;
-  }
-  if (filters?.search) {
-    const s = filters.search;
-    where.OR = [
-      { name: { contains: s, mode: "insensitive" as const } },
-      { email: { contains: s, mode: "insensitive" as const } },
-      { message: { contains: s, mode: "insensitive" as const } },
-    ];
-  }
-
-  const [rows, total] = await Promise.all([
-    db.inquiry.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: limit,
-      skip: offset,
-      include: {
-        assignee: { select: { id: true, name: true, email: true } },
-      },
-    }),
-    db.inquiry.count({ where }),
-  ]);
-
-  return { rows, total };
+  return repos.inquiries.list({
+    status: filters?.status,
+    search: filters?.search,
+    limit: filters?.limit ?? 50,
+    offset: filters?.offset ?? 0,
+  });
 }

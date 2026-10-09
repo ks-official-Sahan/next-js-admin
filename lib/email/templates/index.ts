@@ -1,27 +1,48 @@
+import { oneLine, renderEmail as renderLayout, type EmailContent, type Rendered } from "@sahan-sac/email-kit/layout";
+
 import { SiteMetadata } from "@/config/site";
 
-import { oneLine, renderEmail, type Rendered } from "./layout";
-
-// The nine emails the admin sends (design notes, step 5). Every
+// The emails the admin sends (design notes, step 5). Every
 // function takes plain values and returns { subject, html, text }. Subjects are
 // flattened to one line and cut short, so a name with a line break in it cannot
 // add a header. Links must already be absolute; they are checked in the layout.
 
-export type { Rendered } from "./layout";
+export type { Rendered } from "@sahan-sac/email-kit/layout";
 
 const brand = SiteMetadata.title;
+const renderEmail = (subject: string, content: EmailContent, copy = false) => renderLayout(subject, content, { brand, copy });
+
+/** `copy`: the redacted version for EMAIL_CC, with every link left out (lib/email/account-mail.ts). */
+export interface CopyOption {
+  copy?: boolean;
+}
+
+/** A sign-in link (lib/auth/links.ts) under the main button, so the recipient can find the login page again later. */
+const signInLater = (url: string | undefined, label = "Sign in later") =>
+  url ? { secondaryLink: { label, url, note: "Opens the sign-in page on any device. Your password is still needed." } } : {};
 const who = (name: string | null | undefined) => (name ? oneLine(name) : "there");
 
-export function mfaCode(input: { name?: string | null; code: string; minutes: number }): Rendered {
-  return renderEmail(`Your sign-in code: ${oneLine(input.code, 12)}`, {
-    preheader: `Your ${brand} admin sign-in code`,
-    heading: "Your sign-in code",
+type CodePurpose = "SIGN_IN" | "ENABLE" | "DISABLE" | "STEP_UP";
+
+/** What each kind of emailed code is for, in the words the email uses. */
+const CODE_PURPOSE: Record<CodePurpose, { title: string; use: string; footnote: string }> = {
+  SIGN_IN: { title: "sign-in code", use: "finish signing in to", footnote: "If you did not try to sign in, change your password now." },
+  ENABLE: { title: "code to turn on two-factor sign-in", use: "turn on two-factor sign-in for", footnote: "If you did not ask for this, change your password now." },
+  DISABLE: { title: "code to turn off two-factor sign-in", use: "turn off two-factor sign-in for", footnote: "If you did not ask for this, change your password now." },
+  STEP_UP: { title: "confirmation code", use: "confirm a security change in", footnote: "If you did not ask for this, change your password now and tell your team." },
+};
+
+export function mfaCode(input: { name?: string | null; code: string; minutes: number; purpose?: CodePurpose }): Rendered {
+  const purpose = CODE_PURPOSE[input.purpose ?? "SIGN_IN"];
+  return renderEmail(`Your ${purpose.title}: ${oneLine(input.code, 12)}`, {
+    preheader: `Your ${brand} admin ${purpose.title}`,
+    heading: `Your ${purpose.title}`,
     paragraphs: [
-      `Hi ${who(input.name)}, use this code to finish signing in to the ${brand} admin.`,
+      `Hi ${who(input.name)}, use this code to ${purpose.use} the ${brand} admin.`,
       oneLine(input.code, 12),
       `It works once and expires in ${input.minutes} minutes. Nobody from the site will ask you for it.`,
     ],
-    footnote: "If you did not try to sign in, change your password now.",
+    footnote: purpose.footnote,
   });
 }
 
@@ -70,7 +91,13 @@ export function mfaToggled(input: SignInDetails & { enabled: boolean }): Rendere
   });
 }
 
-export function forcedLogout(input: { name?: string | null; by?: string | null; reason?: string | null }): Rendered {
+export function forcedLogout(input: {
+  name?: string | null;
+  by?: string | null;
+  reason?: string | null;
+  /** A sign-in link (lib/auth/links.ts), so the login page opens without the unlock secret. */
+  signInUrl?: string;
+}): Rendered {
   return renderEmail(`You were signed out of the ${brand} admin`, {
     preheader: "Your sessions were ended",
     heading: "Signed out",
@@ -79,16 +106,21 @@ export function forcedLogout(input: { name?: string | null; by?: string | null; 
       ...(input.reason ? [`Reason: ${oneLine(input.reason, 200)}`] : []),
       "Sign in again to continue.",
     ],
+    ...(input.signInUrl ? { button: { label: "Sign in again", url: input.signInUrl } } : {}),
   });
 }
 
-export function invite(input: {
-  name?: string | null;
-  inviterName: string;
-  role: string;
-  url: string;
-  expiresHours: number;
-}): Rendered {
+export function invite(
+  input: {
+    name?: string | null;
+    inviterName: string;
+    role: string;
+    url: string;
+    expiresHours: number;
+    signInUrl?: string;
+  },
+  options: CopyOption = {}
+): Rendered {
   return renderEmail(`You are invited to the ${brand} admin`, {
     preheader: `${oneLine(input.inviterName)} invited you`,
     heading: "You are invited",
@@ -97,11 +129,31 @@ export function invite(input: {
       `Choose your password to accept. The link works once and expires in ${input.expiresHours} hours.`,
     ],
     button: { label: "Accept invitation", url: input.url },
+    ...signInLater(input.signInUrl),
     footnote: "If you were not expecting this, ignore this email and nothing happens.",
-  });
+  }, options.copy);
 }
 
-export function passwordReset(input: { name?: string | null; url: string; expiresMinutes: number }): Rendered {
+export function accountCreated(
+  input: { name?: string | null; creatorName: string; role: string; signInUrl: string },
+  options: CopyOption = {}
+): Rendered {
+  return renderEmail(`Your ${brand} admin account is ready`, {
+    preheader: `${oneLine(input.creatorName)} created your account`,
+    heading: "Your account is ready",
+    paragraphs: [
+      `Hi ${who(input.name)}, ${oneLine(input.creatorName)} created an account for you in the ${brand} admin as ${oneLine(input.role)}.`,
+      "Sign in with the password they gave you. You choose your own password the first time you sign in.",
+    ],
+    button: { label: "Sign in", url: input.signInUrl },
+    footnote: "The password is never sent by email. If you were not expecting this, tell the site owner.",
+  }, options.copy);
+}
+
+export function passwordReset(
+  input: { name?: string | null; url: string; expiresMinutes: number; signInUrl?: string },
+  options: CopyOption = {}
+): Rendered {
   return renderEmail(`Reset your ${brand} admin password`, {
     preheader: "Choose a new password",
     heading: "Reset your password",
@@ -110,8 +162,9 @@ export function passwordReset(input: { name?: string | null; url: string; expire
       `The link works once and expires in ${input.expiresMinutes} minutes.`,
     ],
     button: { label: "Choose a new password", url: input.url },
+    ...signInLater(input.signInUrl, "Sign in afterwards"),
     footnote: "If you did not ask for this, ignore this email; your password stays as it is.",
-  });
+  }, options.copy);
 }
 
 export function contactNotify(input: {

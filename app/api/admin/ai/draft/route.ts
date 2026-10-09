@@ -8,7 +8,7 @@ import { rateLimitedResponse } from "@/lib/admin/rate-limited";
 import { checkOrigin } from "@/lib/security/check-origin";
 import { getEnv } from "@/lib/env";
 import { realBlogDeps } from "@sahan-sac/blog-kit/deps";
-import { blogSite } from "@/lib/ai/blog-site";
+import { blogSiteWithGuidance } from "@/lib/ai/context";
 import { draftPost } from "@sahan-sac/blog-kit/helpers";
 
 // POST /api/admin/ai/draft. Requires generateAI, rate limited per user
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "A topic is required." }, { status: 400 });
   }
 
-  const result = await draftPost(parsed.data, realBlogDeps(getEnv(), blogSite));
+  const result = await draftPost(parsed.data, realBlogDeps(getEnv(), await blogSiteWithGuidance()));
   if (!result.ok) return NextResponse.json(result, { status: 502, headers: { "Cache-Control": "no-store" } });
   return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
 }

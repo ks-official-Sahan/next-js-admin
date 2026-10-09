@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { audit } from "@/lib/admin/audit";
 import { auditQueryString, parseAuditFilters } from "@/lib/admin/audit-filters";
-import { exportAuditRows } from "@/lib/admin/audit-query";
+import { auditScope, exportAuditRows } from "@/lib/admin/audit-query";
 import { toCsv } from "@/lib/admin/csv";
 import { getOptionalUser, hasPermission } from "@/lib/auth/dal";
 import { isCrossSiteFetch } from "@/lib/security/fetch-site";
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 
   const params = Object.fromEntries(request.nextUrl.searchParams);
   const { filters } = parseAuditFilters(params);
-  const { rows, truncated } = await exportAuditRows(filters);
+  const { rows, truncated } = await exportAuditRows(auditScope(filters, user));
 
   await audit({
     action: "audit.exported",

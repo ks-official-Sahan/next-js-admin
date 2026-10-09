@@ -1,6 +1,7 @@
 import "server-only";
 
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { NewPost } from "@/lib/data/posts";
+import type { Repos } from "@/lib/data/repos";
 
 import { UpdatesContent } from "@/contents/updates";
 import { sanitizeRich, extractText } from "@/lib/cms/rich-text";
@@ -10,9 +11,9 @@ import { ensureUniqueSlug, slugify } from "@sahan-sac/blog-kit/slug";
 
 // Idempotent import of `UpdatesContent.posts` as published posts. Only runs when the Post table is empty, so an
 // edited or newly authored post is never touched or duplicated. Called from
-// prisma/seed-blog.ts, never run against the real database by this agent.
+// scripts/db/seed-blog.ts, never run against the real database by this agent.
 
-type SeedClient = Pick<PrismaClient, "post">;
+type SeedClient = Pick<Repos, "posts">;
 
 export interface SeedBlogResult {
   ok: true;
@@ -29,14 +30,14 @@ const escapeHtml = (value: string): string =>
     .replace(/'/g, "&#39;");
 
 export async function seedBlog(client: SeedClient): Promise<SeedBlogResult> {
-  const existing = await client.post.count();
+  const existing = await client.posts.count();
   if (existing > 0) return { ok: true, created: 0, skipped: true };
 
   const taken = new Set<string>();
   const now = Date.now();
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
-  const rows: Prisma.PostCreateManyInput[] = UpdatesContent.posts.map((post, index) => {
+  const rows: NewPost[] = UpdatesContent.posts.map((post, index) => {
     const slug = ensureUniqueSlug(slugify(post.title) || post.id, taken);
     taken.add(slug);
     const contentHtml = sanitizeRich(`<p>${escapeHtml(post.content)}</p>`);
@@ -62,6 +63,6 @@ export async function seedBlog(client: SeedClient): Promise<SeedBlogResult> {
     };
   });
 
-  await client.post.createMany({ data: rows });
+  await client.posts.createMany(rows);
   return { ok: true, created: rows.length, skipped: false };
 }

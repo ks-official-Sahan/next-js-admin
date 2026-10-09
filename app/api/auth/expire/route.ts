@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { LOCKED_PATH, LOGIN_PATH, SESSION_COOKIE } from "@/lib/auth/constants";
+import { SESSION_COOKIES } from "@/lib/auth/session-cookie";
 
 // A Server Component cannot write cookies [N20], so the data access layer sends a
 // browser whose session was revoked, expired or disabled here. The cookie is
@@ -28,10 +29,12 @@ export function GET(request: NextRequest) {
   url.search = hasSession ? "?reason=revoked" : "?reason=expired";
 
   const response = NextResponse.redirect(url, 303);
-  // Path and Secure must match how the cookie was set (config.ts) for the
-  // browser to actually clear it — this matters more once SESSION_COOKIE is
-  // __Host--prefixed in production, which requires Secure.
-  response.cookies.set(SESSION_COOKIE, "", { path: "/", maxAge: 0, httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production" });
+  // Path and Secure must match how the engine set the cookies (lib/auth/engine.ts) for
+  // the browser to actually clear them — this matters more once SESSION_COOKIE
+  // is __Host--prefixed in production, which requires Secure.
+  for (const name of SESSION_COOKIES) {
+    response.cookies.set(name, "", { path: "/", maxAge: 0, httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production" });
+  }
   response.headers.set("Cache-Control", "no-store");
   return response;
 }

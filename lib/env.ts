@@ -2,6 +2,7 @@ import "server-only";
 
 import { aiEnvSchema } from "@sahan-sac/ai-core/env";
 import { emailEnvSchema } from "@sahan-sac/email-kit/env";
+import { presentationModeOn } from "@sahan-sac/auth-kit/rbac/mask";
 import { mediaEnvSchema } from "@sahan-sac/media-kit/env";
 import { z } from "zod";
 
@@ -27,11 +28,6 @@ const flag = z
 
 const list = text.transform((value) => splitList(value));
 
-// On only for the exact value "true"; unset or anything else is off.
-const strictFlag = z
-  .string()
-  .optional()
-  .transform((value) => value?.trim() === "true");
 
 const schema = z.object({
   // Auth and signing
@@ -52,7 +48,7 @@ const schema = z.object({
   SITE_URLS: list,
   ADMIN_ALLOWED_ORIGINS: list,
   // Developer masking (lib/auth/mask.ts). Off unless exactly "true".
-  ADMIN_PRESENTATION_MODE: strictFlag,
+  ADMIN_PRESENTATION_MODE: z.string().optional().transform(presentationModeOn),
 
   // Data
   DATABASE_URL: text,

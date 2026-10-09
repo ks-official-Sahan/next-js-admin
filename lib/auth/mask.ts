@@ -33,32 +33,26 @@ export interface DeveloperMask extends Mask<RoleName> {
   presentFor(viewer: { role: RoleName }): PresentRoles | undefined;
 }
 
+const POLICY = { superRole: SUPER_ROLE, maskAs: MASK_ROLE } as const;
+
 /** Whether developer masking exists at all (ADMIN_PRESENTATION_MODE=true). */
 export function maskingEnabled(): boolean {
   return getEnv().ADMIN_PRESENTATION_MODE;
 }
 
-/** The mask while the feature is off: real roles for everyone, no database reads. */
-function maskOff(): DeveloperMask {
-  const mask = createMask<RoleName>({ superRole: SUPER_ROLE, maskAs: MASK_ROLE }, { global: false, users: new Set() });
-  return {
-    ...mask,
-    visibleRoles: (_viewer, roles) => [...roles],
-    presentCounts: (_viewer, counts) => ({ ...counts }),
-    canSeeAuditBy: () => true,
-    global: false,
-    maskedCount: 0,
-    unmaskedCount: 0,
-    presentFor: () => undefined,
-  };
+/** The author role whose audit rows `viewer` may not read: none while masking is off. */
+export function hiddenAuditRole(viewer: { role: RoleName }): RoleName | undefined {
+  return createMask<RoleName>({ ...POLICY, enabled: maskingEnabled() }).hiddenAuditRole(viewer);
 }
 
-/** Loaded once per request: the setting (cached) and the few developer rows. */
+/** Loaded once per request: the setting (cached) and the few developer rows; nothing while off. */
 export const getDeveloperMask = cache(async (): Promise<DeveloperMask> => {
-  if (!maskingEnabled()) return maskOff();
+  if (!maskingEnabled()) {
+    return { ...createMask<RoleName>(POLICY), global: false, maskedCount: 0, unmaskedCount: 0, presentFor: () => undefined };
+  }
   const [setting, developers, catalog] = await Promise.all([getSetting("security.mask"), repos.users.maskFlags(SUPER_ROLE), getRoleCatalog()]);
   const users = new Set(developers.filter((developer) => developer.masked).map((developer) => developer.id));
-  const mask = createMask<RoleName>({ superRole: SUPER_ROLE, maskAs: MASK_ROLE }, { global: setting.global, users });
+  const mask = createMask<RoleName>({ ...POLICY, enabled: true }, { global: setting.global, users });
   const maskedCount = setting.global ? developers.length : users.size;
   return {
     ...mask,

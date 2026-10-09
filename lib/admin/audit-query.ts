@@ -1,7 +1,7 @@
 import "server-only";
 
-import { maskingEnabled } from "@/lib/auth/mask";
-import { SUPER_ROLE, type RoleName } from "@/lib/auth/permissions";
+import { hiddenAuditRole } from "@/lib/auth/mask";
+import type { RoleName } from "@/lib/auth/permissions";
 import { repos } from "@/lib/data";
 import type { AuditEntry } from "@/lib/data/audit";
 
@@ -13,15 +13,10 @@ import { encodeCursor, type AuditCursor, type AuditFilters } from "./audit-filte
 export type AuditRow = AuditEntry;
 
 /**
- * The author role whose rows `viewer` may not read: with developer masking
- * on (lib/auth/mask.ts), everyone below the super role never sees a row a
- * developer wrote (the actorRole snapshot), masked or not.
+ * What a viewer may read: with developer masking on (lib/auth/mask.ts),
+ * everyone below the super role never sees a row a developer wrote (the
+ * actorRole snapshot), masked or not.
  */
-export function hiddenAuditRole(viewer: { role: RoleName }): RoleName | undefined {
-  return maskingEnabled() && viewer.role !== SUPER_ROLE ? SUPER_ROLE : undefined;
-}
-
-/** What a viewer may read (see hiddenAuditRole). */
 export function auditScope(filters: AuditFilters, viewer: { role: RoleName }): AuditFilters {
   const hidden = hiddenAuditRole(viewer);
   return hidden ? { ...filters, hideActorRole: hidden } : filters;

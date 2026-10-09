@@ -1,9 +1,8 @@
 import "server-only";
 
+import { hiddenAuditRole } from "@/lib/auth/mask";
 import type { RoleName } from "@/lib/auth/permissions";
 import { repos } from "@/lib/data";
-
-import { hiddenAuditRole } from "./audit-query";
 import { log } from "@/lib/log";
 
 // Dashboard helper: queries for the admin dashboard widgets.
@@ -11,7 +10,7 @@ import { log } from "@/lib/log";
 // Design notes, Step 16.
 
 /**
- * Recent audit log entries the viewer may read (see lib/admin/audit-query.ts's hiddenAuditRole).
+ * Recent audit log entries the viewer may read (see lib/admin/audit-query.ts's auditScope).
  */
 export async function getRecentActivity(viewer: { role: RoleName }, limit = 10) {
   try {

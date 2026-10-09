@@ -41,6 +41,12 @@ function resolver() {
   return globalForSite.activeSiteUrl.resolver;
 }
 
+/** Every configured site origin, in order: for allow-lists that are fixed at start-up. */
+export function siteOrigins(): string[] {
+  const env = getEnv();
+  return siteUrlCandidates({ SITE_URLS: env.SITE_URLS, SITE_URL: env.SITE_URL }, DEFAULT_SITE_URLS);
+}
+
 /** The active site origin, without a trailing slash. */
 export function siteUrl(): Promise<string> {
   return resolver().resolve();

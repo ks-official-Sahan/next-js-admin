@@ -20,6 +20,10 @@ export function buildAuditWhere(filters: AuditFilters, cursor: AuditCursor | nul
         : { action: filters.action }
     );
   }
+  if (filters.hideActorRole) {
+    // IS DISTINCT FROM: a row with no snapshot (a system job) stays visible.
+    and.push({ OR: [{ actorRole: null }, { actorRole: { not: filters.hideActorRole } }] });
+  }
   if (filters.entityType) and.push({ entityType: filters.entityType });
   if (filters.entityId) and.push({ entityId: filters.entityId });
   if (filters.from || filters.to) {

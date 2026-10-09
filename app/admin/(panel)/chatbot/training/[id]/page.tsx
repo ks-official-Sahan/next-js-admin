@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 
 export default async function EditTrainingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  await requirePermission("manageChatbot");
+  await requirePermission("manageChatbotTraining");
 
   const entry = await repos.chatTraining.find(id);
   if (!entry) notFound();

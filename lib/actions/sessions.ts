@@ -7,7 +7,8 @@ import { z } from "zod";
 import { auditMany, auditSafe } from "@/lib/admin/audit";
 import { authorizeAction } from "@/lib/actions/guard";
 import { done, fail, formValues, type ActionState } from "@/lib/actions/state";
-import { canManage } from "@/lib/auth/rbac-rules";
+import { SUPER_ROLE } from "@/lib/auth/permissions";
+import { getRoleCatalog } from "@/lib/auth/roles";
 import { forceLogoutAll, revokeSession, revokeSessions, revokeUserSessions } from "@/lib/auth/session-store";
 import { repos } from "@/lib/data";
 import { log } from "@/lib/log";
@@ -35,7 +36,7 @@ export async function revokeSessionAction(_previous: ActionState, formData: Form
   if (!session) return fail("That session does not exist.");
   // Your own other sessions are always yours to end. Anyone else's follows the hierarchy.
   const own = session.userId === user.id;
-  if (!own && !canManage(user, { id: session.userId, role: session.user.role })) {
+  if (!own && !(await getRoleCatalog()).canManage(user, { id: session.userId, role: session.user.role })) {
     return fail("You are not allowed to end this session.");
   }
 
@@ -76,13 +77,13 @@ export async function endSessions(_previous: ActionState, formData: FormData): P
   if (ids.length > BULK_MAX) return fail(`Select at most ${BULK_MAX} sessions at a time.`);
 
   const now = Date.now();
-  const rows = await repos.sessions.findManyWithOwner(ids);
+  const [rows, roles] = await Promise.all([repos.sessions.findManyWithOwner(ids), getRoleCatalog()]);
   const allowed = rows.filter(
     (row) =>
       row.id !== user.sid &&
       !row.revokedAt &&
       row.expiresAt.getTime() > now &&
-      (row.userId === user.id || canManage(user, { id: row.userId, role: row.user.role }))
+      (row.userId === user.id || roles.canManage(user, { id: row.userId, role: row.user.role }))
   );
   const skipped = ids.length - allowed.length;
   if (allowed.length === 0) {
@@ -123,7 +124,7 @@ export async function forceLogoutUser(_previous: ActionState, formData: FormData
   const id = formData.get("userId");
   const target = typeof id === "string" && id ? await findUserRef(id) : null;
   if (!target) return fail("That user does not exist.");
-  if (!canManage(user, target)) return fail("You are not allowed to sign this user out.");
+  if (!(await getRoleCatalog()).canManage(user, target)) return fail("You are not allowed to sign this user out.");
 
   const ended = await revokeUserSessions(target.id, { userId: user.id, reason: "force_logout" });
   await auditSafe({
@@ -151,7 +152,7 @@ export async function forceLogoutEveryone(_previous: ActionState, formData: Form
   const access = await authorizeAction("forceLogout");
   if (!access.ok) return fail(access.error);
   const { user } = access;
-  if (user.role !== "DEVELOPER") return fail("Only a developer can sign everyone out.");
+  if (user.role !== SUPER_ROLE) return fail("You do not have permission to do that.");
 
   const parsed = reason.safeParse(formValues(formData).reason ?? "");
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Check the reason.");

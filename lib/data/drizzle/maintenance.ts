@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 
 import { auditLogs, authTokens, contentBlocks, inquiries, mfaChallenges, posts, userSessions } from "@/lib/db/schema";
 
@@ -64,7 +64,7 @@ export function maintenanceRepo(client: DbClient): MaintenanceRepo {
 
 export function dashboardRepo(client: DbClient): DashboardRepo {
   return {
-    recentActivity(limit) {
+    recentActivity(limit, hideActorRole) {
       return client
         .select({
           id: auditLogs.id,
@@ -75,6 +75,7 @@ export function dashboardRepo(client: DbClient): DashboardRepo {
           entityId: auditLogs.entityId,
         })
         .from(auditLogs)
+        .where(hideActorRole ? or(isNull(auditLogs.actorRole), ne(auditLogs.actorRole, hideActorRole)) : undefined)
         .orderBy(desc(auditLogs.createdAt))
         .limit(limit);
     },

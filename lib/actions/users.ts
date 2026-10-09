@@ -11,8 +11,8 @@ import { INVITE_TTL_HOURS, RESET_TTL_MINUTES, createToken } from "@/lib/auth/inv
 import { accountLink, signInLink } from "@/lib/auth/links";
 import { checkPassword } from "@/lib/auth/password-policy";
 import { hashPassword } from "@/lib/auth/password";
-import { ROLES, type Permission, type RoleName } from "@/lib/auth/permissions";
-import { assignableRoles } from "@/lib/auth/rbac-rules";
+import { type Permission, type RoleName } from "@/lib/auth/permissions";
+import { getRoleCatalog } from "@/lib/auth/roles";
 import { invalidateSessionState, invalidateUserSessionState, revokeSessions, revokeUserSessions } from "@/lib/auth/session-store";
 import { limit } from "@/lib/cache/ratelimit";
 import { repos, withTx } from "@/lib/data";
@@ -42,7 +42,8 @@ import { countActiveDevelopers, findUserRef } from "@/lib/users/service";
 // and 6.5).
 
 const email = z.string().trim().toLowerCase().email("Enter a valid email address.").max(254);
-const role = z.enum(ROLES, { message: "Choose a role." });
+// Any role name; whether it exists and the actor may give it is checkInvite's job.
+const role = z.string().trim().min(1, "Choose a role.").max(32, "Choose a role.");
 const name = z.string().trim().max(80, "Use at most 80 characters.");
 const reasonText = z.string().trim().max(200, "Use at most 200 characters.");
 
@@ -70,12 +71,13 @@ const targetOf = async (formData: FormData) => {
 export async function inviteUser(_previous: ActionState, formData: FormData): Promise<ActionState> {
   const access = await authorizeAction("inviteUser");
   if (!access.ok) return fail(access.error);
+  const roles = await getRoleCatalog();
   const { user: actor } = access;
 
   const parsed = z.object({ email, role }).safeParse(formValues(formData));
   if (!parsed.success) return fail("Check the form.", fieldErrorsFrom(parsed.error.issues));
 
-  const allowed = checkInvite(actor, parsed.data.role);
+  const allowed = checkInvite(roles, actor, parsed.data.role);
   if (!allowed.ok) return fail(allowed.error);
   if (!(await limit("invite:actor", actor.id)).ok) return fail("You sent many invitations. Try again in an hour.");
 
@@ -94,7 +96,7 @@ export async function inviteUser(_previous: ActionState, formData: FormData): Pr
     await withTx(async (tx) => {
       // One open invitation per address: a new one replaces the old link.
       // Never cancel an invitation for a role this actor could not have sent.
-      await tx.authTokens.revokeOpenInvitesTo(parsed.data.email, { roles: assignableRoles(actor.role), createdById: actor.id });
+      await tx.authTokens.revokeOpenInvitesTo(parsed.data.email, { roles: roles.assignable(actor.role), createdById: actor.id });
       const created = await tx.authTokens.create({
         purpose: "INVITE",
         email: parsed.data.email,
@@ -149,6 +151,7 @@ export async function inviteUser(_previous: ActionState, formData: FormData): Pr
 export async function regenerateInviteLink(_previous: ActionState, formData: FormData): Promise<ActionState> {
   const access = await authorizeAction("inviteUser");
   if (!access.ok) return fail(access.error);
+  const roles = await getRoleCatalog();
 
   const id = formData.get("inviteId");
   if (typeof id !== "string" || !id) return fail("Missing invitation.");
@@ -162,7 +165,7 @@ export async function regenerateInviteLink(_previous: ActionState, formData: For
       const row = await tx.authTokens.findOpenInvite(id);
       if (!row || row.expiresAt.getTime() <= Date.now()) return null;
       // The same reach as cancelling it: only roles this actor could have sent.
-      if (!checkInvite(access.user, row.role ?? "EDITOR").ok) return null;
+      if (!checkInvite(roles, access.user, row.role ?? "EDITOR").ok) return null;
       if ((await tx.authTokens.rotateOpenInvite(id, hash, expiresAt)) === 0) return null;
       await audit(
         {
@@ -191,6 +194,7 @@ export async function regenerateInviteLink(_previous: ActionState, formData: For
 export async function revokeInvite(_previous: ActionState, formData: FormData): Promise<ActionState> {
   const access = await authorizeAction("inviteUser");
   if (!access.ok) return fail(access.error);
+  const roles = await getRoleCatalog();
 
   const id = formData.get("inviteId");
   if (typeof id !== "string" || !id) return fail("Missing invitation.");
@@ -200,7 +204,7 @@ export async function revokeInvite(_previous: ActionState, formData: FormData): 
       const row = await tx.authTokens.findOpenInvite(id);
       if (!row) return null;
       // A manager may only cancel invitations for roles they could have sent.
-      if (!checkInvite(access.user, row.role ?? "EDITOR").ok) return null;
+      if (!checkInvite(roles, access.user, row.role ?? "EDITOR").ok) return null;
       if ((await tx.authTokens.revokeIfOpen(id)) === 0) return null;
       await audit(
         { action: "invite.revoked", actor: access.user, entityType: "AuthToken", entityId: id, before: { email: row.email, role: row.role } },
@@ -220,6 +224,7 @@ export async function revokeInvite(_previous: ActionState, formData: FormData): 
 export async function createUser(_previous: ActionState, formData: FormData): Promise<ActionState> {
   const access = await authorizeAction("manageUsers");
   if (!access.ok) return fail(access.error);
+  const roles = await getRoleCatalog();
   const { user: actor } = access;
 
   const parsed = z
@@ -230,7 +235,7 @@ export async function createUser(_previous: ActionState, formData: FormData): Pr
   const notifyValues = formData.getAll("notify");
   const notify = notifyValues.length === 0 || notifyValues.includes("1");
 
-  const allowed = checkInvite(actor, parsed.data.role);
+  const allowed = checkInvite(roles, actor, parsed.data.role);
   if (!allowed.ok) return fail(allowed.error);
 
   const policy = checkPassword(parsed.data.password, { email: parsed.data.email, name: parsed.data.name });
@@ -288,6 +293,7 @@ export async function createUser(_previous: ActionState, formData: FormData): Pr
 export async function changeRole(_previous: ActionState, formData: FormData): Promise<ActionState> {
   const access = await authorizeAction("manageUsers");
   if (!access.ok) return fail(access.error);
+  const roles = await getRoleCatalog();
 
   const parsed = role.safeParse(formData.get("role"));
   if (!parsed.success) return fail("Choose a role.");
@@ -295,6 +301,7 @@ export async function changeRole(_previous: ActionState, formData: FormData): Pr
   if (!target) return fail("That user does not exist.");
 
   const verdict = checkChangeRole({
+    roles,
     actor: access.user,
     target: { id: target.id, role: target.role, disabled: Boolean(target.disabledAt) },
     activeDevelopers: await countActiveDevelopers(),
@@ -309,6 +316,7 @@ export async function changeRole(_previous: ActionState, formData: FormData): Pr
       const fresh = await tx.users.findAccessState(target.id);
       if (!fresh) throw new Refused("That user does not exist.");
       const again = checkChangeRole({
+        roles,
         actor: access.user,
         target: { id: target.id, role: fresh.role, disabled: Boolean(fresh.disabledAt) },
         activeDevelopers,
@@ -342,12 +350,14 @@ export async function changeRole(_previous: ActionState, formData: FormData): Pr
 export async function setDisabled(_previous: ActionState, formData: FormData): Promise<ActionState> {
   const access = await authorizeAction("manageUsers");
   if (!access.ok) return fail(access.error);
+  const roles = await getRoleCatalog();
 
   const disabled = formData.get("disabled") === "true";
   const target = await targetOf(formData);
   if (!target) return fail("That user does not exist.");
 
   const verdict = checkSetDisabled({
+    roles,
     actor: access.user,
     target: { id: target.id, role: target.role, disabled: Boolean(target.disabledAt) },
     activeDevelopers: await countActiveDevelopers(),
@@ -361,6 +371,7 @@ export async function setDisabled(_previous: ActionState, formData: FormData): P
       const fresh = await tx.users.findAccessState(target.id);
       if (!fresh) throw new Refused("That user does not exist.");
       const again = checkSetDisabled({
+        roles,
         actor: access.user,
         target: { id: target.id, role: fresh.role, disabled: Boolean(fresh.disabledAt) },
         activeDevelopers,
@@ -413,6 +424,7 @@ export async function setDisabled(_previous: ActionState, formData: FormData): P
 export async function deleteUser(_previous: ActionState, formData: FormData): Promise<ActionState> {
   const access = await authorizeAction("deleteUser");
   if (!access.ok) return fail(access.error);
+  const roles = await getRoleCatalog();
 
   const target = await targetOf(formData);
   if (!target) return fail("That user does not exist.");
@@ -422,6 +434,7 @@ export async function deleteUser(_previous: ActionState, formData: FormData): Pr
   if (typed !== target.email) return fail("Type the user's email address to confirm.", { confirm: "Does not match." });
 
   const verdict = checkDelete({
+    roles,
     actor: access.user,
     target: { id: target.id, role: target.role, disabled: Boolean(target.disabledAt) },
     activeDevelopers: await countActiveDevelopers(),
@@ -436,6 +449,7 @@ export async function deleteUser(_previous: ActionState, formData: FormData): Pr
       const fresh = await tx.users.findAccessState(target.id);
       if (!fresh) throw new Refused("That user does not exist.");
       const again = checkDelete({
+        roles,
         actor: access.user,
         target: { id: target.id, role: fresh.role, disabled: Boolean(fresh.disabledAt) },
         activeDevelopers,
@@ -469,11 +483,13 @@ export async function deleteUser(_previous: ActionState, formData: FormData): Pr
 export async function sendReset(_previous: ActionState, formData: FormData): Promise<ActionState> {
   const access = await authorizeAction("resetPassword");
   if (!access.ok) return fail(access.error);
+  const roles = await getRoleCatalog();
 
   const target = await targetOf(formData);
   if (!target) return fail("That user does not exist.");
 
   const verdict = checkReset({
+    roles,
     actor: access.user,
     target: { id: target.id, role: target.role, disabled: Boolean(target.disabledAt) },
     activeDevelopers: await countActiveDevelopers(),
@@ -589,6 +605,7 @@ export async function bulkUsers(_previous: ActionState, formData: FormData): Pro
   const op = BULK_USER_OPS.find((value) => value === formData.get("op"));
   const access = await authorizeAction(op ? BULK_PERMISSION[op] : "manageUsers");
   if (!access.ok) return fail(access.error);
+  const roles = await getRoleCatalog();
   if (!op) return fail("Choose an action.");
   const actor = access.user;
 
@@ -619,7 +636,7 @@ export async function bulkUsers(_previous: ActionState, formData: FormData): Pro
       // Ends sessions only; no user row changes, so no lock is needed.
       const targets = (await repos.users.findRefs(ids)).map(asTarget);
       found = targets.length;
-      plan = planBulk({ op, actor, targets, activeDevelopers: 0 });
+      plan = planBulk({ op, roles, actor, targets, activeDevelopers: 0 });
       sessions = await repos.sessions.listLiveForUsers(
         plan.apply.map((target) => target.id),
         now
@@ -634,7 +651,7 @@ export async function bulkUsers(_previous: ActionState, formData: FormData): Pro
         const activeDevelopers = await tx.users.lockActiveDevelopers();
         const targets = (await tx.users.findRefs(ids)).map(asTarget);
         found = targets.length;
-        const planned = planBulk({ op, actor, role: newRole, targets, activeDevelopers });
+        const planned = planBulk({ op, roles, actor, role: newRole, targets, activeDevelopers });
         const applyIds = planned.apply.map((target) => target.id);
         if (applyIds.length === 0) return planned;
 

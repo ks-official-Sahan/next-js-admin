@@ -1,4 +1,6 @@
-import { ROLES, type RoleName } from "@/lib/auth/permissions";
+import { ROLE_NAME_PATTERN } from "@sahan-sac/auth-kit/rbac/roles";
+
+import type { RoleName } from "@/lib/auth/permissions";
 import type { UserQuery, UserSort, UserStatusFilter } from "@/lib/data/users";
 
 // The users screen's view lives in the URL (?q=&role=&status=&sort=&page=),
@@ -37,7 +39,8 @@ export function parseUserView(params: SearchParams): UserView {
   const page = Number.parseInt(first(params.page) ?? "", 10);
   return {
     q: first(params.q)?.slice(0, 100),
-    role: oneOf(first(params.role), ROLES),
+    // Roles are runtime rows: any well-formed name; an unknown one simply matches nobody.
+    role: ROLE_NAME_PATTERN.test(first(params.role) ?? "") ? first(params.role) : undefined,
     status: oneOf(first(params.status), STATUSES),
     sort,
     dir: sort !== "default" && descending ? "desc" : "asc",

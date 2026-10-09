@@ -3,8 +3,6 @@ import "server-only";
 import {
   createCaptureProvider,
   createEmailService,
-  createResendProvider,
-  createSmtpProvider,
   emailConfigFromEnv,
   emailHealth,
   providerOrder,
@@ -18,6 +16,8 @@ import {
   type SendOptions,
   type SendResult,
 } from "@sahan-sac/email-kit";
+import { createSmtpProvider } from "@sahan-sac/email-kit/providers/brevo-smtp";
+import { createResendProvider } from "@sahan-sac/email-kit/providers/resend";
 
 import { auditSafe } from "@/lib/admin/audit";
 import { getEnv } from "@/lib/env";

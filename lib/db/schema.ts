@@ -2,8 +2,6 @@ import { createAuthSchema } from "@sahan-sac/auth-kit/drizzle";
 import { sql } from "drizzle-orm";
 import { boolean, foreignKey, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
-import { ROLES } from "../auth/kit-config";
-
 // The Drizzle schema. Table, column, enum, index and constraint names match
 // prisma/schema.prisma exactly, so one database works with either ORM;
 // lib/data/schema-parity.test.ts builds both in PGlite and compares them.
@@ -22,8 +20,9 @@ const updatedAt = () =>
     .$onUpdate(() => new Date());
 const textList = (name: string) => text(name).array().default(sql`ARRAY[]::TEXT[]`);
 
-export const auth = createAuthSchema({ roles: ROLES, defaultRole: "EDITOR" });
-export const { roleEnum, mfaPurposeEnum, tokenPurposeEnum, users, rolePermissions, userSessions, authTokens, mfaChallenges, auditLogs } = auth;
+// Roles are rows of the roles table, so a role column holds any role name, not only the built-in ones.
+export const auth = createAuthSchema<string>({ defaultRole: "EDITOR" });
+export const { roles, mfaPurposeEnum, tokenPurposeEnum, users, rolePermissions, userSessions, authTokens, mfaChallenges, auditLogs } = auth;
 
 export const contentStatusEnum = pgEnum("ContentStatus", ["DRAFT", "PUBLISHED", "SUPERSEDED"]);
 export const postStatusEnum = pgEnum("PostStatus", ["DRAFT", "SCHEDULED", "PUBLISHED", "ARCHIVED"]);

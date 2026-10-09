@@ -43,11 +43,12 @@ async function requestContext(): Promise<{ ip?: string; userAgent?: string }> {
 
 export type AuditManyTarget = Pick<Repos, "audit">;
 
-function row(event: AuditEvent, context: { ip?: string; userAgent?: string }): AuditRow {
+function row(event: AuditEvent, context: { ip?: string; userAgent?: string }, actorRole: string | null): AuditRow {
   return {
     action: event.action,
     actorId: event.actor?.id ?? null,
     actorEmail: event.actor?.email ?? null,
+    actorRole,
     entityType: event.entityType,
     entityId: event.entityId ?? null,
     before: json(event.before),
@@ -58,11 +59,35 @@ function row(event: AuditEvent, context: { ip?: string; userAgent?: string }): A
   };
 }
 
+/** The email a row with no actor names, such as a failed sign-in's. */
+function subjectEmail(event: AuditEvent): string | null {
+  const email = (event.meta as { email?: unknown } | null | undefined)?.email;
+  return typeof email === "string" && email.length > 0 ? email.toLowerCase() : null;
+}
+
+/**
+ * The role kept on the row (audit_logs.actorRole), which decides who may read
+ * it: the actor's, as the caller passed it or read from the account; for a
+ * row with no actor, the role of the account it names by email. A lookup
+ * that fails leaves it empty rather than failing the write.
+ */
+async function roleOf(event: AuditEvent): Promise<string | null> {
+  if (event.actor?.role) return event.actor.role;
+  const id = event.actor?.id;
+  const email = id ? null : (event.actor?.email?.toLowerCase() ?? subjectEmail(event));
+  if (!id && !email) return null;
+  try {
+    const user = id ? await repos.users.findRef(id) : await repos.users.findRefByEmail(email!);
+    return user?.role ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Writes one row. Throws when the write fails. */
 export async function audit(event: AuditEvent, client: AuditTarget = repos): Promise<void> {
-  const context = event.ip || event.userAgent ? {} : await requestContext();
-  const data = row(event, context);
-  await client.audit.create(data);
+  const [context, actorRole] = await Promise.all([event.ip || event.userAgent ? {} : requestContext(), roleOf(event)]);
+  await client.audit.create(row(event, context, actorRole));
 }
 
 /**
@@ -72,8 +97,11 @@ export async function audit(event: AuditEvent, client: AuditTarget = repos): Pro
  */
 export async function auditMany(events: AuditEvent[], client: AuditManyTarget = repos): Promise<void> {
   if (events.length === 0) return;
-  const context = await requestContext();
-  const rows = events.map((event) => row(event, context));
+  // One read for every actor whose role the caller left out, never one per row.
+  const missing = [...new Set(events.filter((event) => !event.actor?.role && event.actor?.id).map((event) => event.actor!.id!))];
+  const [context, found] = await Promise.all([requestContext(), missing.length > 0 ? repos.users.findRefs(missing).catch(() => []) : []]);
+  const roles = new Map(found.map((user) => [user.id, user.role]));
+  const rows = events.map((event) => row(event, context, event.actor?.role ?? roles.get(event.actor?.id ?? "") ?? null));
   await client.audit.createMany(rows);
 }
 

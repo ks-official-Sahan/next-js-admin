@@ -29,7 +29,7 @@ export function GET(request: NextRequest) {
   url.search = hasSession ? "?reason=revoked" : "?reason=expired";
 
   const response = NextResponse.redirect(url, 303);
-  // Path and Secure must match how the cookies were set (lib/auth/config.ts) for
+  // Path and Secure must match how the engine set the cookies (lib/auth/engine.ts) for
   // the browser to actually clear them — this matters more once SESSION_COOKIE
   // is __Host--prefixed in production, which requires Secure.
   for (const name of SESSION_COOKIES) {

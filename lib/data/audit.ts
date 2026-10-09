@@ -3,6 +3,8 @@ export interface AuditRow {
   action: string;
   actorId: string | null;
   actorEmail: string | null;
+  /** The actor's role when the row was written (lib/admin/audit.ts). */
+  actorRole: string | null;
   entityType: string;
   entityId: string | null;
   before?: unknown;
@@ -27,6 +29,8 @@ export interface AuditFilters {
   entityId?: string;
   from?: Date;
   to?: Date;
+  /** Leave out rows written by this role (the snapshot). Set by the server from the viewer, never from the URL. */
+  hideActorRole?: string;
 }
 
 /** Keyset position: the last row of the previous page. */
@@ -41,6 +45,6 @@ export interface AuditRepo {
   createMany(rows: AuditRow[]): Promise<void>;
   /** Up to `take` rows after `cursor`, newest first (createdAt, then id, descending). */
   page(filters: AuditFilters, cursor: AuditCursor | null, take: number): Promise<AuditEntry[]>;
-  /** Distinct action names, alphabetical. */
-  actionNames(limit: number): Promise<string[]>;
+  /** Distinct action names, alphabetical, of the rows a viewer may see. */
+  actionNames(limit: number, hideActorRole?: string): Promise<string[]>;
 }

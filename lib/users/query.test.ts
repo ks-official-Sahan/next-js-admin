@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { userSearchOrder, userSearchWhere } from "@/lib/data/prisma/users";
+import { presentedRoleWhere, userSearchOrder, userSearchWhere } from "@/lib/data/prisma/users";
 
 import { isFiltered, parseUserView, userQueryOf, userViewSearch } from "./query";
 
@@ -20,7 +20,7 @@ test("a full URL round-trips, with a leading minus for descending", () => {
 });
 
 test("unknown or hostile values fall back to the default instead of failing", () => {
-  const view = parseUserView({ role: "OWNER", status: "deleted", sort: "-password", page: "-4", q: "x".repeat(500) });
+  const view = parseUserView({ role: "owner; drop", status: "deleted", sort: "-password", page: "-4", q: "x".repeat(500) });
   assert.equal(view.role, undefined);
   assert.equal(view.status, undefined);
   assert.equal(view.sort, "default");
@@ -55,6 +55,21 @@ test("search matches email or name case-insensitively, and filters stack", () =>
   });
   assert.deepEqual(userSearchWhere({ status: "disabled" }), { disabledAt: { not: null } });
   assert.deepEqual(userSearchWhere({ q: "   " }), {});
+});
+
+test("a viewer who does not see through masks finds masked developers under SUPER_ADMIN only", () => {
+  const one = { superRole: "DEVELOPER", maskAs: "SUPER_ADMIN", global: false, roles: ["DEVELOPER", "SUPER_ADMIN", "EDITOR"] };
+  assert.deepEqual(presentedRoleWhere("SUPER_ADMIN", one), { OR: [{ role: "SUPER_ADMIN" }, { role: "DEVELOPER", masked: true }] });
+  assert.deepEqual(presentedRoleWhere("DEVELOPER", one), { role: "DEVELOPER", masked: false });
+  assert.deepEqual(presentedRoleWhere("EDITOR", one), { role: "EDITOR" });
+
+  const all = { ...one, global: true };
+  assert.deepEqual(presentedRoleWhere("SUPER_ADMIN", all), { OR: [{ role: "SUPER_ADMIN" }, { role: "DEVELOPER" }] });
+  assert.deepEqual(presentedRoleWhere("DEVELOPER", all), { id: { in: [] } }, "nobody shows as a developer");
+  assert.deepEqual(userSearchWhere({ q: "ada", role: "SUPER_ADMIN", present: all }), {
+    OR: [{ email: { contains: "ada", mode: "insensitive" } }, { name: { contains: "ada", mode: "insensitive" } }],
+    AND: [{ OR: [{ role: "SUPER_ADMIN" }, { role: "DEVELOPER" }] }],
+  });
 });
 
 test("every order ends on a unique key, so pages never overlap", () => {

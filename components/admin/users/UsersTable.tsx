@@ -251,6 +251,7 @@ export default function UsersTable({
                       {/* The columns hidden on small screens, folded under the name. */}
                       <div className="mt-1 flex flex-wrap gap-1.5 s768:hidden">
                         <span className={cn(badgeClass, "s640:hidden")}>{ROLE_LABEL[row.role]}</span>
+                        {row.masked ? <span className={cn(badgeClass, "s640:hidden")}>Masked</span> : null}
                         {row.disabled ? <span className={badgeClass}>Disabled</span> : null}
                         {row.mustChangePassword ? <span className={badgeClass}>Must change password</span> : null}
                       </div>
@@ -259,6 +260,7 @@ export default function UsersTable({
                 </td>
                 <td className={cn(tdClass, "hidden s640:table-cell")}>
                   <span className={badgeClass}>{ROLE_LABEL[row.role]}</span>
+                  {row.masked ? <span className={cn(badgeClass, "ml-1.5")}>Masked</span> : null}
                 </td>
                 <td className={cn(tdClass, "hidden s768:table-cell")}>
                   <div className="flex flex-wrap gap-1.5">

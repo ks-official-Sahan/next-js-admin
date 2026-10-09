@@ -1,13 +1,9 @@
 {
-  "$comment": "Read by create-admin (cli/lib/variants.mjs). The repo itself is next-auth + Prisma with the Drizzle implementation alongside. For each choice: copy `overlay` over the project, then delete `remove`, then edit package.json (a null value deletes the key) and .env.example. `combos` overlays apply when both choices match.",
+  "$comment": "Read by create-admin (cli/lib/variants.mjs). The repo itself is next-auth + Prisma with the Drizzle implementation alongside. For each choice: copy `overlay` over the project, then delete `remove`, then edit package.json (a null value deletes the key) and .env.example. The Better Auth overlay is lib/auth/engine.ts and session-cookie.ts with the other engine's import (`npx auth-kit engine better-auth --write` makes the same change).",
   "auth": {
     "next-auth": {},
     "better-auth": {
       "overlay": "variants/auth/better-auth",
-      "remove": [
-        "app/api/auth/[...nextauth]",
-        "types/next-auth.d.ts"
-      ],
       "dependencies": {
         "better-auth": "^1.7.6",
         "next-auth": null
@@ -65,11 +61,6 @@
         "db:push": "drizzle-kit push",
         "db:drizzle:push": null
       }
-    }
-  },
-  "combos": {
-    "better-auth+drizzle": {
-      "overlay": "variants/combos/better-auth+drizzle"
     }
   }
 }

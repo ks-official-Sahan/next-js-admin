@@ -56,8 +56,9 @@ export function maintenanceRepo(client: DbClient): MaintenanceRepo {
 
 export function dashboardRepo(client: DbClient): DashboardRepo {
   return {
-    recentActivity(limit) {
+    recentActivity(limit, hideActorRole) {
       return client.auditLog.findMany({
+        where: hideActorRole ? { OR: [{ actorRole: null }, { actorRole: { not: hideActorRole } }] } : undefined,
         take: limit,
         orderBy: { createdAt: "desc" },
         select: { id: true, action: true, createdAt: true, actorEmail: true, entityType: true, entityId: true },

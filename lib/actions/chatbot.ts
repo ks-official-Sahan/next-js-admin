@@ -34,7 +34,7 @@ const trainingFormSchema = z.object({
 
 /** Create a training entry for the chatbot. */
 export async function createTrainingEntry(_previous: ActionState, formData: FormData): Promise<ActionState> {
-  const auth = await authorizeAction("manageChatbot");
+  const auth = await authorizeAction("manageChatbotTraining");
   if (!auth.ok) return fail(auth.error);
 
   const parsed = trainingFormSchema.safeParse(formValues(formData));
@@ -74,7 +74,7 @@ export async function createTrainingEntry(_previous: ActionState, formData: Form
 
 /** Update a training entry. */
 export async function updateTrainingEntry(_previous: ActionState, formData: FormData): Promise<ActionState> {
-  const auth = await authorizeAction("manageChatbot");
+  const auth = await authorizeAction("manageChatbotTraining");
   if (!auth.ok) return fail(auth.error);
 
   const id = String(formData.get("id") ?? "");
@@ -120,7 +120,7 @@ export async function updateTrainingEntry(_previous: ActionState, formData: Form
 
 /** Delete a training entry. */
 export async function deleteTrainingEntry(_previous: ActionState, formData: FormData): Promise<ActionState> {
-  const auth = await authorizeAction("manageChatbot");
+  const auth = await authorizeAction("manageChatbotTraining");
   if (!auth.ok) return fail(auth.error);
 
   const id = String(formData.get("id") ?? "");

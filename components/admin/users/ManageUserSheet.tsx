@@ -26,6 +26,8 @@ export interface UserRowView {
   email: string;
   name: string | null;
   role: RoleName;
+  /** Set for a developer viewer only: this developer shows as a super admin to everyone else. */
+  masked: boolean;
   disabled: boolean;
   mfaEnabled: boolean;
   mustChangePassword: boolean;
@@ -90,6 +92,7 @@ export default function ManageUserSheet({
             </span>
             <div className="flex flex-wrap gap-1.5">
               <span className={badgeClass}>{ROLE_LABEL[row.role]}</span>
+              {row.masked ? <span className={badgeClass}>Masked</span> : null}
               <span className={badgeClass}>{row.disabled ? "Disabled" : "Active"}</span>
               {row.mfaEnabled ? <span className={badgeClass}>Two-factor</span> : null}
               {row.mustChangePassword ? <span className={badgeClass}>Must change password</span> : null}

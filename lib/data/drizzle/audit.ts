@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, ilike, like, lt, lte, or, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, isNull, like, lt, lte, ne, or, type SQL } from "drizzle-orm";
 
 import { auditLogs } from "@/lib/db/schema";
 
@@ -14,6 +14,8 @@ export function buildAuditWhere(filters: AuditFilters, cursor: AuditCursor | nul
         ? like(auditLogs.action, prefixPattern(filters.action.slice(0, -1)))
         : eq(auditLogs.action, filters.action)
       : undefined,
+    // IS DISTINCT FROM: a row with no snapshot (a system job) stays visible.
+    filters.hideActorRole ? or(isNull(auditLogs.actorRole), ne(auditLogs.actorRole, filters.hideActorRole)) : undefined,
     filters.entityType ? eq(auditLogs.entityType, filters.entityType) : undefined,
     filters.entityId ? eq(auditLogs.entityId, filters.entityId) : undefined,
     filters.from ? gte(auditLogs.createdAt, filters.from) : undefined,
@@ -41,8 +43,13 @@ export function auditRepo(client: DbClient): AuditRepo {
         .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
         .limit(take);
     },
-    async actionNames(limit) {
-      const rows = await client.selectDistinct({ action: auditLogs.action }).from(auditLogs).orderBy(asc(auditLogs.action)).limit(limit);
+    async actionNames(limit, hideActorRole) {
+      const rows = await client
+        .selectDistinct({ action: auditLogs.action })
+        .from(auditLogs)
+        .where(hideActorRole ? buildAuditWhere({ hideActorRole }) : undefined)
+        .orderBy(asc(auditLogs.action))
+        .limit(limit);
       return rows.map((row) => row.action);
     },
   };

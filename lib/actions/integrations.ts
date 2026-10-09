@@ -3,6 +3,7 @@
 import { BUILTIN_ADAPTERS, checkChain, checkProvider } from "@sahan-sac/ai-core/adapters";
 
 import { authorizeAction } from "@/lib/actions/guard";
+import { hasPermission } from "@/lib/auth/dal";
 import { describeAiCheck, type AiCheckView } from "@/lib/admin/ai-check";
 import { auditSafe } from "@/lib/admin/audit";
 import { limit } from "@/lib/cache/ratelimit";
@@ -20,6 +21,8 @@ const CHAINS = { "chain:blog": "blog", "chain:chat": "chat" } as const;
 export async function checkAiProviderAction(id: string): Promise<AiCheckState> {
   const auth = await authorizeAction("manageSettings");
   if (!auth.ok) return { ok: false, reachable: false, message: auth.error };
+  // Integration health is security status as well.
+  if (!hasPermission(auth.user, "viewSecurityStatus")) return { ok: false, reachable: false, message: "You do not have permission to do that." };
 
   const chain = typeof id === "string" && id in CHAINS ? CHAINS[id as keyof typeof CHAINS] : null;
   const adapter = chain ? null : BUILTIN_ADAPTERS.find((candidate) => candidate.id === id);

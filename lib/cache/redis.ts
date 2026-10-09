@@ -1,14 +1,18 @@
 import "server-only";
 
 import { Redis } from "@upstash/redis";
-import { redisConfigFromEnv } from "@sahan-sac/auth-kit/cache/redis";
+import { redisConfigFromEnv, RedisKv } from "@sahan-sac/auth-kit/cache/redis";
 
-import { MemoryKv, type Kv, type KvSetOptions } from "./memory";
+import { log } from "@/lib/log";
+
+import { FailoverKv, MemoryKv, type Kv } from "./memory";
 
 // Upstash Redis when UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are
 // set and valid (https URL) and REDIS_ENABLED is not off, otherwise an
-// in-memory store. Redis is never the source of truth for a security
-// decision (design notes, D7 and D8): it caches and limits. Every key is
+// in-memory store. A configured Redis that errors or times out falls back to
+// memory for 30 s, then is tried again, so an outage never fails a request.
+// Redis is never the source of truth for a security decision
+// (design notes, D7 and D8): it caches and limits. Every key is
 // prefixed so the instance can be shared.
 
 const PREFIX = "app:";
@@ -19,46 +23,10 @@ export function redisConfigured(env: Env = process.env): boolean {
   return redisConfigFromEnv(env) !== null;
 }
 
-class RedisKv implements Kv {
-  constructor(private readonly redis: Redis) {}
-
-  async get<T = unknown>(key: string): Promise<T | null> {
-    return (await this.redis.get<T>(PREFIX + key)) ?? null;
-  }
-
-  async set(key: string, value: unknown, options: KvSetOptions = {}): Promise<boolean> {
-    const settings = {
-      ...(options.ttlSeconds ? { ex: options.ttlSeconds } : {}),
-      ...(options.nx ? { nx: true as const } : {}),
-    };
-    // With `nx` Redis answers null when the key already existed.
-    const result = await this.redis.set(PREFIX + key, value as never, settings as never);
-    return result !== null;
-  }
-
-  async del(...keys: string[]): Promise<number> {
-    if (keys.length === 0) return 0;
-    return this.redis.del(...keys.map((key) => PREFIX + key));
-  }
-
-  async incr(key: string, ttlSeconds?: number): Promise<number> {
-    const prefixed = PREFIX + key;
-    if (!ttlSeconds) return this.redis.incr(prefixed);
-    // One transaction: a failure between the two commands must not leave a
-    // counter without an expiry, which for a failure counter means a permanent
-    // lock. NX sets the TTL only when the key has none, that is on creation.
-    const [next] = await this.redis.multi().incr(prefixed).expire(prefixed, ttlSeconds, "NX").exec<[number, number]>();
-    return next;
-  }
-
-  async expire(key: string, ttlSeconds: number): Promise<boolean> {
-    return (await this.redis.expire(PREFIX + key, ttlSeconds)) === 1;
-  }
-}
-
 const globalForKv = globalThis as unknown as {
   appRedis?: Redis | null;
   appKv?: Kv;
+  appFailover?: FailoverKv | null;
 };
 
 /** The Upstash client, or null when Redis is not configured. */
@@ -73,14 +41,30 @@ export function getRedis(): Redis | null {
 export function getKv(): Kv {
   if (!globalForKv.appKv) {
     const redis = getRedis();
-    globalForKv.appKv = redis ? new RedisKv(redis) : new MemoryKv();
+    globalForKv.appFailover = redis
+      ? new FailoverKv(new RedisKv(redis, PREFIX), new MemoryKv(), {
+          onFailover: (error) => log.warn("redis unavailable, using memory for 30 s", { error: String(error) }),
+        })
+      : null;
+    globalForKv.appKv = globalForKv.appFailover ?? new MemoryKv();
   }
   return globalForKv.appKv;
 }
 
-/** Which backend is active, for the integration health screen. */
-export function kvBackend(): "upstash" | "memory" {
-  return getRedis() ? "upstash" : "memory";
+/** Which backend is active, for the integration health screen. "upstash-degraded": configured but failing, memory serves for now. */
+export function kvBackend(): "upstash" | "upstash-degraded" | "memory" {
+  if (!getRedis()) return "memory";
+  getKv();
+  return globalForKv.appFailover?.degraded ? "upstash-degraded" : "upstash";
+}
+
+/** Writes and reads a 30 s probe key on Redis itself, never on the memory fallback. False when Redis is not configured. */
+export async function pingRedis(): Promise<boolean> {
+  const redis = getRedis();
+  if (!redis) return false;
+  const key = `${PREFIX}health:ping`;
+  await redis.set(key, Date.now(), { ex: 30 });
+  return (await redis.get(key)) !== null;
 }
 
 /** Lazy handle: importing it never connects. */

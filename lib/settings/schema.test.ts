@@ -33,6 +33,7 @@ describe("setting keys", () => {
         "maintenance",
         "rbac.seedVersion",
         "security.ipAllowlist",
+        "security.mask",
         "seo.llmsTxt",
       ].sort()
     );

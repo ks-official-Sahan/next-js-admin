@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 };
 
 export default async function TrainingPage() {
-  await requirePermission("manageChatbot");
+  await requirePermission("manageChatbotTraining");
 
   const entries = await listTrainingEntries({ limit: 100 });
 

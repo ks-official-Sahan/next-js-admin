@@ -50,14 +50,16 @@ export default async function SettingsPage() {
   const canManageAllowlist = hasPermission(user, "manageIpAllowlist");
   const canClearCache = hasPermission(user, "clearSystemCache");
   const canManageCron = hasPermission(user, "manageCron");
-
-  if (!canManageSettings && !canManageAllowlist && !canClearCache && !canManageCron) notFound();
+  const canConfigureChatbot = hasPermission(user, "manageChatbot");
+  const canToggleChatbot = hasPermission(user, "manageChatbotTraining");
+  const canViewSecurity = hasPermission(user, "viewSecurityStatus");
+  if (!canManageSettings && !canManageAllowlist && !canClearCache && !canManageCron && !canConfigureChatbot) notFound();
 
   const [features, maintenance, ipAllowlist, chatbotConfig, emailRouting, aiContext, requestHeaders, knownIps] = await Promise.all([
     canManageSettings ? getSetting("features") : Promise.resolve(null),
     canManageSettings ? getSetting("maintenance") : Promise.resolve(null),
     canManageAllowlist ? getSetting("security.ipAllowlist") : Promise.resolve(null),
-    canManageSettings ? getSetting("chatbot.config") : Promise.resolve(null),
+    canConfigureChatbot ? getSetting("chatbot.config") : Promise.resolve(null),
     canManageSettings ? getSetting("email.routing") : Promise.resolve(null),
     canManageSettings ? getSetting("ai.context") : Promise.resolve(null),
     headers(),
@@ -73,7 +75,7 @@ export default async function SettingsPage() {
         title: "Feature flags",
         nav: "Features",
         description: "Control which features are active on the public site.",
-        content: <FeaturesForm value={features} />,
+        content: <FeaturesForm value={features} canToggleChatbot={canToggleChatbot} />,
       },
     canManageSettings &&
       maintenance && {
@@ -97,13 +99,13 @@ export default async function SettingsPage() {
           />
         ),
       },
-    canManageSettings &&
+    canConfigureChatbot &&
       chatbotConfig && {
         id: "chatbot",
         title: "Chatbot",
         nav: "Chatbot",
         description: "Tone, greeting and the on/off switch the chatbot widget reads.",
-        content: <ChatbotConfigForm value={chatbotConfig} />,
+        content: <ChatbotConfigForm value={chatbotConfig} canToggle={canToggleChatbot} />,
       },
     canManageSettings &&
       aiContext && {
@@ -121,7 +123,8 @@ export default async function SettingsPage() {
         description: "Override where contact form notifications and replies go.",
         content: <EmailRoutingForm value={emailRouting} copyRecipients={getEnv().EMAIL_CC.length} />,
       },
-    canManageSettings && {
+    canManageSettings &&
+      canViewSecurity && {
       id: "integrations",
       title: "Integration health",
       nav: "Integrations",
@@ -146,12 +149,12 @@ export default async function SettingsPage() {
       description: "Invalidate every cache tag and re-sync the maintenance and allowlist mirrors read by the proxy.",
       content: <ClearCacheButton />,
     },
-    (canManageCron || canManageSettings) && {
+    canManageCron && {
       id: "scheduled-jobs",
       title: "Scheduled jobs",
       nav: "Scheduled jobs",
       description: "Run a cron job now instead of waiting for its daily schedule.",
-      content: <CronManager canRunCron={canManageCron} canRunAuditPrune={canManageSettings} />,
+      content: <CronManager canRunCron={canManageCron} canRunAuditPrune={canManageCron && canManageSettings} />,
     },
   ];
   const visible = sections.filter((section): section is SectionSpec => Boolean(section));
@@ -161,7 +164,7 @@ export default async function SettingsPage() {
       <div className="mb-6 lg:mb-8">
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Site-wide configuration. Most of this screen is DEVELOPER only, and every change is audited.
+          Site-wide configuration. Each section needs its own permission, and every change is audited.
         </p>
       </div>
 

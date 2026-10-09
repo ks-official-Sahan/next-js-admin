@@ -15,5 +15,9 @@ export function rolePermissionRepo(client: DbClient): RolePermissionRepo {
       const rows = await client.insert(rolePermissions).values(grants).onConflictDoNothing().returning({ role: rolePermissions.role });
       return rows.length;
     },
+    async rolesWith(permission) {
+      const rows = await client.select({ role: rolePermissions.role }).from(rolePermissions).where(eq(rolePermissions.permission, permission));
+      return rows.map((row) => row.role);
+    },
   };
 }

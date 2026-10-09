@@ -4,7 +4,7 @@ import { createAuthDal, type AuthUser as PackageAuthUser } from "@sahan-sac/auth
 import { notFound, redirect } from "next/navigation";
 import { after } from "next/server";
 
-import { CHECK_PASSWORD_FINGERPRINT, sessionSource } from "./engine";
+import { checkPasswordFingerprint, sessionSource } from "./engine";
 import { authKit, type Permission, type RoleName } from "./kit-config";
 import { getRolePermissions } from "./rbac";
 import { getSessionState, touchSession } from "./session-store";
@@ -13,7 +13,7 @@ import { getSessionState, touchSession } from "./session-store";
 
 const dal = createAuthDal({
   auth: sessionSource,
-  checkPasswordFingerprint: CHECK_PASSWORD_FINGERPRINT,
+  checkPasswordFingerprint,
   getSessionState,
   touchSession,
   // createRbac (./rbac) is bound to this app's concrete RoleName/Permission

@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   const user = await getOptionalUser();
   // A missing permission looks like a missing page, and a user who must still
   // choose a password can use nothing but the account page.
-  if (!user || user.mustChangePassword || !hasPermission(user, "manageSettings")) {
+  if (!user || user.mustChangePassword || !hasPermission(user, "manageSettings") || !hasPermission(user, "viewSecurityStatus")) {
     return json({ error: "not_found" }, 404);
   }
 

@@ -8,7 +8,8 @@ import EmptyState from "@/components/admin/ui/EmptyState";
 import { cardClass } from "@/components/admin/ui/styles";
 import { formatDateTime, relativeTime } from "@/lib/admin/format";
 import { hasPermission, requirePermission } from "@/lib/auth/dal";
-import { canManage } from "@/lib/auth/rbac-rules";
+import { SUPER_ROLE } from "@/lib/auth/permissions";
+import { getRoleCatalog } from "@/lib/auth/roles";
 import { repos } from "@/lib/data";
 import { parseSessionView, SESSION_PAGE_SIZE, sessionViewSearch, type SearchParams } from "@/lib/sessions/query";
 
@@ -31,17 +32,18 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
   const mayRevoke = hasPermission(actor, "revokeSessions");
   const mayForce = hasPermission(actor, "forceLogout");
 
-  const [page, person, signedIn] = await Promise.all([
+  const [page, person, signedIn, catalog] = await Promise.all([
     repos.sessions.search({ q: view.q, userId: view.user, status: view.status, after: view.after, limit: SESSION_PAGE_SIZE, now }),
     view.user ? repos.users.findRef(view.user) : Promise.resolve(null),
     mayForce ? repos.users.listWithLiveSessions(now) : Promise.resolve([]),
+    getRoleCatalog(),
   ]);
 
   const rows: SessionRowView[] = page.items.map((session) => {
     const live = !session.revokedAt && session.expiresAt.getTime() > nowMs;
     const current = session.id === actor.sid;
     // Your own other sessions are always yours to end. Anyone else's follows the hierarchy.
-    const reach = session.userId === actor.id || canManage(actor, { id: session.userId, role: session.userRole });
+    const reach = session.userId === actor.id || catalog.canManage(actor, { id: session.userId, role: session.userRole });
     return {
       id: session.id,
       userName: session.userName,
@@ -59,7 +61,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
   });
 
   // One entry per signed-in person this actor may sign out.
-  const reachable = signedIn.filter((person) => person.id !== actor.id && canManage(actor, { id: person.id, role: person.role }));
+  const reachable = signedIn.filter((person) => person.id !== actor.id && catalog.canManage(actor, { id: person.id, role: person.role }));
   const narrowed = Boolean(view.q || view.user || view.status !== "active");
 
   return (
@@ -138,7 +140,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
         </section>
       ) : null}
 
-      {mayForce && actor.role === "DEVELOPER" ? (
+      {mayForce && actor.role === SUPER_ROLE ? (
         <section className={cardClass} aria-labelledby="everyone-heading">
           <h2 id="everyone-heading" className="text-base font-medium">
             Sign everyone out

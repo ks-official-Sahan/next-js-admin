@@ -38,6 +38,8 @@ export interface AuthTokenRepo {
   revokeOpenInvitesTo(email: string, scope: { roles: readonly RoleName[]; createdById: string }): Promise<void>;
   /** Revokes the open invitations a user sent. */
   revokeOpenInvitesSentBy(userId: string): Promise<void>;
+  /** Open invitations that would grant this role (before the role is deleted). */
+  revokeOpenInvitesForRole(role: string): Promise<number>;
   /** The same for a bulk action's targets, in one statement. */
   revokeOpenInvitesSentByAny(userIds: string[]): Promise<void>;
   /**

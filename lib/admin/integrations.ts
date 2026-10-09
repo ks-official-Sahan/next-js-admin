@@ -4,7 +4,7 @@ import { BUILTIN_ADAPTERS, providerStatuses } from "@sahan-sac/ai-core/adapters"
 
 import { repos } from "@/lib/data";
 import { getEnv } from "@/lib/env";
-import { kv, kvBackend } from "@/lib/cache/redis";
+import { kvBackend, pingRedis } from "@/lib/cache/redis";
 import { log } from "@/lib/log";
 import { checkIndexNowKeyFile } from "@/lib/seo/indexnow";
 
@@ -74,13 +74,10 @@ export async function checkDatabase(): Promise<IntegrationStatus> {
 }
 
 export async function checkRedis(): Promise<IntegrationStatus> {
-  const configured = kvBackend() === "upstash";
+  const configured = kvBackend() !== "memory";
   if (!configured) return { ...REDIS, configured, reachable: null };
   try {
-    const probeKey = "health:ping";
-    await kv.set(probeKey, Date.now(), { ttlSeconds: 30 });
-    const value = await kv.get(probeKey);
-    return { ...REDIS, configured, reachable: value !== null };
+    return { ...REDIS, configured, reachable: await pingRedis() };
   } catch (err) {
     log.warn("integration health: redis ping failed", { error: String(err) });
     return { ...REDIS, configured, reachable: false };

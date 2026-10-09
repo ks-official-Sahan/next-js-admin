@@ -7,6 +7,8 @@ import { authorizeAction } from "@/lib/actions/guard";
 import { done, fail, fieldErrorsFrom, type ActionState } from "@/lib/actions/state";
 import { blogPublishJob, housekeepingPruneJob, sessionCleanupJob } from "@/lib/cron/jobs";
 import { auditSafe } from "@/lib/admin/audit";
+import { hasPermission } from "@/lib/auth/dal";
+import type { Permission } from "@/lib/auth/permissions";
 import { isIpAllowed, isValidAllowlistEntry } from "@/lib/security/allowlist";
 import { clientIp, UNKNOWN_IP } from "@/lib/security/ip";
 import {
@@ -44,8 +46,11 @@ export async function updateFeaturesAction(_previous: ActionState, formData: For
   const authz = await authorizeAction("manageSettings");
   if (!authz.ok) return fail(authz.error);
 
+  // Switching the bot on or off is part of training it (manageChatbotTraining):
+  // without it, the stored switch is carried forward whatever the form says.
+  const current = hasPermission(authz.user, "manageChatbotTraining") ? null : await getSetting("features");
   const parsed = featuresSchema.safeParse({
-    chatbotEnabled: checkbox(formData, "chatbotEnabled"),
+    chatbotEnabled: current ? current.chatbotEnabled : checkbox(formData, "chatbotEnabled"),
     readMoreEnabled: checkbox(formData, "readMoreEnabled"),
   });
   if (!parsed.success) return fail("Could not save feature flags.", fieldErrorsFrom(parsed.error.issues));
@@ -131,14 +136,15 @@ export async function updateIpAllowlistAction(_previous: ActionState, formData: 
 }
 
 export async function updateChatbotConfigAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
-  const authz = await authorizeAction("manageSettings");
+  const authz = await authorizeAction("manageChatbot");
   if (!authz.ok) return fail(authz.error);
 
   // trainingDataVersion is bumped by the chatbot training screen (step 15),
-  // never by this form: carry the stored value forward unchanged.
+  // never by this form: carry the stored value forward unchanged. The on/off
+  // switch needs manageChatbotTraining; without it the stored value stays.
   const current = await getSetting("chatbot.config");
   const parsed = chatbotConfigSchema.safeParse({
-    enabled: checkbox(formData, "enabled"),
+    enabled: hasPermission(authz.user, "manageChatbotTraining") ? checkbox(formData, "enabled") : current.enabled,
     tone: formData.get("tone"),
     greeting: textOrUndefined(formData, "greeting") ?? chatbotConfigSchema.parse({}).greeting,
     trainingDataVersion: current.trainingDataVersion,
@@ -192,12 +198,28 @@ export async function updateAiContextAction(_previous: ActionState, formData: Fo
   return done("AI context saved. New AI requests use it now.");
 }
 
+/**
+ * The keys the settings screen may reset, and what each needs beyond
+ * manageSettings: the same permissions that edit it. Anything else (the seed
+ * version, llms.txt, developer masking) is never reset from here.
+ */
+const RESET_REQUIRES: Partial<Record<SettingKey, readonly Permission[]>> = {
+  features: ["manageChatbotTraining"],
+  maintenance: [],
+  "security.ipAllowlist": ["manageIpAllowlist"],
+  "chatbot.config": ["manageChatbot", "manageChatbotTraining"],
+  "email.routing": [],
+  "ai.context": [],
+};
+
 export async function resetSettingAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
   const authz = await authorizeAction("manageSettings");
   if (!authz.ok) return fail(authz.error);
 
   const key = String(formData.get("key") ?? "");
-  if (!(key in DEFAULT_SETTINGS)) return fail("Unknown setting key.");
+  const extra = RESET_REQUIRES[key as SettingKey];
+  if (!extra) return fail("Unknown setting key.");
+  if (!extra.every((permission) => hasPermission(authz.user, permission))) return fail("You do not have permission to do that.");
 
   const settingKey = key as SettingKey;
   const schema = getSettingSchema(settingKey);
@@ -233,15 +255,15 @@ function isCronJobName(value: string): value is CronJobName {
 /**
  * Runs one cron job on demand from the settings screen. blog-publish and
  * session-cleanup need manageCron (MANAGER holds this by default);
- * audit-prune deletes audit rows and needs manageSettings (DEVELOPER only).
+ * audit-prune deletes audit rows and needs manageSettings as well (DEVELOPER only).
  */
 export async function runCronJobAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
   const job = String(formData.get("job") ?? "");
   if (!isCronJobName(job)) return fail("Unknown job.");
 
-  const permission = job === "audit-prune" ? "manageSettings" : "manageCron";
-  const authz = await authorizeAction(permission);
+  const authz = await authorizeAction("manageCron");
   if (!authz.ok) return fail(authz.error);
+  if (job === "audit-prune" && !hasPermission(authz.user, "manageSettings")) return fail("You do not have permission to do that.");
 
   const result =
     job === "blog-publish" ? await blogPublishJob() : job === "session-cleanup" ? await sessionCleanupJob() : await housekeepingPruneJob();

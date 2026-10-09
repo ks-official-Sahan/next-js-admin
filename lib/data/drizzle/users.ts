@@ -2,7 +2,7 @@ import { and, asc, desc, eq, exists, gt, ilike, inArray, isNotNull, isNull, or, 
 
 import { users, userSessions } from "@/lib/db/schema";
 
-import type { UserQuery, UserRepo, UserStatusFilter } from "../users";
+import type { PresentRoles, UserQuery, UserRepo, UserStatusFilter } from "../users";
 import { containsPattern, countRows, first, one, type DbClient } from "./client";
 
 const ref = { id: users.id, email: users.email, name: users.name, role: users.role, disabledAt: users.disabledAt };
@@ -14,6 +14,7 @@ const listColumns = {
   email: users.email,
   name: users.name,
   role: users.role,
+  masked: users.masked,
   mfaEnabled: users.mfaEnabled,
   mustChangePassword: users.mustChangePassword,
   lastLoginAt: users.lastLoginAt,
@@ -33,12 +34,26 @@ const STATUS_WHERE: Record<UserStatusFilter, () => SQL> = {
   "no-two-factor": () => eq(users.mfaEnabled, false),
 };
 
+/** A super-role account this viewer sees under the mask role. */
+const maskedAccount = (present: PresentRoles) =>
+  present.global ? eq(users.role, present.superRole) : and(eq(users.role, present.superRole), eq(users.masked, true));
+
+/**
+ * The accounts a viewer who does not see through masks finds under `role`:
+ * masked super-role accounts count as the mask role, never as their own.
+ */
+export function presentedRoleWhere(role: string, present: PresentRoles): SQL | undefined {
+  if (role === present.maskAs) return or(eq(users.role, role), maskedAccount(present));
+  if (role === present.superRole) return present.global ? sql`false` : and(eq(users.role, role), eq(users.masked, false));
+  return eq(users.role, role);
+}
+
 /** Exported for tests: the filter the users screen sends to the database. */
-export function userSearchWhere(query: Pick<UserQuery, "q" | "role" | "status">): SQL | undefined {
+export function userSearchWhere(query: Pick<UserQuery, "q" | "role" | "status" | "present">): SQL | undefined {
   const q = query.q?.trim();
   return and(
     q ? or(ilike(users.email, containsPattern(q)), ilike(users.name, containsPattern(q))) : undefined,
-    query.role ? eq(users.role, query.role) : undefined,
+    query.role ? (query.present ? presentedRoleWhere(query.role, query.present) : eq(users.role, query.role)) : undefined,
     query.status ? STATUS_WHERE[query.status]() : undefined
   );
 }
@@ -47,15 +62,21 @@ const by = (column: AnyColumn, dir: "asc" | "desc") => (dir === "asc" ? asc(colu
 // dir is the "asc" | "desc" union, never user text, so sql.raw is safe here.
 const nullsLast = (column: AnyColumn, dir: "asc" | "desc") => sql`${column} ${sql.raw(dir)} NULLS LAST`;
 
-/** Exported for tests. Every order ends on a unique key, so paging is stable when the sort key ties. */
-export function userSearchOrder({ sort, dir }: Pick<UserQuery, "sort" | "dir">): SQL[] {
+/**
+ * Exported for tests. Every order ends on a unique key, so paging is stable
+ * when the sort key ties. With `present`, the role sort is by the role shown.
+ */
+export function userSearchOrder({ sort, dir, present }: Pick<UserQuery, "sort" | "dir" | "present">): SQL[] {
   switch (sort) {
     case "name":
       return [nullsLast(users.name, dir), by(users.email, dir)];
     case "email":
       return [by(users.email, dir)];
     case "role":
-      // Postgres sorts an enum in declaration order: DEVELOPER, MANAGER, EDITOR.
+      if (present) {
+        // dir is the "asc" | "desc" union, never user text, so sql.raw is safe here.
+        return [sql`CASE WHEN ${maskedAccount(present)} THEN ${present.maskAs} ELSE ${users.role} END ${sql.raw(dir)}`, asc(users.email)];
+      }
       return [by(users.role, dir), asc(users.email)];
     case "last-login":
       return [nullsLast(users.lastLoginAt, dir), by(users.id, dir)];
@@ -87,7 +108,7 @@ export function userRepo(client: DbClient): UserRepo {
     async findProfile(id) {
       return first(
         await client
-          .select({ name: users.name, bio: users.bio, mfaEnabled: users.mfaEnabled, lastLoginAt: users.lastLoginAt })
+          .select({ name: users.name, bio: users.bio, mfaEnabled: users.mfaEnabled, masked: users.masked, lastLoginAt: users.lastLoginAt })
           .from(users)
           .where(eq(users.id, id))
           .limit(1)
@@ -131,6 +152,9 @@ export function userRepo(client: DbClient): UserRepo {
     },
     countActiveDevelopers() {
       return countRows(client, users, activeDevelopers());
+    },
+    maskFlags(role) {
+      return client.select({ id: users.id, masked: users.masked }).from(users).where(eq(users.role, role));
     },
     async lockActiveDevelopers() {
       await client.select({ id: users.id }).from(users).where(eq(users.role, "DEVELOPER")).for("update");

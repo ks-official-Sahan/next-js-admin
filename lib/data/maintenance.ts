@@ -29,7 +29,8 @@ export interface DashboardActivity {
 }
 
 export interface DashboardRepo {
-  recentActivity(limit: number): Promise<DashboardActivity[]>;
+  /** Newest audit rows, leaving out those written by `hideActorRole`. */
+  recentActivity(limit: number, hideActorRole?: string): Promise<DashboardActivity[]>;
   countDraftBlocks(): Promise<number>;
   /** DRAFT and SCHEDULED posts. */
   countUnpublishedPosts(): Promise<number>;

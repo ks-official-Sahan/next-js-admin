@@ -25,6 +25,12 @@ test("the where clause: exact action, prefix action, actor by email or id, dates
   assert.deepEqual(buildAuditWhere({ from }), { AND: [{ createdAt: { gte: from } }] });
 });
 
+test("rows written by a hidden role are left out, rows with no role stay", () => {
+  assert.deepEqual(buildAuditWhere({ hideActorRole: "DEVELOPER" }), {
+    AND: [{ OR: [{ actorRole: null }, { actorRole: { not: "DEVELOPER" } }] }],
+  });
+});
+
 test("the cursor continues after the last row on ties of createdAt", () => {
   const createdAt = new Date("2026-03-04T05:06:07.008Z");
   assert.deepEqual(buildAuditWhere({}, { createdAt, id: "row-9" }), {

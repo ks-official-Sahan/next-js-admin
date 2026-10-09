@@ -41,6 +41,9 @@ export function authTokenRepo(client: DbClient): AuthTokenRepo {
       const byRole = roles.length > 0 ? inArray(authTokens.role, [...roles] as RoleName[]) : undefined;
       await revokeWhere(and(eq(authTokens.purpose, "INVITE"), eq(authTokens.email, email), open(), or(byRole, eq(authTokens.createdById, createdById))));
     },
+    revokeOpenInvitesForRole(role) {
+      return revokeWhere(and(eq(authTokens.purpose, "INVITE"), eq(authTokens.role, role as RoleName), open()));
+    },
     async revokeOpenInvitesSentBy(userId) {
       await revokeWhere(and(eq(authTokens.purpose, "INVITE"), eq(authTokens.createdById, userId), open()));
     },

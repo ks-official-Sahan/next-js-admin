@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 
+import { SYSTEM_ROLE_ROWS } from "@/lib/auth/kit-config";
+
 import { UniqueViolation } from "../errors";
 import type { Repos } from "../repos";
 
@@ -26,12 +28,14 @@ export function runRepoContract(name: string, open: () => Promise<RepoHarness>) 
 
     before(async () => {
       h = await open();
+      // users.role references roles.name: the built-in rows come first, as in the seed.
+      assert.equal(await h.repos.roles.seedSystem(SYSTEM_ROLE_ROWS), SYSTEM_ROLE_ROWS.length);
     });
     after(async () => {
       await h?.close();
     });
 
-    async function newUser(role: "DEVELOPER" | "MANAGER" | "EDITOR" = "EDITOR") {
+    async function newUser(role: string = "EDITOR") {
       const email = `${unique("u")}@example.com`;
       const { id } = await h.repos.users.create({ email, name: "N", role, passwordHash: "hash", createdById: null });
       return { id, email };
@@ -145,7 +149,7 @@ export function runRepoContract(name: string, open: () => Promise<RepoHarness>) 
       await assert.rejects(
         h.withTx(async (tx) => {
           await tx.users.create({ email, name: null, role: "EDITOR", passwordHash: "h", createdById: null });
-          await tx.audit.create({ action: "t.x", actorId: null, actorEmail: null, entityType: "T", entityId: null, ip: null, userAgent: null });
+          await tx.audit.create({ action: "t.x", actorId: null, actorEmail: null, actorRole: null, entityType: "T", entityId: null, ip: null, userAgent: null });
           throw new Error("abort");
         }),
         /abort/
@@ -251,9 +255,36 @@ export function runRepoContract(name: string, open: () => Promise<RepoHarness>) 
       assert.equal(claims.reduce((a, b) => a + b, 0), 1, "a token is claimed once");
     });
 
+    test("roles: list, create, update, user counts, delete, and the invites a role would grant", async () => {
+      assert.deepEqual((await h.repos.roles.list()).slice(0, 4).map((role) => role.name), ["DEVELOPER", "SUPER_ADMIN", "MANAGER", "EDITOR"]);
+      assert.equal(await h.repos.roles.seedSystem(SYSTEM_ROLE_ROWS), 0, "seeding again adds nothing");
+
+      const name = `SUPPORT_${++seq}`;
+      await h.repos.roles.create({ name, label: "Support", description: null, rank: 30 });
+      await assert.rejects(h.repos.roles.create({ name, label: "Again", description: null, rank: 31 }), UniqueViolation);
+      await h.repos.roles.update(name, { label: "Helpdesk", description: "First line", rank: 40 });
+      assert.deepEqual(await h.repos.roles.find(name), { name, label: "Helpdesk", description: "First line", rank: 40, system: false });
+
+      const holder = await newUser(name);
+      assert.equal(await h.repos.roles.countUsers(name), 1);
+      assert.equal((await h.repos.roles.userCounts())[name], 1);
+      await assert.rejects(h.repos.roles.delete(name), "a held role cannot be deleted");
+      await h.repos.users.update(holder.id, { role: "EDITOR" });
+
+      await h.repos.authTokens.create({ purpose: "INVITE", email: "role@example.com", tokenHash: unique("hash"), expiresAt: new Date(Date.now() + HOUR), role: name });
+      assert.equal(await h.repos.authTokens.revokeOpenInvitesForRole(name), 1);
+      assert.equal(await h.repos.authTokens.revokeOpenInvitesForRole(name), 0);
+
+      await h.repos.roles.delete(name);
+      assert.equal(await h.repos.roles.find(name), null);
+      // A built-in role is never deleted (Prisma reports the miss, Drizzle deletes nothing).
+      await h.repos.roles.delete("EDITOR").catch(() => undefined);
+      assert.ok(await h.repos.roles.find("EDITOR"));
+    });
+
     test("audit: bulk insert, prefix filter, keyset paging, action names", async () => {
       const entityId = unique("ent");
-      const row = (action: string) => ({ action, actorId: null, actorEmail: "Ops@Example.com", entityType: "Doc", entityId, ip: null, userAgent: null, meta: { n: 1 } });
+      const row = (action: string) => ({ action, actorId: null, actorEmail: "Ops@Example.com", actorRole: null, entityType: "Doc", entityId, ip: null, userAgent: null, meta: { n: 1 } });
       await h.repos.audit.createMany([row("doc.a"), row("doc.b"), row("other.c")]);
       const page1 = await h.repos.audit.page({ entityId, action: "doc.*", actor: "ops@" }, null, 1);
       assert.equal(page1.length, 1);
@@ -262,6 +293,51 @@ export function runRepoContract(name: string, open: () => Promise<RepoHarness>) 
       assert.notEqual(page2[0]!.id, page1[0]!.id);
       assert.deepEqual(page1[0]!.meta, { n: 1 });
       assert.ok((await h.repos.audit.actionNames(100)).includes("doc.a"));
+    });
+
+    test("masking: shown roles filter and sort, mask flags, hidden audit rows, roles holding a permission", async () => {
+      const tag = unique("mask");
+      const make = async (prefix: string, role: string) =>
+        (await h.repos.users.create({ email: `${prefix}-${tag}@example.com`, name: null, role, passwordHash: "hash", createdById: null })).id;
+      const masked = await make("a", "DEVELOPER");
+      const open = await make("b", "DEVELOPER");
+      const admin = await make("c", "SUPER_ADMIN");
+      await make("d", "EDITOR");
+      await h.repos.users.update(masked, { masked: true });
+      const flags = new Map((await h.repos.users.maskFlags("DEVELOPER")).map((row) => [row.id, row.masked]));
+      assert.equal(flags.get(masked), true);
+      assert.equal(flags.get(open), false);
+      assert.equal(flags.has(admin), false);
+
+      const roles = ["DEVELOPER", "SUPER_ADMIN", "MANAGER", "EDITOR"];
+      const one = { superRole: "DEVELOPER", maskAs: "SUPER_ADMIN", global: false, roles };
+      const search = (over: Record<string, unknown>) =>
+        h.repos.users.search({ q: tag, sort: "default", dir: "asc", offset: 0, limit: 10, ...over } as Parameters<typeof h.repos.users.search>[0]);
+      const ids = async (over: Record<string, unknown>) => (await search(over)).items.map((user) => user.id).sort();
+      assert.deepEqual(await ids({ role: "SUPER_ADMIN", present: one }), [masked, admin].sort());
+      assert.deepEqual(await ids({ role: "DEVELOPER", present: one }), [open]);
+      const sorted = await search({ sort: "role", present: one });
+      assert.deepEqual(sorted.items.map((user) => user.email.slice(0, 1)), ["b", "d", "a", "c"], "by the role shown, then email");
+      assert.equal(sorted.total, 4);
+      assert.deepEqual((await search({ sort: "role", present: one, offset: 2, limit: 1 })).items.map((user) => user.id), [masked]);
+      const all = { ...one, global: true };
+      assert.equal((await search({ role: "DEVELOPER", present: all })).total, 0);
+      assert.equal((await search({ role: "SUPER_ADMIN", present: all })).total, 3);
+      assert.equal((await search({ sort: "role", present: all })).items[0]!.email.slice(0, 1), "d", "nobody sorts as a developer");
+
+      const entityId = unique("ent");
+      const action = unique("dev.only");
+      const audited = (actorRole: string | null, name: string) => ({ action: name, actorId: null, actorEmail: null, actorRole, entityType: "Doc", entityId, ip: null, userAgent: null });
+      await h.repos.audit.createMany([audited("DEVELOPER", action), audited("EDITOR", "doc.seen"), audited(null, "doc.system")]);
+      const visible = await h.repos.audit.page({ entityId, hideActorRole: "DEVELOPER" }, null, 10);
+      assert.deepEqual(visible.map((entry) => entry.action).sort(), ["doc.seen", "doc.system"]);
+      assert.equal((await h.repos.audit.page({ entityId }, null, 10)).length, 3);
+      assert.equal((await h.repos.audit.actionNames(1000, "DEVELOPER")).includes(action), false);
+      assert.ok((await h.repos.audit.actionNames(1000)).includes(action));
+
+      const permission = unique("perm");
+      await h.repos.rolePermissions.grantMany([{ role: "EDITOR", permission }]);
+      assert.deepEqual(await h.repos.rolePermissions.rolesWith(permission), ["EDITOR"]);
     });
 
     test("chat and inquiries", async () => {

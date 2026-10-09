@@ -85,16 +85,63 @@ access), see "Break-glass" below.
 
 ## Roles and permissions
 
-Four roles, from `lib/auth/permissions.ts`: `DEVELOPER` (everything, the only
-role that can manage other users, settings, and the IP allowlist), `MANAGER`
-(content, blog, media, leads, chatbot — day-to-day content and enquiries),
-`EDITOR` (drafts only — can create and edit but not publish, and cannot
-manage anything). The exact matrix lives in `lib/auth/permissions.ts`; this
-doc doesn't repeat it because it changes as the app grows. The rule that
-doesn't change: every Server Action and every `app/api/admin/*` route checks a
-permission before doing anything, and a missing permission looks like a
-missing page (404), never a 403 — an unauthorized admin surface should never
-confirm it exists.
+Roles are rows in the `roles` table, managed at **Roles and permissions**
+(`/admin/roles`, DEVELOPER and SUPER_ADMIN). Four are built in and cannot be
+deleted: `DEVELOPER` (rank 0: every permission, in code, so no edit can lock
+the owner out), `SUPER_ADMIN` (rank 5, see below), `MANAGER` (rank 10) and
+`EDITOR` (rank 20). **Add a role** takes a name (capital letters, digits,
+underscores; fixed once created), a label, a description and a rank from 1 to
+1000, and starts with no permissions: tick them in the matrix.
+
+The rank is the hierarchy: a role manages, invites and assigns only roles with
+a higher rank number, never its own rank or above. A role can be deleted once
+nobody holds it, which cancels its open invitations. Role and matrix changes
+are audited and apply within a minute (cached in Redis for 60 seconds, dropped
+on every change). The catalogue lives in `lib/auth/kit-config.ts`.
+
+The rule that doesn't change: every Server Action and every
+`app/api/admin/*` route checks a permission before doing anything, and a
+missing permission looks like a missing page (404), never a 403 — an
+unauthorized admin surface should never confirm it exists.
+
+## Super admins and developer masking
+
+`SUPER_ADMIN` is the client's top role. Only a developer can give it, and its
+permissions are fixed in code (`FIXED_GRANTS` in `lib/auth/kit-config.ts`),
+so no matrix edit widens or narrows them: every permission except clearing the
+cache, running cron jobs, security status and integration health, the IP
+allowlist, and training or switching the chatbot (`manageChatbotTraining`; it
+still sets the tone and greeting). Its rank keeps it from managing, signing
+out or deleting developers and other super admins, and in the matrix it
+changes only roles ranked below it, granting only what it holds. Audit rows
+written by a developer (`audit_logs.actorRole`, the role at the time) never
+reach it: not the audit screen, the CSV export or the dashboard.
+
+A developer can mask themself as a super admin on the **Account** page, or mask
+every developer at once there. Everyone but developers then sees masked
+developers as super admins (users list, filters, sorting, role counts), and
+while no developer is left unmasked the Developer role disappears from their
+screens. Masking is presentation only: what a developer can do never changes,
+and every check uses the real role. Only developers see the toggles and a
+**Masked** badge, and both toggles are audited. Tell the client in the
+contract that developer accounts can appear under another role.
+
+## Auth engine and database upgrades
+
+`lib/auth/engine.ts` builds the engine with `createAuthEngine` from
+`@sahan-sac/auth-kit/engines/next-auth`; `lib/auth/session-cookie.ts` uses the
+matching `/cookie` check. To move to Better Auth, run
+`npx auth-kit engine better-auth --write`, which changes those two imports
+and prints the dependency swap. Both engines use the same tables, so the
+database does not change.
+
+After updating `@sahan-sac/auth-kit`, run `npx auth-kit db upgrade --apply`
+before deploying (`npx auth-kit doctor` says whether it is needed), then
+`pnpm db:seed`. The upgrade is idempotent and only adds or converts: the
+shared session columns, hashed session tokens (sessions still holding a raw
+token are ended), the `roles` table, `users.masked` and
+`audit_logs.actorRole`. The seed adds missing built-in roles and gives newly
+split permissions to every role that held the original.
 
 ## Add a user
 

@@ -15,6 +15,7 @@ import { dashboardRepo, maintenanceRepo } from "./maintenance";
 import { mediaRepo } from "./media";
 import { postRepo, postRevisionRepo } from "./posts";
 import { rolePermissionRepo } from "./role-permissions";
+import { roleRepo } from "./roles";
 import { settingRepo } from "./settings";
 import { userSessionRepo } from "./user-sessions";
 import { userRepo } from "./users";
@@ -35,6 +36,7 @@ export function createRepos(client: DbClient): Repos {
     postRevisions: postRevisionRepo(client),
     posts: postRepo(client),
     rolePermissions: rolePermissionRepo(client),
+    roles: roleRepo(client),
     sessions: userSessionRepo(client),
     settings: settingRepo(client),
     users: userRepo(client),
@@ -52,6 +54,9 @@ export function transaction<T>(client: DbClient, fn: (tx: Repos) => Promise<T>, 
 
 /** Repositories on the shared client. `db` is a lazy proxy, so this does not connect. */
 export const repos: Repos = createRepos(db);
+
+/** The database the auth engine uses (lib/auth/engine.ts): Better Auth reads it, next-auth ignores it. */
+export const authDatabase = { drizzle: db };
 
 export function withTx<T>(fn: (tx: Repos) => Promise<T>, options?: TxOptions): Promise<T> {
   return transaction(db, fn, options);

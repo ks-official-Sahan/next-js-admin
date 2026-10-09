@@ -28,7 +28,7 @@ export default async function DashboardPage() {
   // value instead of throwing (lib/admin/dashboard.ts). Only the queries the
   // viewer's permissions cover are run at all.
   const [activity, { drafts, unpublished }, inquiries, health, emailHealth, securityStatus] = await Promise.all([
-    canViewAudit ? getRecentActivity(5) : Promise.resolve([]),
+    canViewAudit ? getRecentActivity(user, 5) : Promise.resolve([]),
     canViewContent ? getContentCounts() : Promise.resolve({ drafts: 0, unpublished: 0 }),
     canViewLeads ? getNewInquiriesCount() : Promise.resolve(0),
     canViewSecurityStatus ? getSystemHealth() : Promise.resolve(null),

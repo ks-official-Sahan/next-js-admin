@@ -1,5 +1,6 @@
 import "server-only";
 
+import { SUPER_ROLE, type RoleName } from "@/lib/auth/permissions";
 import { repos } from "@/lib/data";
 import { log } from "@/lib/log";
 
@@ -8,11 +9,11 @@ import { log } from "@/lib/log";
 // Design notes, Step 16.
 
 /**
- * Get recent audit log entries (last 10).
+ * Recent audit log entries the viewer may read (see lib/admin/audit-query.ts's auditScope).
  */
-export async function getRecentActivity(limit = 10) {
+export async function getRecentActivity(viewer: { role: RoleName }, limit = 10) {
   try {
-    return await repos.dashboard.recentActivity(limit);
+    return await repos.dashboard.recentActivity(limit, viewer.role === SUPER_ROLE ? undefined : SUPER_ROLE);
   } catch {
     return [];
   }

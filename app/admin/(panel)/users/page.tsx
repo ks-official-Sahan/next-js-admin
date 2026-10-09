@@ -10,8 +10,10 @@ import UsersToolbar from "@/components/admin/users/UsersToolbar";
 import { formatDateTime, relativeTime } from "@/lib/admin/format";
 import { ROLE_LABEL } from "@/lib/admin/roles";
 import { hasPermission, requirePermission } from "@/lib/auth/dal";
-import { ROLES } from "@/lib/auth/permissions";
-import { assignableRoles, canManage } from "@/lib/auth/rbac-rules";
+import { getDeveloperMask } from "@/lib/auth/mask";
+import { MASK_ROLE, SUPER_ROLE } from "@/lib/auth/permissions";
+import { getRoleCatalog } from "@/lib/auth/roles";
+import { mayDeleteUsers } from "@/lib/users/rules";
 import { isFiltered, parseUserView, USER_PAGE_SIZE, userQueryOf, userViewSearch, type SearchParams } from "@/lib/users/query";
 import { listPendingInvites, searchUsers } from "@/lib/users/service";
 
@@ -29,14 +31,19 @@ const clock = () => Date.now();
 export default async function UsersPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const actor = await requirePermission("viewUsers");
   const view = parseUserView(await searchParams);
-  const [page, invites] = await Promise.all([searchUsers(userQueryOf(view)), listPendingInvites()]);
+  const [catalog, mask] = await Promise.all([getRoleCatalog(), getDeveloperMask()]);
+  const [page, invites] = await Promise.all([searchUsers({ ...userQueryOf(view), present: mask.presentFor(actor) }), listPendingInvites()]);
+  // Every role is shown as this viewer may see it (lib/auth/mask.ts); every
+  // capability below still comes from the real role.
+  const visibleRoles = mask.visibleRoles(actor, catalog.roles, mask.unmaskedCount).map((role) => role.name);
+  const shownInviteRole = (role: string) => (role === SUPER_ROLE && !visibleRoles.includes(SUPER_ROLE) ? MASK_ROLE : role);
   const now = clock();
 
-  const roles = assignableRoles(actor.role);
+  const roles = catalog.assignable(actor.role);
   const mayManage = hasPermission(actor, "manageUsers");
   const mayInvite = hasPermission(actor, "inviteUser") && roles.length > 0;
   const mayCreate = mayManage && roles.length > 0;
-  const mayDelete = hasPermission(actor, "deleteUser") && actor.role === "DEVELOPER";
+  const mayDelete = hasPermission(actor, "deleteUser") && mayDeleteUsers(actor.role);
   const bulk: BulkCapabilities = {
     roles: mayManage ? [...roles] : [],
     disable: mayManage,
@@ -45,12 +52,13 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
   };
 
   const rows: UserRowView[] = page.items.map((user) => {
-    const manageable = canManage(actor, { id: user.id, role: user.role });
+    const manageable = catalog.canManage(actor, { id: user.id, role: user.role });
     return {
       id: user.id,
       email: user.email,
       name: user.name,
-      role: user.role,
+      role: mask.roleFor(actor, user),
+      masked: mask.seesThrough(actor) && mask.isMasked(user),
       disabled: Boolean(user.disabledAt),
       mfaEnabled: user.mfaEnabled,
       mustChangePassword: user.mustChangePassword,
@@ -127,7 +135,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
         <h2 id="accounts-heading" className="text-base font-medium">
           Accounts
         </h2>
-        <UsersToolbar view={view} roles={ROLES} total={page.total} />
+        <UsersToolbar view={view} roles={visibleRoles} total={page.total} />
 
         {rows.length === 0 ? (
           isFiltered(view) ? (
@@ -219,7 +227,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
                   <tr key={invite.id}>
                     <td className={tdClass}>{invite.email}</td>
                     <td className={tdClass}>
-                      <span className={badgeClass}>{ROLE_LABEL[invite.role]}</span>
+                      <span className={badgeClass}>{ROLE_LABEL[shownInviteRole(invite.role)]}</span>
                     </td>
                     <td className={tdClass}>{invite.createdByEmail ?? "Unknown"}</td>
                     <td className={tdClass}>{formatDateTime(invite.expiresAt)}</td>

@@ -88,6 +88,14 @@ export const llmsTxtSchema = z.object({
 });
 export type LlmsTxt = z.infer<typeof llmsTxtSchema>;
 
+// Developer masking (lib/auth/mask.ts): every DEVELOPER shown to everyone
+// else as a SUPER_ADMIN. Developers also mask themselves one by one
+// (users.masked). Developers only, never public.
+export const developerMaskSchema = z.object({
+  global: z.boolean().default(false),
+});
+export type DeveloperMaskSetting = z.infer<typeof developerMaskSchema>;
+
 // Union of all setting keys and their schemas
 export const SETTING_SCHEMAS = {
   "features": featuresSchema,
@@ -98,6 +106,7 @@ export const SETTING_SCHEMAS = {
   "ai.context": aiContextSchema,
   "rbac.seedVersion": rbacSeedVersionSchema,
   "seo.llmsTxt": llmsTxtSchema,
+  "security.mask": developerMaskSchema,
 } as const;
 
 export type SettingKey = keyof typeof SETTING_SCHEMAS;
@@ -129,6 +138,7 @@ export const DEFAULT_SETTINGS: Record<SettingKey, unknown> = {
   "ai.context": getSettingDefault("ai.context"),
   "rbac.seedVersion": getSettingDefault("rbac.seedVersion"),
   "seo.llmsTxt": getSettingDefault("seo.llmsTxt"),
+  "security.mask": getSettingDefault("security.mask"),
 };
 
 // Public settings: subset safe to expose to client-side or caching layers

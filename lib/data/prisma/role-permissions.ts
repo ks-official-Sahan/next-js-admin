@@ -10,5 +10,9 @@ export function rolePermissionRepo(client: DbClient): RolePermissionRepo {
       const { count } = await client.rolePermission.createMany({ data: grants, skipDuplicates: true });
       return count;
     },
+    async rolesWith(permission) {
+      const rows = await client.rolePermission.findMany({ where: { permission }, select: { role: true } });
+      return rows.map((row) => row.role);
+    },
   };
 }

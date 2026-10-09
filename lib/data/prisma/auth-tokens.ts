@@ -47,6 +47,9 @@ export function authTokenRepo(client: DbClient): AuthTokenRepo {
     async revokeOpenInvitesSentBy(userId) {
       await revokeWhere({ purpose: "INVITE", createdById: userId, ...open });
     },
+    revokeOpenInvitesForRole(role) {
+      return revokeWhere({ purpose: "INVITE", role, ...open });
+    },
     async revokeOpenInvitesSentByAny(userIds) {
       if (userIds.length === 0) return;
       await revokeWhere({ purpose: "INVITE", createdById: { in: userIds }, ...open });

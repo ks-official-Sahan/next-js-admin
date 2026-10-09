@@ -112,7 +112,7 @@ export async function getAllSettings(): Promise<Record<SettingKey, unknown>> {
 export async function updateSetting<K extends SettingKey>(
   key: K,
   value: SettingValue<K>,
-  actor: Pick<AuthUser, "id" | "email">
+  actor: Pick<AuthUser, "id" | "email"> & Partial<Pick<AuthUser, "role">>
 ): Promise<void> {
   const schema = getSettingSchema(key);
   const validated = schema.parse(value) as SettingValue<K>;
@@ -125,7 +125,7 @@ export async function updateSetting<K extends SettingKey>(
       await audit(
         {
           action: "settings.updated",
-          actor: { id: actor.id, email: actor.email },
+          actor: { id: actor.id, email: actor.email, role: actor.role },
           entityType: "Setting",
           entityId: key,
           before,

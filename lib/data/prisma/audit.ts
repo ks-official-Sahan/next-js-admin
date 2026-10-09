@@ -17,6 +17,7 @@ const select = {
   createdAt: true,
   actorId: true,
   actorEmail: true,
+  actorRole: true,
   action: true,
   entityType: true,
   entityId: true,
@@ -39,8 +40,14 @@ export function auditRepo(client: DbClient): AuditRepo {
     page(filters, cursor, take) {
       return client.auditLog.findMany({ where: buildAuditWhere(filters, cursor), orderBy: [...AUDIT_ORDER], take, select });
     },
-    async actionNames(limit) {
-      const rows = await client.auditLog.findMany({ distinct: ["action"], select: { action: true }, orderBy: { action: "asc" }, take: limit });
+    async actionNames(limit, hideActorRole) {
+      const rows = await client.auditLog.findMany({
+        where: hideActorRole ? buildAuditWhere({ hideActorRole }) : undefined,
+        distinct: ["action"],
+        select: { action: true },
+        orderBy: { action: "asc" },
+        take: limit,
+      });
       return rows.map((row) => row.action);
     },
   };

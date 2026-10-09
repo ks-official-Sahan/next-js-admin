@@ -1,5 +1,6 @@
 import "server-only";
 
+import { SUPER_ROLE, type RoleName } from "@/lib/auth/permissions";
 import { repos } from "@/lib/data";
 import type { AuditEntry } from "@/lib/data/audit";
 
@@ -9,6 +10,14 @@ import { encodeCursor, type AuditCursor, type AuditFilters } from "./audit-filte
 // repository. Filters and cursors come from audit-filters.ts, which is unit tested.
 
 export type AuditRow = AuditEntry;
+
+/**
+ * What a viewer may read: everyone below the super role never sees a row a
+ * developer wrote (the actorRole snapshot), masked or not.
+ */
+export function auditScope(filters: AuditFilters, viewer: { role: RoleName }): AuditFilters {
+  return viewer.role === SUPER_ROLE ? filters : { ...filters, hideActorRole: SUPER_ROLE };
+}
 
 /** One page, newest first. `nextCursor` is set when there is more. */
 export async function queryAudit(
@@ -25,9 +34,9 @@ export async function queryAudit(
   };
 }
 
-/** Distinct action names, for the filter's suggestions. */
-export async function auditActionNames(): Promise<string[]> {
-  return repos.audit.actionNames(200);
+/** Distinct action names of the rows the viewer may read, for the filter's suggestions. */
+export async function auditActionNames(viewer: { role: RoleName }): Promise<string[]> {
+  return repos.audit.actionNames(200, auditScope({}, viewer).hideActorRole);
 }
 
 export const AUDIT_EXPORT_MAX_ROWS = 10_000;

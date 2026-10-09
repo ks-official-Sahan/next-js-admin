@@ -54,6 +54,7 @@ enum MfaPurpose {
   SIGN_IN
   ENABLE
   DISABLE
+  STEP_UP
 }
 
 enum TokenPurpose {

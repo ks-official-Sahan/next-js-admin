@@ -10,7 +10,7 @@ import { done, fail, fieldErrorsFrom, formValues, type ActionState } from "@/lib
 import type { AuthUser } from "@/lib/auth/dal";
 import { keepSessionAfterPasswordChange } from "@/lib/auth/engine";
 import { consumeChallenge, issueChallenge, verifyChallenge } from "@/lib/auth/mfa";
-import { MFA_TTL_MINUTES, normalizeCode } from "@/lib/auth/mfa-rules";
+import { CODE_FAILURES, MFA_TTL_MINUTES, normalizeCode } from "@/lib/auth/mfa-rules";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { checkPassword } from "@/lib/auth/password-policy";
 import { invalidateSessionState, invalidateUserSessionState, revokeSession, revokeUserSessions } from "@/lib/auth/session-store";
@@ -251,13 +251,6 @@ async function startMfa(purpose: "ENABLE" | "DISABLE", formData: FormData): Prom
   }
   return done(`A code was sent to ${user.email}. It works for ${MFA_TTL_MINUTES} minutes.`, { challengeId: issued.challengeId });
 }
-
-const CODE_FAILURES = {
-  invalid: "That code is not correct.",
-  locked: "Too many wrong codes. Wait a few minutes and ask for a new one.",
-  expired: "That code expired. Ask for a new one.",
-  consumed: "That code was already used. Ask for a new one.",
-} as const;
 
 async function confirmMfa(purpose: "ENABLE" | "DISABLE", formData: FormData): Promise<ActionState> {
   const access = await authorizeAction(null, OPTIONS);

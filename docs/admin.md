@@ -123,7 +123,9 @@ developers as super admins (users list, filters, sorting, role counts), and
 while no developer is left unmasked the Developer role disappears from their
 screens. Masking is presentation only: what a developer can do never changes,
 and every check uses the real role. Only developers see the toggles and a
-**Masked** badge, and both toggles are audited. Tell the client in the
+**Masked** badge. Every change asks for confirmation and then a code
+emailed to the developer (a step-up code bound to that one change), and both
+toggles are audited. Tell the client in the
 contract that developer accounts can appear under another role.
 
 ## Auth engine and database upgrades

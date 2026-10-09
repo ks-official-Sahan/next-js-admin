@@ -131,9 +131,14 @@ export default async function AccountPage() {
           <p className="mb-4 mt-1 text-sm text-muted-foreground">
             Everyone but developers sees a masked developer as a super admin, and the developer role, its audit rows and
             its settings stay hidden from them. What you can do never changes. Only developers see this card and who is
-            masked, and every change is audited.
+            masked. Every change is confirmed with a code emailed to you, and audited.
           </p>
-          <DeveloperMaskCard key={`${profile?.masked}-${maskSetting?.global}`} masked={profile?.masked ?? false} global={maskSetting?.global ?? false} />
+          <DeveloperMaskCard
+            key={`${profile?.masked}-${maskSetting?.global}`}
+            masked={profile?.masked ?? false}
+            global={maskSetting?.global ?? false}
+            email={user.email}
+          />
         </section>
       ) : null}
 

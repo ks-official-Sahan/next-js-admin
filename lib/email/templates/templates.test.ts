@@ -79,6 +79,10 @@ test("the content of each email is what the recipient needs", () => {
   const code = mfaCode({ name: "Jordan", code: "482913", minutes: 10 });
   assert.ok(code.subject.includes("482913"));
   assert.ok(code.text.includes("expires in 10 minutes"));
+  assert.ok(code.subject.startsWith("Your sign-in code"));
+  const stepUp = mfaCode({ name: "Jordan", code: "482913", minutes: 10, purpose: "STEP_UP" });
+  assert.ok(stepUp.subject.startsWith("Your confirmation code"));
+  assert.ok(stepUp.text.includes("confirm a security change"));
 
   const reset = passwordReset({ url: URL_OK, expiresMinutes: 30 });
   assert.ok(reset.text.includes(URL_OK));

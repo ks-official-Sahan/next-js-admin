@@ -22,16 +22,27 @@ const signInLater = (url: string | undefined, label = "Sign in later") =>
   url ? { secondaryLink: { label, url, note: "Opens the sign-in page on any device. Your password is still needed." } } : {};
 const who = (name: string | null | undefined) => (name ? oneLine(name) : "there");
 
-export function mfaCode(input: { name?: string | null; code: string; minutes: number }): Rendered {
-  return renderEmail(`Your sign-in code: ${oneLine(input.code, 12)}`, {
-    preheader: `Your ${brand} admin sign-in code`,
-    heading: "Your sign-in code",
+type CodePurpose = "SIGN_IN" | "ENABLE" | "DISABLE" | "STEP_UP";
+
+/** What each kind of emailed code is for, in the words the email uses. */
+const CODE_PURPOSE: Record<CodePurpose, { title: string; use: string; footnote: string }> = {
+  SIGN_IN: { title: "sign-in code", use: "finish signing in to", footnote: "If you did not try to sign in, change your password now." },
+  ENABLE: { title: "code to turn on two-factor sign-in", use: "turn on two-factor sign-in for", footnote: "If you did not ask for this, change your password now." },
+  DISABLE: { title: "code to turn off two-factor sign-in", use: "turn off two-factor sign-in for", footnote: "If you did not ask for this, change your password now." },
+  STEP_UP: { title: "confirmation code", use: "confirm a security change in", footnote: "If you did not ask for this, change your password now and tell your team." },
+};
+
+export function mfaCode(input: { name?: string | null; code: string; minutes: number; purpose?: CodePurpose }): Rendered {
+  const purpose = CODE_PURPOSE[input.purpose ?? "SIGN_IN"];
+  return renderEmail(`Your ${purpose.title}: ${oneLine(input.code, 12)}`, {
+    preheader: `Your ${brand} admin ${purpose.title}`,
+    heading: `Your ${purpose.title}`,
     paragraphs: [
-      `Hi ${who(input.name)}, use this code to finish signing in to the ${brand} admin.`,
+      `Hi ${who(input.name)}, use this code to ${purpose.use} the ${brand} admin.`,
       oneLine(input.code, 12),
       `It works once and expires in ${input.minutes} minutes. Nobody from the site will ask you for it.`,
     ],
-    footnote: "If you did not try to sign in, change your password now.",
+    footnote: purpose.footnote,
   });
 }
 

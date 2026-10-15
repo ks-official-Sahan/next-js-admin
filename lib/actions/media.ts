@@ -1,7 +1,8 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+
 import { authorizeAction } from "@/lib/actions/guard";
-import { cloudinary } from "@/lib/media/cloudinary-client";
 import {
   deleteMedia as deleteMediaService,
   registerUpload as registerUploadService,
@@ -15,20 +16,18 @@ import {
 export async function registerUpload(
   publicId: string,
   folder: string,
-  alt?: string
+  alt?: string,
+  accountId?: string
 ): Promise<{ ok: boolean; error?: string; asset?: { id: string; url: string } }> {
   const auth = await authorizeAction("uploadMedia");
   if (!auth.ok) return { ok: false, error: auth.error };
+  if (typeof publicId !== "string" || typeof folder !== "string" || (accountId !== undefined && typeof accountId !== "string")) {
+    return { ok: false, error: "The upload details were not readable." };
+  }
 
-  return registerUploadService(
-    {
-      publicId,
-      folder,
-      alt,
-      cloudinaryClient: cloudinary,
-    },
-    auth.user
-  );
+  const result = await registerUploadService({ publicId, folder, alt, accountId }, auth.user);
+  if (result.ok) revalidatePath("/admin/media");
+  return result;
 }
 
 export async function updateMedia(
@@ -50,6 +49,10 @@ export async function updateMedia(
     auth.user
   );
 
+  if (result.ok) {
+    revalidatePath("/admin/media");
+    revalidatePath(`/admin/media/${mediaId}`);
+  }
   return result;
 }
 
@@ -57,5 +60,10 @@ export async function deleteMedia(mediaId: string): Promise<DeleteMediaResult> {
   const auth = await authorizeAction("deleteMedia");
   if (!auth.ok) return { ok: false, error: auth.error };
 
-  return deleteMediaService(mediaId, auth.user, cloudinary);
+  const result = await deleteMediaService(mediaId, auth.user);
+  if (result.ok) {
+    revalidatePath("/admin/media");
+    revalidatePath(`/admin/media/${mediaId}`);
+  }
+  return result;
 }

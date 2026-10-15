@@ -32,11 +32,11 @@ const list = text.transform((value) => splitList(value));
 const schema = z.object({
   // Auth and signing
   AUTH_SECRET: text,
-  AUTH_TRUST_HOST: flag,
-  AUTH_DEBUG: flag,
   INTERNAL_SIGNING_SECRET: text,
   MAINTENANCE_BYPASS_SECRET: text,
   ADMIN_LOGIN_UNLOCK_SECRET: text,
+  // Break-glass unlock form path (lib/admin/unlock-form.ts); proxy.ts reads it from process.env.
+  ADMIN_UNLOCK_PATH: text,
   // Days a sign-in link (/s/...) stays valid: 1..90, default 14 (lib/auth/links.ts).
   ADMIN_SIGN_IN_LINK_DAYS: text,
   CRON_SECRET: text,
@@ -55,6 +55,8 @@ const schema = z.object({
   DIRECT_DATABASE_URL: text,
   UPSTASH_REDIS_REST_URL: text,
   UPSTASH_REDIS_REST_TOKEN: text,
+  // IANA zone for analytics day buckets (lib/analytics/store.ts), e.g. Asia/Colombo. Default UTC.
+  ANALYTICS_TIME_ZONE: text,
   // Unset: use Redis when both Upstash variables are valid. false/0/off: always in-memory.
   REDIS_ENABLED: text,
 

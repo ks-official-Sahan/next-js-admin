@@ -11,12 +11,15 @@ export type Authorized = { ok: true; user: AuthUser } | { ok: false; error: stri
 
 export async function authorizeAction(
   permission: Permission | null,
-  options: { allowPasswordChange?: boolean } = {}
+  options: { allowPasswordChange?: boolean; allowMfaSetup?: boolean } = {}
 ): Promise<Authorized> {
   const user = await getOptionalUser();
   if (!user) return { ok: false, error: "You are signed out. Sign in again." };
   if (user.mustChangePassword && !options.allowPasswordChange) {
     return { ok: false, error: "Choose your own password on the account page first." };
+  }
+  if (user.mfaSetupRequired && !options.allowMfaSetup) {
+    return { ok: false, error: "Set up an authenticator app or a passkey on the account page first." };
   }
   if (permission && !hasPermission(user, permission)) {
     return { ok: false, error: "You do not have permission to do that." };

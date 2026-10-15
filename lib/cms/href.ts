@@ -13,6 +13,17 @@ const hasUnsafeCharacter = (value: string): boolean => {
   return /\s/.test(value);
 };
 
+/** An absolute https URL without credentials: what a canonical link may point to. */
+export function isAbsoluteHttpsUrl(value: string): boolean {
+  if (value.length === 0 || value.length > 500 || hasUnsafeCharacter(value)) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
 export function isSafeHref(value: string): boolean {
   if (value.length === 0 || value.length > 500) return false;
   if (hasUnsafeCharacter(value)) return false;

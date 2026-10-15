@@ -21,13 +21,15 @@ export default async function PanelLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // The account page has to render for a user who must change their password, so
-  // the layout lets them in and every other page enforces it (requireUser).
-  const user = await requireUser({ allowPasswordChange: true });
+  // The account page has to render for a user who must change their password or
+  // set up a strong factor, so the layout lets them in and every other page
+  // enforces it (requireUser). Such a user's navigation shows only the account.
+  const user = await requireUser({ allowPasswordChange: true, allowMfaSetup: true });
+  const gated = user.mustChangePassword || user.mfaSetupRequired;
 
   return (
     <AdminShell
-      permissions={user.permissions}
+      permissions={gated ? [] : user.permissions}
       user={{ name: user.name, email: user.email, role: user.role }}
     >
       {children}

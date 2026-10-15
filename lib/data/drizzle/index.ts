@@ -17,8 +17,10 @@ import { postRepo, postRevisionRepo } from "./posts";
 import { rolePermissionRepo } from "./role-permissions";
 import { roleRepo } from "./roles";
 import { settingRepo } from "./settings";
+import { trashRepo } from "./trash";
 import { userSessionRepo } from "./user-sessions";
 import { userRepo } from "./users";
+import { webhookRepo } from "./webhooks";
 
 export { isDbUnavailable } from "./errors";
 
@@ -39,7 +41,9 @@ export function createRepos(client: DbClient): Repos {
     roles: roleRepo(client),
     sessions: userSessionRepo(client),
     settings: settingRepo(client),
+    trash: trashRepo(client),
     users: userRepo(client),
+    webhooks: webhookRepo(client),
   };
 }
 

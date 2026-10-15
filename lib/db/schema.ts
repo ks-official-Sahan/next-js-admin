@@ -22,12 +22,13 @@ const textList = (name: string) => text(name).array().default(sql`ARRAY[]::TEXT[
 
 // Roles are rows of the roles table, so a role column holds any role name, not only the built-in ones.
 export const auth = createAuthSchema<string>({ defaultRole: "EDITOR" });
-export const { roles, mfaPurposeEnum, tokenPurposeEnum, users, rolePermissions, userSessions, authTokens, mfaChallenges, auditLogs } = auth;
+export const { roles, mfaPurposeEnum, tokenPurposeEnum, users, rolePermissions, userSessions, authTokens, mfaChallenges, mfaRecoveryCodes, webauthnCredentials, auditLogs } = auth;
 
 export const contentStatusEnum = pgEnum("ContentStatus", ["DRAFT", "PUBLISHED", "SUPERSEDED"]);
 export const postStatusEnum = pgEnum("PostStatus", ["DRAFT", "SCHEDULED", "PUBLISHED", "ARCHIVED"]);
 export const mediaKindEnum = pgEnum("MediaKind", ["IMAGE", "VIDEO", "DOCUMENT"]);
-export const mediaProviderEnum = pgEnum("MediaProvider", ["LOCAL", "CLOUDINARY"]);
+export const mediaProviderEnum = pgEnum("MediaProvider", ["LOCAL", "CLOUDINARY", "S3", "R2"]);
+export const webhookDeliveryStatusEnum = pgEnum("WebhookDeliveryStatus", ["PENDING", "DELIVERED", "FAILED"]);
 export const inquiryStatusEnum = pgEnum("InquiryStatus", ["NEW", "CONTACTED", "CLOSED", "SPAM"]);
 
 // Operational switches (maintenance, feature flags, allowlist).
@@ -70,6 +71,7 @@ export const mediaAssets = pgTable(
   {
     id: id(),
     provider: mediaProviderEnum("provider").notNull().default("CLOUDINARY"),
+    accountId: text("accountId").notNull().default("cloudinary"),
     kind: mediaKindEnum("kind").notNull().default("IMAGE"),
     url: text("url").notNull(),
     publicId: text("publicId"),
@@ -86,9 +88,10 @@ export const mediaAssets = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    uniqueIndex("media_assets_provider_publicId_key").on(t.provider, t.publicId),
+    uniqueIndex("media_assets_provider_accountId_publicId_key").on(t.provider, t.accountId, t.publicId),
+    index("media_assets_accountId_idx").on(t.accountId),
     index("media_assets_folder_createdAt_idx").on(t.folder, t.createdAt),
-    index("media_assets_createdAt_idx").on(t.createdAt),
+    index("media_assets_createdAt_id_idx").on(t.createdAt, t.id),
   ]
 );
 
@@ -121,6 +124,7 @@ export const posts = pgTable(
     content: text("content").notNull(),
     contentHtml: text("contentHtml").notNull(),
     contentText: text("contentText").notNull(),
+    autoExcerpt: text("autoExcerpt").notNull().default(""),
     topic: text("topic").notNull(),
     tags: textList("tags"),
     status: postStatusEnum("status").notNull().default("DRAFT"),
@@ -146,8 +150,11 @@ export const posts = pgTable(
       .onDelete("set null")
       .onUpdate("cascade"),
     uniqueIndex("posts_slug_key").on(t.slug),
-    index("posts_status_publishedAt_idx").on(t.status, t.publishedAt),
-    index("posts_status_publishAt_idx").on(t.status, t.publishAt),
+    index("posts_status_publishedAt_id_idx").on(t.status, t.publishedAt, t.id),
+    index("posts_status_publishAt_id_idx").on(t.status, t.publishAt, t.id),
+    index("posts_status_noindex_publishedAt_id_idx").on(t.status, t.noindex, t.publishedAt, t.id),
+    index("posts_status_noindex_publishAt_id_idx").on(t.status, t.noindex, t.publishAt, t.id),
+    index("posts_coverMediaId_idx").on(t.coverMediaId),
     index("posts_authorId_idx").on(t.authorId),
     index("posts_updatedAt_idx").on(t.updatedAt),
     index("posts_topic_idx").on(t.topic),
@@ -174,6 +181,21 @@ export const postRevisions = pgTable(
       .onUpdate("cascade"),
     index("post_revisions_postId_createdAt_idx").on(t.postId, t.createdAt),
     index("post_revisions_createdById_idx").on(t.createdById),
+  ]
+);
+
+export const postSlugRedirects = pgTable(
+  "post_slug_redirects",
+  {
+    slug: text("slug").primaryKey(),
+    postId: text("postId").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    foreignKey({ name: "post_slug_redirects_postId_fkey", columns: [t.postId], foreignColumns: [posts.id] })
+      .onDelete("cascade")
+      .onUpdate("cascade"),
+    index("post_slug_redirects_postId_idx").on(t.postId),
   ]
 );
 
@@ -289,4 +311,60 @@ export const chatTrainingEntries = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index("chat_training_entries_isActive_priority_idx").on(t.isActive, t.priority)]
+);
+
+export const trashItems = pgTable(
+  "trash_items",
+  {
+    id: id(),
+    entityType: text("entityType").notNull(),
+    entityId: text("entityId").notNull(),
+    label: text("label").notNull(),
+    data: jsonb("data").notNull(),
+    deletedById: text("deletedById"),
+    deletedAt: at("deletedAt").notNull().default(now),
+  },
+  (t) => [
+    uniqueIndex("trash_items_entityType_entityId_key").on(t.entityType, t.entityId),
+    index("trash_items_deletedAt_idx").on(t.deletedAt),
+  ]
+);
+
+export const webhookEndpoints = pgTable("webhook_endpoints", {
+  id: id(),
+  url: text("url").notNull(),
+  description: text("description").notNull().default(""),
+  secretCipher: text("secretCipher").notNull(),
+  events: textList("events"),
+  active: boolean("active").notNull().default(true),
+  createdById: text("createdById"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const webhookDeliveries = pgTable(
+  "webhook_deliveries",
+  {
+    id: id(),
+    endpointId: text("endpointId").notNull(),
+    event: text("event").notNull(),
+    payload: jsonb("payload").notNull(),
+    idempotencyKey: text("idempotencyKey").notNull(),
+    status: webhookDeliveryStatusEnum("status").notNull().default("PENDING"),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: at("nextAttemptAt"),
+    responseStatus: integer("responseStatus"),
+    lastError: text("lastError"),
+    createdAt: createdAt(),
+    deliveredAt: at("deliveredAt"),
+  },
+  (t) => [
+    foreignKey({ name: "webhook_deliveries_endpointId_fkey", columns: [t.endpointId], foreignColumns: [webhookEndpoints.id] })
+      .onDelete("cascade")
+      .onUpdate("cascade"),
+    uniqueIndex("webhook_deliveries_idempotencyKey_key").on(t.idempotencyKey),
+    index("webhook_deliveries_status_nextAttemptAt_idx").on(t.status, t.nextAttemptAt),
+    index("webhook_deliveries_endpointId_createdAt_idx").on(t.endpointId, t.createdAt),
+    index("webhook_deliveries_createdAt_idx").on(t.createdAt),
+  ]
 );

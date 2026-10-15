@@ -4,7 +4,7 @@ import { strict as assert } from "node:assert";
 import { resetEnvCache } from "@/lib/env";
 
 import { describeAiCheck } from "./ai-check";
-import { checkAiChains, checkAiProviders, checkBrevo, checkCloudinary, checkResend } from "./integrations";
+import { checkAiChains, checkAiProviders, checkBrevo, checkMediaAccounts, checkResend } from "./integrations";
 
 // Fake fetch: no network call, no secret ever leaves the process. Each check
 // is exercised for "not configured", "configured and reachable" and
@@ -102,22 +102,46 @@ describe("integration health checks", () => {
     assert.equal(result.reachable, true);
   });
 
-  test("cloudinary: needs all three env vars to count as configured", async () => {
-    process.env.CLOUDINARY_CLOUD_NAME = "demo";
-    process.env.CLOUDINARY_API_KEY = "key";
-    // secret intentionally left unset
-    const result = await checkCloudinary(okFetch);
-    assert.equal(result.configured, false);
-    assert.equal(result.reachable, null);
+  test("media: the legacy Cloudinary account needs all three env vars", async () => {
+    const rows = await checkMediaAccounts(okFetch, { CLOUDINARY_CLOUD_NAME: "demo", CLOUDINARY_API_KEY: "key" });
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].configured, false);
+    assert.equal(rows[0].reachable, null);
   });
 
-  test("cloudinary: fully configured and reachable", async () => {
-    process.env.CLOUDINARY_CLOUD_NAME = "demo";
-    process.env.CLOUDINARY_API_KEY = "key";
-    process.env.CLOUDINARY_API_SECRET = "secret";
-    const result = await checkCloudinary(okFetch);
-    assert.equal(result.configured, true);
-    assert.equal(result.reachable, true);
+  test("media: one pinged row per account, problems by variable name only", async () => {
+    const seen: string[] = [];
+    const fetchSpy = async (url: string) => {
+      seen.push(url);
+      // A write-only R2 key: valid, but may not list the bucket.
+      return url.includes("cloudflarestorage") ? new Response("<Error><Code>AccessDenied</Code></Error>", { status: 403 }) : okFetch();
+    };
+    const rows = await checkMediaAccounts(fetchSpy, {
+      CLOUDINARY_CLOUD_NAME: "demo",
+      CLOUDINARY_API_KEY: "key",
+      CLOUDINARY_API_SECRET: "secret",
+      MEDIA_ACCOUNT_1_ID: "r2-main",
+      MEDIA_ACCOUNT_1_PROVIDER: "r2",
+      MEDIA_ACCOUNT_1_ACCOUNT_ID: "0123456789abcdef0123456789abcdef",
+      MEDIA_ACCOUNT_1_BUCKET: "media",
+      MEDIA_ACCOUNT_1_ACCESS_KEY_ID: "r2-key",
+      MEDIA_ACCOUNT_1_SECRET_ACCESS_KEY: "r2-secret",
+      MEDIA_ACCOUNT_1_PUBLIC_URL: "https://media.example.com",
+      MEDIA_ACCOUNT_2_ID: "broken",
+      MEDIA_ACCOUNT_2_PROVIDER: "s3",
+      MEDIA_ACCOUNT_2_SECRET_ACCESS_KEY: "never-shown",
+    });
+    assert.deepEqual(
+      rows.map((row) => [row.name, row.configured, row.reachable]),
+      [
+        ["Media: cloudinary", true, true],
+        ["Media: r2-main", true, true],
+        ["Media settings", false, false],
+      ]
+    );
+    assert.equal(seen.length, 2);
+    assert.match(rows[1].hint, /may not list the bucket/);
+    assert.ok(rows.every((row) => !row.hint.includes("secret") && !row.hint.includes("never-shown")));
   });
 });
 

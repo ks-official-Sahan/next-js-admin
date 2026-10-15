@@ -3,7 +3,8 @@ import { DEFAULT_AUDIT_RETENTION_DAYS, housekeepingPruneJob } from "@/lib/cron/j
 import { log } from "@/lib/log";
 
 // Cron route: prune old audit log rows past the retention period (default
-// 365 days) and post revisions past the per-post cap. Triggered by Vercel
+// 365 days), post revisions past the per-post cap, and superseded CMS
+// section versions past the per-section cap. Triggered by Vercel
 // Cron on the daily schedule in vercel.json.
 // Requires Authorization: Bearer CRON_SECRET, checked in constant time.
 // Idempotent, logs counts only, and the job itself writes an audit row for
@@ -19,7 +20,14 @@ export async function GET(request: Request) {
 
   try {
     const result = await housekeepingPruneJob({ retentionDays: days });
-    return Response.json({ deleted: result.deleted, auditRows: result.auditRows, revisions: result.revisions, retentionDays: days, timestamp: new Date().toISOString() });
+    return Response.json({
+      deleted: result.deleted,
+      auditRows: result.auditRows,
+      revisions: result.revisions,
+      sectionVersions: result.sectionVersions,
+      retentionDays: days,
+      timestamp: new Date().toISOString(),
+    });
   } catch (err) {
     log.error("cron audit-prune: unexpected error", { error: String(err) });
     return new Response(null, { status: 500 });

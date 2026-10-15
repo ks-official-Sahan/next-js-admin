@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
-import { Maximize2, Minimize2, Monitor, Moon, Smartphone, Sun } from "lucide-react";
 
+import Icon from "@/components/icons/Icon";
 import { previewPostHtmlAction } from "@/lib/actions/blog";
 import { extractToc, renderPostContent } from "@/lib/blog/render";
 import { cn } from "@/lib/utils";
@@ -195,8 +195,8 @@ export default function PostPreviewPane({
             value={device}
             onChange={setDevice}
             options={[
-              { value: "desktop", label: "Desktop", icon: <Monitor size={13} aria-hidden /> },
-              { value: "mobile", label: "Mobile", icon: <Smartphone size={13} aria-hidden /> },
+              { value: "desktop", label: "Desktop", icon: <Icon lucideIconName="Monitor" className="size-[13px]" /> },
+              { value: "mobile", label: "Mobile", icon: <Icon lucideIconName="Smartphone" className="size-[13px]" /> },
             ]}
           />
           <ToggleGroup
@@ -204,8 +204,8 @@ export default function PostPreviewPane({
             value={theme}
             onChange={setTheme}
             options={[
-              { value: "light", label: "Light", icon: <Sun size={13} aria-hidden /> },
-              { value: "dark", label: "Dark", icon: <Moon size={13} aria-hidden /> },
+              { value: "light", label: "Light", icon: <Icon name="brightness-down" className="size-[13px]" /> },
+              { value: "dark", label: "Dark", icon: <Icon name="moon" className="size-[13px]" /> },
             ]}
           />
           <button
@@ -215,7 +215,7 @@ export default function PostPreviewPane({
             title={expanded ? "Exit full screen (Esc)" : "Full screen"}
             className="flex h-8 items-center gap-1.5 rounded-md border border-input px-2 text-xs font-medium text-muted-foreground hover:text-foreground"
           >
-            {expanded ? <Minimize2 size={13} aria-hidden /> : <Maximize2 size={13} aria-hidden />}
+            {expanded ? <Icon lucideIconName="Minimize2" className="size-[13px]" /> : <Icon name="expand" className="size-[13px]" />}
             <span className="sr-only s640:not-sr-only">{expanded ? "Exit" : "Full screen"}</span>
           </button>
         </div>

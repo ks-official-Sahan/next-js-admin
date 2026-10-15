@@ -63,7 +63,7 @@ export async function createTrainingEntry(_previous: ActionState, formData: Form
       );
     });
 
-    invalidate(forTraining());
+    await invalidate(forTraining());
     revalidatePath(TRAINING_PATH);
     return done("Training entry created.");
   } catch (error) {
@@ -109,7 +109,7 @@ export async function updateTrainingEntry(_previous: ActionState, formData: Form
       );
     });
 
-    invalidate(forTraining());
+    await invalidate(forTraining());
     revalidatePath(TRAINING_PATH);
     return done("Training entry updated.");
   } catch (error) {
@@ -145,7 +145,7 @@ export async function deleteTrainingEntry(_previous: ActionState, formData: Form
       );
     });
 
-    invalidate(forTraining());
+    await invalidate(forTraining());
     revalidatePath(TRAINING_PATH);
     return done("Training entry deleted.");
   } catch (error) {

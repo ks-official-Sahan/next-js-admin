@@ -1,8 +1,12 @@
 // Small logger with redaction. Secrets never reach the logs: keys that look
 // sensitive are replaced before anything is printed.
 
-/** Broad matcher for logs: over-redacting a log line costs nothing. */
-export const SENSITIVE_KEY = /pass|token|secret|hash|code|otp|authorization|cookie|key/i;
+/**
+ * Broad matcher for logs: over-redacting a log line costs little, so anything
+ * that looks sensitive goes, except a few well-known keys (an HTTP status, a
+ * cache key) that only looked sensitive and that debugging needs.
+ */
+export const SENSITIVE_KEY = /^(?!(?:statusCode|errorCode|cacheKey|sortKey|keywords)$).*(?:pass|token|secret|hash|code|otp|authorization|cookie|key)/i;
 
 /**
  * Narrow matcher for audit before/after snapshots, where a field such as

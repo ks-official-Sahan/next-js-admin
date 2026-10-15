@@ -9,6 +9,8 @@ import type { PostRepo, PostRevisionRepo } from "./posts";
 import type { RolePermissionRepo } from "./role-permissions";
 import type { RoleRepo } from "./roles";
 import type { SettingRepo } from "./settings";
+import type { TrashRepo } from "./trash";
+import type { WebhookRepo } from "./webhooks";
 import type { UserSessionRepo } from "./user-sessions";
 import type { UserRepo } from "./users";
 
@@ -33,7 +35,9 @@ export interface Repos {
   roles: RoleRepo;
   sessions: UserSessionRepo;
   settings: SettingRepo;
+  trash: TrashRepo;
   users: UserRepo;
+  webhooks: WebhookRepo;
 }
 
 export interface TxOptions {

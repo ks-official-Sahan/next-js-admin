@@ -115,11 +115,20 @@ describe("maintenance bypass cookie", () => {
   });
 
   describe("cookie signature algorithm", () => {
-    test("same timestamp produces same signature", () => {
+    test("same timestamp still produces different cookies (random nonce)", () => {
       const now = Date.now();
       const signed1 = signBypassCookie(now, mockKeys);
       const signed2 = signBypassCookie(now, mockKeys);
-      assert.equal(signed1, signed2);
+      assert.notEqual(signed1, signed2);
+      assert.equal(verifyBypassCookie(signed1, now, mockKeys), true);
+      assert.equal(verifyBypassCookie(signed2, now, mockKeys), true);
+    });
+
+    test("a cookie issued in the future, or with a swapped nonce, fails", () => {
+      const now = Date.now();
+      assert.equal(verifyBypassCookie(signBypassCookie(now + 5 * 60_000, mockKeys), now, mockKeys), false);
+      const [timestamp, , hmac] = signBypassCookie(now, mockKeys).split(".");
+      assert.equal(verifyBypassCookie(`${timestamp}.${"x".repeat(22)}.${hmac}`, now, mockKeys), false);
     });
 
     test("different timestamps produce different signatures", () => {
@@ -130,11 +139,12 @@ describe("maintenance bypass cookie", () => {
       assert.notEqual(signed1, signed2);
     });
 
-    test("cookie format is timestamp.hmac", () => {
+    test("cookie format is timestamp.nonce.hmac", () => {
       const now = Date.now();
       const signed = signBypassCookie(now, mockKeys);
-      const [timestamp, hmac] = signed.split(".");
+      const [timestamp, nonce, hmac] = signed.split(".");
       assert.equal(parseInt(timestamp, 10), now);
+      assert.ok(nonce.length >= 16);
       assert.equal(hmac.length, 64); // SHA256 hex = 64 chars
     });
   });

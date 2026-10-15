@@ -18,6 +18,9 @@ export const nextVersion = (rows: ReadonlyArray<Pick<BlockMeta, "version">>): nu
 export const findDraft = <T extends Pick<BlockMeta, "status">>(rows: readonly T[]): T | null =>
   rows.find((row) => row.status === "DRAFT") ?? null;
 
+/** Superseded versions kept per section: the editor's history lists this many, and the daily prune deletes the rest. */
+export const HISTORY_KEPT = 20;
+
 export const findPublished = <T extends Pick<BlockMeta, "status">>(rows: readonly T[]): T | null =>
   rows.find((row) => row.status === "PUBLISHED") ?? null;
 

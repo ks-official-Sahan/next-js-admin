@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useEffect, type MouseEvent } from "react";
 
 import { buttonVariants } from "@/components/admin/ui/styles";
@@ -8,6 +9,7 @@ import { idleState } from "@/lib/actions/state";
 import { toast } from "@/lib/admin/toast";
 import type { RevisionListItem } from "@/lib/blog/revision-queries";
 
+import RevisionCompare from "./RevisionCompare";
 import SidebarCard from "./SidebarCard";
 
 // The post's saved versions, newest first (lib/blog/revisions.ts keeps the
@@ -16,6 +18,12 @@ import SidebarCard from "./SidebarCard";
 // only `postId` and `revisionId`. The edit page remounts the editor after a
 // restore (its key is the newest "restore" revision), so every field shows
 // the restored version.
+//
+// Revisions hold a post's content only. A publish, schedule, unpublish or
+// archive leaves the content as it was, so it writes no revision (a copy per
+// status flip would push real edits out of the kept window); the audit row
+// written in the same transaction is its history, and `activityHref` links
+// there for roles that may read the audit log.
 
 const REASON_LABEL: Record<string, string> = {
   update: "Saved before an edit",
@@ -34,7 +42,16 @@ function ago(iso: string): string {
   return RELATIVE.format(Math.round(hours / 24), "day");
 }
 
-export default function RevisionHistoryCard({ postId, revisions }: { postId: string; revisions: RevisionListItem[] }) {
+export default function RevisionHistoryCard({
+  postId,
+  revisions,
+  activityHref,
+}: {
+  postId: string;
+  revisions: RevisionListItem[];
+  /** The audit log filtered to this post; omitted when the viewer may not read it. */
+  activityHref?: string;
+}) {
   const [state, dispatch, pending] = useActionState(restorePostRevisionAction, idleState);
 
   useEffect(() => {
@@ -73,19 +90,30 @@ export default function RevisionHistoryCard({ postId, revisions }: { postId: str
                   {revision.authorEmail ? ` · ${revision.authorEmail}` : ""}
                 </p>
               </div>
-              <button
-                type="submit"
-                formAction={handleRestore(revision.id)}
-                disabled={pending}
-                onClick={(event) => confirmRestore(event, revision.title)}
-                className={buttonVariants.small}
-              >
-                Restore
-              </button>
+              <div className="flex shrink-0 gap-1">
+                <RevisionCompare postId={postId} revisionId={revision.id} title={revision.title} />
+                <button
+                  type="submit"
+                  formAction={handleRestore(revision.id)}
+                  disabled={pending}
+                  onClick={(event) => confirmRestore(event, revision.title)}
+                  className={buttonVariants.small}
+                >
+                  Restore
+                </button>
+              </div>
             </li>
           ))}
         </ol>
       )}
+      {activityHref ? (
+        <Link
+          href={activityHref}
+          className="mt-3 inline-block text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+        >
+          Publish and status history
+        </Link>
+      ) : null}
     </SidebarCard>
   );
 }

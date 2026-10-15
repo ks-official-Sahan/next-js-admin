@@ -26,8 +26,11 @@ export interface NavSectionView {
 export default function Nav({
   sections,
   onNavigate,
+  collapsed = false,
 }: {
   sections: NavSectionView[];
+  /** Icons only: labels stay for screen readers and show as tooltips. */
+  collapsed?: boolean;
   /** Called after a link is followed. The mobile drawer uses it to close. */
   onNavigate?: () => void;
 }) {
@@ -35,16 +38,17 @@ export default function Nav({
   const idPrefix = useId();
 
   return (
-    <nav aria-label="Admin" className="flex flex-col gap-5">
+    <nav aria-label="Admin" className={cn("flex flex-col", collapsed ? "gap-3" : "gap-5")}>
       {sections.map((section) => {
         const headingId = `${idPrefix}-${section.id}`;
         return (
           <div key={section.id}>
             {section.label ? (
-              <p id={headingId} className="px-3 pb-1 text-xs font-medium text-muted-foreground">
+              <p id={headingId} className={cn("px-3 pb-1 text-xs font-medium text-muted-foreground", collapsed && "sr-only")}>
                 {section.label}
               </p>
             ) : null}
+            {section.label && collapsed ? <div aria-hidden="true" className="mx-2 mb-2 h-px bg-border" /> : null}
             <ul aria-labelledby={section.label ? headingId : undefined} className="flex flex-col gap-0.5">
               {section.items.map((item) => {
                 const active = isActive(pathname, item.href);
@@ -54,15 +58,17 @@ export default function Nav({
                       href={item.href}
                       aria-current={active ? "page" : undefined}
                       onClick={onNavigate}
+                      title={collapsed ? item.label : undefined}
                       className={cn(
-                        "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        "flex items-center gap-3 rounded-md py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        collapsed ? "justify-center px-0" : "px-3",
                         active
                           ? "bg-accent font-medium text-accent-foreground"
                           : "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground"
                       )}
                     >
                       {item.icon}
-                      <span>{item.label}</span>
+                      <span className={collapsed ? "sr-only" : "truncate"}>{item.label}</span>
                     </Link>
                   </li>
                 );

@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
+import Icon from "@/components/icons/Icon";
 import { useReducedMotion } from "@/lib/use-reduced-motion";
-import { X } from "lucide-react";
 import NavItem from "./NavItem";
 import ThemeSwitch from "../theme/theme-switch";
 import { SiteNavigations } from "@/config/nav";
@@ -113,7 +113,7 @@ const SideBar = ({ currentPath, title, opened, close }: SideBarProps) => {
             aria-label="Close navigation"
             className="flex h-11 w-11 items-center justify-center rounded text-[#acaebf] transition-colors hover:text-white"
           >
-            <X size={18} aria-hidden="true" />
+            <Icon name="x" className="size-[18px]" />
           </button>
         </div>
 

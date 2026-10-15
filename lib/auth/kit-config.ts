@@ -1,4 +1,5 @@
 import { defineAuthKit, type Person as GenericPerson } from "@sahan-sac/auth-kit/kit";
+import { deliveryHosts, storageAccountsFromEnv, uploadOrigins } from "@sahan-sac/media-kit/accounts";
 import type { LimitRule } from "@sahan-sac/auth-kit/cache/ratelimit";
 import {
   canBeGranted as canBeGrantedGeneric,
@@ -59,6 +60,7 @@ export const SYSTEM_ROLE_ROWS = ROLES.map((name) => ({
 export const PERMISSIONS = [
   // Dashboard
   "viewDashboard",
+  "viewAnalytics",
   // Pages
   "editPages",
   "publishPages",
@@ -127,6 +129,7 @@ export interface PermissionInfo {
 
 export const PERMISSION_INFO: Record<Permission, PermissionInfo> = {
   viewDashboard: { group: "Dashboard", label: "View dashboard", description: "Open the admin dashboard." },
+  viewAnalytics: { group: "Dashboard", label: "View site analytics", description: "See visitors, page views, top pages, referrers, devices and countries." },
   editPages: { group: "Pages", label: "Edit pages", description: "Save drafts of page sections." },
   publishPages: { group: "Pages", label: "Publish pages", description: "Publish and restore page sections." },
   editCollections: { group: "Works", label: "Edit works data", description: "Create and edit projects, experience, services and skills. Saved unpublished." },
@@ -199,13 +202,13 @@ export const DEFAULT_GRANTS: Record<"MANAGER" | "EDITOR", readonly Permission[]>
 };
 
 /** Bump when a release adds permissions, and record them in PERMISSION_ADDED_IN. */
-export const RBAC_SEED_VERSION = 2;
+export const RBAC_SEED_VERSION = 3;
 
 /**
  * Seed version in which a permission first existed. Permissions missing from
  * this map have existed since version 1.
  */
-export const PERMISSION_ADDED_IN: Partial<Record<Permission, number>> = { manageChatbotTraining: 2 };
+export const PERMISSION_ADDED_IN: Partial<Record<Permission, number>> = { manageChatbotTraining: 2, viewAnalytics: 3 };
 
 /**
  * A permission split out of another. On upgrade every role that held the
@@ -225,6 +228,10 @@ export const LIMITS = {
   // Wrong tries carry over between codes, so a few more sends do not help guessing;
   // this only caps email volume, and a flaky mail send still uses one.
   "mfa:send:user": { windowSeconds: 600, max: 5, failMode: "closed" },
+  // Wrong codes while confirming a new authenticator app.
+  "mfa:setup:user": { windowSeconds: 600, max: 10, failMode: "closed" },
+  // Passwordless passkey sign-ins started from one address.
+  "passkey-sign-in:ip": { windowSeconds: 600, max: 20, failMode: "closed" },
   "invite:actor": { windowSeconds: 3600, max: 20, failMode: "closed" },
   "reset:ip": { windowSeconds: 3600, max: 8, failMode: "closed" },
   "reset:email": { windowSeconds: 3600, max: 3, failMode: "closed" },
@@ -232,13 +239,19 @@ export const LIMITS = {
   "upload:sign:user": { windowSeconds: 600, max: 30, failMode: "closed" },
   // Admin AI, split by cost so cheap text helpers (SEO, draft, cover prompt)
   // never use up the budget for full posts, which run text + up to 4 images.
-  "ai:post:user": { windowSeconds: 3600, max: 20, failMode: "open" },
-  "ai:image:user": { windowSeconds: 3600, max: 40, failMode: "open" },
-  "ai:text:user": { windowSeconds: 3600, max: 120, failMode: "open" },
+  // Closed: every call is paid, so a Redis outage must not lift the cap.
+  "ai:post:user": { windowSeconds: 3600, max: 20, failMode: "closed" },
+  "ai:image:user": { windowSeconds: 3600, max: 40, failMode: "closed" },
+  "ai:text:user": { windowSeconds: 3600, max: 120, failMode: "closed" },
   "contact:ip": { windowSeconds: 3600, max: 5, failMode: "open" },
   "contact:global": { windowSeconds: 3600, max: 100, failMode: "open" },
   "chat:ip": { windowSeconds: 600, max: 20, failMode: "closed" },
   "chat:session": { windowSeconds: 60, max: 6, failMode: "closed" },
+  // Uncached deep-archive pages of the public content API (cursor requests).
+  "content:ip": { windowSeconds: 60, max: 60, failMode: "open" },
+  // Page-view beacon, keyed by the daily visitor hash (never the raw IP).
+  // Open: analytics must never block or slow a page.
+  "collect:visitor": { windowSeconds: 60, max: 60, failMode: "open" },
 } as const satisfies Record<string, LimitRule>;
 
 export type LimitName = keyof typeof LIMITS;
@@ -246,6 +259,14 @@ export type LimitName = keyof typeof LIMITS;
 function trustedProxyHops(): number {
   const parsed = Number.parseInt(process.env.TRUSTED_PROXY_HOPS ?? "", 10);
   return Number.isInteger(parsed) && parsed >= 0 && parsed <= 10 ? parsed : 0;
+}
+
+function mediaCsp(): { imgHosts: string[]; connectHosts: string[] } {
+  const { accounts } = storageAccountsFromEnv(process.env);
+  return {
+    imgHosts: deliveryHosts(accounts).map((host) => `https://${host}`),
+    connectHosts: uploadOrigins(accounts),
+  };
 }
 
 export const authKit = defineAuthKit<RoleName, Permission>({
@@ -256,6 +277,7 @@ export const authKit = defineAuthKit<RoleName, Permission>({
     // /admin/set-password, /admin/confirm-email, /admin); only this one
     // carries an app-specific query string.
     accountPasswordChange: "/admin/account?reason=change-password",
+    mfaSetup: "/admin/account?reason=set-up-mfa#security",
   },
   keyPrefix: "app:",
   roles: ROLES,
@@ -265,7 +287,12 @@ export const authKit = defineAuthKit<RoleName, Permission>({
   fixedGrants: FIXED_GRANTS,
   defaultGrants: DEFAULT_GRANTS,
   limits: LIMITS,
-  csp: { imgHosts: ["https://res.cloudinary.com"], connectHosts: ["https://api.cloudinary.com"] },
+  // The two roles that can change everything must set up an authenticator app
+  // or a passkey before they can use the admin.
+  strongMfaRoles: [SUPER_ROLE, MASK_ROLE],
+  // Every configured media account: where its files are served from, and
+  // where the browser sends uploads (Cloudinary's API, or each bucket).
+  csp: mediaCsp(),
   trustProxy: { hops: trustedProxyHops() },
   onEvent: (event) => log.warn(`auth-kit: ${event.type}`, event),
 });

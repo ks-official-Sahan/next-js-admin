@@ -7,6 +7,7 @@ import { z } from "zod";
 import { audit, auditMany, auditSafe, type AuditEvent } from "@/lib/admin/audit";
 import { done, fail, fieldErrorsFrom, formValues, type ActionState } from "@/lib/actions/state";
 import { authorizeAction } from "@/lib/actions/guard";
+import { generatePassword } from "@/lib/admin/generate-password";
 import { INVITE_TTL_HOURS, RESET_TTL_MINUTES, createToken } from "@/lib/auth/invite-token";
 import { accountLink, signInLink } from "@/lib/auth/links";
 import { checkPassword } from "@/lib/auth/password-policy";
@@ -17,7 +18,7 @@ import { invalidateSessionState, invalidateUserSessionState, revokeSessions, rev
 import { limit } from "@/lib/cache/ratelimit";
 import { repos, withTx } from "@/lib/data";
 import { sendAccountEmail } from "@/lib/email/account-mail";
-import { accountCreated, invite, passwordReset } from "@/lib/email/templates";
+import { invite, passwordReset } from "@/lib/email/templates";
 import { getEnv } from "@/lib/env";
 import type { UserRef } from "@/lib/data/users";
 import { log } from "@/lib/log";
@@ -221,32 +222,39 @@ export async function revokeInvite(_previous: ActionState, formData: FormData): 
   return done("Invitation cancelled.");
 }
 
-export async function createUser(_previous: ActionState, formData: FormData): Promise<ActionState> {
+/**
+ * Creates an account. By default this sends the single-use invitation link
+ * (inviteUser): the person sets their own password and no password ever
+ * leaves the server. The alternative, "access=password", makes a random
+ * temporary password, shows it to the creator once and never emails it; the
+ * person must replace it at first sign-in. An administrator never chooses the
+ * password (OWASP ASVS: initial secrets are system-generated).
+ */
+export async function createUser(previous: ActionState, formData: FormData): Promise<ActionState> {
   const access = await authorizeAction("manageUsers");
   if (!access.ok) return fail(access.error);
+  if (formData.get("access") !== "password") return inviteUser(previous, formData);
   const roles = await getRoleCatalog();
   const { user: actor } = access;
 
-  const parsed = z
-    .object({ email, role, name, password: z.string().max(128, "Use at most 128 characters.") })
-    .safeParse(formValues(formData));
+  const parsed = z.object({ email, role, name }).safeParse(formValues(formData));
   if (!parsed.success) return fail("Check the form.", fieldErrorsFrom(parsed.error.issues));
-  // Same hidden "0" plus checkbox "1" as the invite form; a post with neither still emails.
-  const notifyValues = formData.getAll("notify");
-  const notify = notifyValues.length === 0 || notifyValues.includes("1");
 
   const allowed = checkInvite(roles, actor, parsed.data.role);
   if (!allowed.ok) return fail(allowed.error);
 
-  const policy = checkPassword(parsed.data.password, { email: parsed.data.email, name: parsed.data.name });
-  if (!policy.ok) return fail("Choose a stronger password.", { password: policy.problems.join(" ") });
+  // Generated until it passes the policy (it always does at this length; the loop is a guard).
+  const passes = (candidate: string) => checkPassword(candidate, { email: parsed.data.email, name: parsed.data.name }).ok;
+  let password = generatePassword();
+  for (let tries = 0; !passes(password) && tries < 5; tries++) password = generatePassword();
+  if (!passes(password)) return fail("Could not generate a temporary password. Try again, or send an invitation instead.");
 
   if (await repos.users.existsByEmail(parsed.data.email)) {
     return fail("An account with that email already exists.", { email: "Already has an account." });
   }
 
   try {
-    const passwordHash = await hashPassword(parsed.data.password);
+    const passwordHash = await hashPassword(password);
     await withTx(async (tx) => {
       const created = await tx.users.create({
         email: parsed.data.email,
@@ -263,7 +271,7 @@ export async function createUser(_previous: ActionState, formData: FormData): Pr
           actor,
           entityType: "User",
           entityId: created.id,
-          after: { email: parsed.data.email, role: parsed.data.role, mustChangePassword: true },
+          after: { email: parsed.data.email, role: parsed.data.role, mustChangePassword: true, temporaryPassword: "shown once" },
         },
         tx
       );
@@ -273,21 +281,10 @@ export async function createUser(_previous: ActionState, formData: FormData): Pr
   }
 
   revalidatePath(USERS_PATH);
-  const created = `${parsed.data.email} can sign in with the password you set, and must change it first.`;
-  if (!notify) return done(created);
-
-  // The email carries a sign-in link, never the password: share that another way.
-  const signInUrl = (await signInLink()).url;
-  const sent = await sendAccountEmail({
-    to: parsed.data.email,
-    render: (options) =>
-      accountCreated({ name: parsed.data.name || null, creatorName: actor.name ?? actor.email, role: parsed.data.role, signInUrl }, options),
-    category: "invite",
-    actor,
-  }).catch(() => ({ ok: false as const }));
-  return sent.ok
-    ? done(`${created} A sign-in link was emailed; share the password another way.`)
-    : done(`${created} The welcome email could not be sent; share the sign-in page and password yourself.`);
+  // Shown once, in this response only: the database keeps the hash.
+  return done(`${parsed.data.email} was created. Share the temporary password privately; they must change it at first sign-in.`, {
+    secret: password,
+  });
 }
 
 export async function changeRole(_previous: ActionState, formData: FormData): Promise<ActionState> {

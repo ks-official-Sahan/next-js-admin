@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 
+import Icon from "@/components/icons/Icon";
 import { checkAiProviderAction, type AiCheckState } from "@/lib/actions/integrations";
 import { Button } from "@/components/admin/ui/button";
 import { cn } from "@/lib/utils";
@@ -24,11 +24,10 @@ export default function AiCheckButton({ id, name }: { id: string; name: string }
       }
     });
 
-  const Icon = result?.reachable ? CheckCircle2 : XCircle;
   return (
     <>
       <Button type="button" variant="outline" size="sm" onClick={run} disabled={pending} aria-label={`Check ${name} now`}>
-        {pending ? <Loader2 aria-hidden className="size-3.5 animate-spin" /> : null}
+        {pending ? <Icon lucideIconName="Loader2" className="size-3.5 animate-spin" /> : null}
         {pending ? "Checking…" : "Check"}
       </Button>
       <p
@@ -42,7 +41,7 @@ export default function AiCheckButton({ id, name }: { id: string; name: string }
       >
         {result ? (
           <>
-            <Icon aria-hidden className="mt-px size-3.5 shrink-0" />
+            <Icon lucideIconName={result.reachable ? "CheckCircle2" : "XCircle"} className="mt-px size-3.5" />
             <span>{result.message}</span>
           </>
         ) : null}

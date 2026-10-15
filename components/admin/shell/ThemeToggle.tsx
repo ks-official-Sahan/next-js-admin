@@ -1,15 +1,15 @@
 "use client";
 
-import { Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useSyncExternalStore } from "react";
 
+import Icon from "@/components/icons/Icon";
 import { cn } from "@/lib/utils";
 
 const options = [
-  { value: "light", label: "Light theme", Icon: Sun },
-  { value: "system", label: "System theme", Icon: Monitor },
-  { value: "dark", label: "Dark theme", Icon: Moon },
+  { value: "light", label: "Light theme", icon: { name: "brightness-down" } },
+  { value: "system", label: "System theme", icon: { lucideIconName: "Monitor" } },
+  { value: "dark", label: "Dark theme", icon: { name: "moon" } },
 ] as const;
 
 const subscribe = () => () => {};
@@ -27,7 +27,7 @@ export default function ThemeToggle() {
 
   return (
     <div role="group" aria-label="Theme" className="flex items-center rounded-md border border-border p-0.5">
-      {options.map(({ value, label, Icon }) => {
+      {options.map(({ value, label, icon }) => {
         const selected = hydrated && theme === value;
         return (
           <button
@@ -43,7 +43,7 @@ export default function ThemeToggle() {
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            <Icon aria-hidden="true" className="size-4" />
+            <Icon {...icon} />
           </button>
         );
       })}

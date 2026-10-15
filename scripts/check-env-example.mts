@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { aiEnvSchema } from "@sahan-sac/ai-core/env";
+import { emailEnvSchema } from "@sahan-sac/email-kit/env";
 import { mediaEnvSchema } from "@sahan-sac/media-kit/env";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -19,6 +20,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 // modules are pure, so they can be imported here, unlike lib/env.ts itself.
 const SPREAD_SCHEMAS: Record<string, readonly string[]> = {
   aiEnvSchema: Object.keys(aiEnvSchema.shape),
+  emailEnvSchema: Object.keys(emailEnvSchema.shape),
   mediaEnvSchema: Object.keys(mediaEnvSchema.shape),
 };
 

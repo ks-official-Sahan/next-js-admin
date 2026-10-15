@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import ActionForm, { ConfirmSubmitButton, SubmitButton } from "@/components/admin/ui/ActionForm";
 import { badgeClass, buttonVariants, fieldClass, tableClass, tdClass, thClass } from "@/components/admin/ui/styles";
 import type { ActionState } from "@/lib/actions/state";
-import { bulkDeletePostsAction, bulkPostStatusAction } from "@/lib/actions/blog";
+import { bulkArchivePostsAction, bulkDeletePostsAction, bulkPostStatusAction } from "@/lib/actions/blog";
 import { useAdminBlogPosts, useInvalidateAdminBlogPosts } from "@/lib/admin/hooks/use-blog-posts";
 import {
   ADMIN_POST_STATUS_FILTERS,
@@ -136,9 +136,18 @@ export default function BlogListClient({ canPublish, canDelete }: { canPublish: 
               <SubmitButton name="action" value="unpublish" variant="small" pendingLabel="Working…">
                 Unpublish
               </SubmitButton>
-              <SubmitButton name="action" value="archive" variant="smallDanger" pendingLabel="Working…">
+            </ActionForm>
+          ) : null}
+          {canDelete ? (
+            <ActionForm action={bulkArchivePostsAction} onResult={afterBulkAction} className="flex items-center gap-2">
+              <input type="hidden" name="ids" value={idsJson} />
+              <ConfirmSubmitButton
+                variant="smallDanger"
+                pendingLabel="Archiving…"
+                confirmMessage={`Archive ${selected.size} post${selected.size === 1 ? "" : "s"}?`}
+              >
                 Archive
-              </SubmitButton>
+              </ConfirmSubmitButton>
             </ActionForm>
           ) : null}
           {canDelete ? (

@@ -3,7 +3,7 @@ import "server-only";
 import { cached } from "@/lib/cache/cached";
 import { invalidate } from "@/lib/cache/invalidate";
 import { forSettings } from "@/lib/cache/plan";
-import { staticTags } from "@/lib/cache/tags";
+import { staticTags, TAGS } from "@/lib/cache/tags";
 import { repos, withTx } from "@/lib/data";
 import { audit } from "@/lib/admin/audit";
 import type { AuthUser } from "@/lib/auth/dal";
@@ -31,27 +31,58 @@ import { isKvMirrored, KV_MIRRORED_SETTINGS, writeKvSetting } from "./kv";
 
 type SettingValue<K extends SettingKey> = SettingValueOf<K>;
 
-/**
- * Read one setting, falling back to its default when not stored or invalid.
- * Not cached; use getSetting/getPublicSettings/getAllSettings for cached reads.
- */
-async function readSettingRaw<K extends SettingKey>(key: K): Promise<SettingValue<K>> {
-  if (!isSettingKey(key)) return getSettingDefault(key) as SettingValue<K>;
+const PUBLIC_KEYS = (Object.keys(DEFAULT_SETTINGS) as SettingKey[]).filter(isPublicSetting);
+const ALL_KEYS = Object.keys(DEFAULT_SETTINGS) as SettingKey[];
 
+// Two kinds of read. The "stored" readers throw when the database fails and
+// are the only ones wrapped in cached(): a default is never written into the
+// cache, so one database blip cannot pin defaults site-wide for the cache
+// lifetime (lib/cache/cached.ts: "never put a code-default fallback inside
+// fn"). A stored value that fails validation still reads as its default; that
+// is the data's state, not an outage, so caching it is correct. The callers
+// below apply the default on error, outside the cache.
+
+/** The stored value or its default when not stored or invalid. Throws when the database fails. */
+async function readStoredSetting<K extends SettingKey>(key: K): Promise<SettingValue<K>> {
+  if (!isSettingKey(key)) return getSettingDefault(key) as SettingValue<K>;
+  const row = await repos.settings.find(key);
+  return (row ? validOrDefault(key, row.value) : getSettingDefault(key)) as SettingValue<K>;
+}
+
+function validOrDefault(key: SettingKey, value: unknown): unknown {
   try {
-    const row = await repos.settings.find(key);
-    if (!row) return getSettingDefault(key) as SettingValue<K>;
-    return validateSetting(key, row.value) as SettingValue<K>;
+    return validateSetting(key, value);
   } catch (err) {
-    log.error("Failed to read setting", { key, error: String(err) });
-    return getSettingDefault(key) as SettingValue<K>;
+    log.error("Stored setting is invalid, using its default", { key, error: String(err) });
+    return getSettingDefault(key);
   }
+}
+
+function defaultsFor(keys: SettingKey[]): Record<SettingKey, unknown> {
+  const result = {} as Record<SettingKey, unknown>;
+  for (const key of keys) result[key] = getSettingDefault(key);
+  return result;
+}
+
+/** Runs `read`; when it throws, logs and answers `fallback()` (never cached). */
+async function orDefault<T>(read: () => Promise<T>, fallback: () => T, context: Record<string, unknown>): Promise<T> {
+  try {
+    return await read();
+  } catch (err) {
+    log.error("Failed to read settings, using defaults", { ...context, error: String(err) });
+    return fallback();
+  }
+}
+
+/** Read one setting, falling back to its default when not stored, invalid or unreadable. Not cached. */
+async function readSettingRaw<K extends SettingKey>(key: K): Promise<SettingValue<K>> {
+  return orDefault(() => readStoredSetting(key), () => getSettingDefault(key) as SettingValue<K>, { key });
 }
 
 /** One cached setting. Use in request handlers and Server Components. */
 export async function getSetting<K extends SettingKey>(key: K): Promise<SettingValue<K>> {
-  const fn = async () => readSettingRaw(key);
-  return cached(fn, [`setting:${key}`], { tags: ["settings", `settings:${key}`] })();
+  const read = cached(() => readStoredSetting(key), [`setting:${key}`], { tags: [TAGS.settings, `settings:${key}`] });
+  return orDefault(read, () => getSettingDefault(key) as SettingValue<K>, { key });
 }
 
 /**
@@ -62,45 +93,40 @@ export async function getSetting<K extends SettingKey>(key: K): Promise<SettingV
  * can be unit tested without going through unstable_cache.
  */
 export async function collectPublicSettings(): Promise<Partial<Record<SettingKey, unknown>>> {
-  return readSettingsRaw((Object.keys(DEFAULT_SETTINGS) as SettingKey[]).filter(isPublicSetting));
+  return readSettingsRaw(PUBLIC_KEYS);
 }
 
 /**
- * Several settings in one query (not one round trip per key), each falling
- * back to its default when not stored or invalid, exactly like readSettingRaw.
+ * Several settings in one query (not one round trip per key), each its stored
+ * value or its default when not stored or invalid. Throws when the database fails.
  */
-async function readSettingsRaw(keys: SettingKey[]): Promise<Record<SettingKey, unknown>> {
-  let rows: { key: string; value: unknown }[] = [];
-  try {
-    rows = await repos.settings.findMany(keys);
-  } catch (err) {
-    log.error("Failed to read settings", { count: keys.length, error: String(err) });
-  }
+async function readStoredSettings(keys: SettingKey[]): Promise<Record<SettingKey, unknown>> {
+  const rows = await repos.settings.findMany(keys);
   const stored = new Map(rows.map((row) => [row.key, row.value]));
   const result = {} as Record<SettingKey, unknown>;
-  for (const key of keys) {
-    try {
-      result[key] = stored.has(key) ? validateSetting(key, stored.get(key)) : getSettingDefault(key);
-    } catch (err) {
-      log.error("Failed to read setting", { key, error: String(err) });
-      result[key] = getSettingDefault(key);
-    }
-  }
+  for (const key of keys) result[key] = stored.has(key) ? validOrDefault(key, stored.get(key)) : getSettingDefault(key);
   return result;
+}
+
+/** readStoredSettings, with every default when the database fails. Not cached. */
+async function readSettingsRaw(keys: SettingKey[]): Promise<Record<SettingKey, unknown>> {
+  return orDefault(() => readStoredSettings(keys), () => defaultsFor(keys), { count: keys.length });
 }
 
 /** Cached entry point for request handlers and Server Components. */
 export async function getPublicSettings(): Promise<Partial<Record<SettingKey, unknown>>> {
-  return cached(collectPublicSettings, ["settings:public"], { tags: ["settings:public"] })();
+  const read = cached(() => readStoredSettings(PUBLIC_KEYS), ["settings:public"], { tags: ["settings:public"] });
+  return orDefault(read, () => defaultsFor(PUBLIC_KEYS), { count: PUBLIC_KEYS.length });
 }
 
 /** Every setting, for admin screens that hold a permission to see all of them. */
 export async function collectAllSettings(): Promise<Record<SettingKey, unknown>> {
-  return readSettingsRaw(Object.keys(DEFAULT_SETTINGS) as SettingKey[]);
+  return readSettingsRaw(ALL_KEYS);
 }
 
 export async function getAllSettings(): Promise<Record<SettingKey, unknown>> {
-  return cached(collectAllSettings, ["settings:all"], { tags: ["settings"] })();
+  const read = cached(() => readStoredSettings(ALL_KEYS), ["settings:all"], { tags: [TAGS.settings] });
+  return orDefault(read, () => defaultsFor(ALL_KEYS), { count: ALL_KEYS.length });
 }
 
 /**
@@ -145,7 +171,7 @@ export async function updateSetting<K extends SettingKey>(
   await mirrorSettingToKv(key, validated);
 
   const plan = forSettings();
-  invalidate({ tags: [...new Set([`settings:${key}`, "settings", ...plan.tags])], paths: plan.paths });
+  await invalidate({ tags: [...new Set([`settings:${key}`, TAGS.settings, ...plan.tags])], paths: plan.paths });
 }
 
 /**
@@ -183,6 +209,6 @@ export async function syncSettingsToKv(): Promise<void> {
 
 /** Invalidate every cache tag and repair the KV mirror. Backs the "clear cache" button. */
 export async function clearAllCaches(): Promise<void> {
-  invalidate({ tags: staticTags(), paths: [{ path: "/", type: "layout" }] });
+  await invalidate({ tags: staticTags(), paths: [{ path: "/", type: "layout" }] });
   await syncSettingsToKv();
 }

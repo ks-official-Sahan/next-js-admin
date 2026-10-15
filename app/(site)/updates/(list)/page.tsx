@@ -1,7 +1,7 @@
 import FinalCta from "@/components/home/FinalCta";
 import UpdatesPageView from "@/components/pages/UpdatesPageView";
 import { getPageContent } from "@/lib/cms/loaders";
-import { getPosts } from "@/lib/blog/queries";
+import { encodePublicPostCursor, getPublicPostPage } from "@/lib/blog/queries";
 import React from "react";
 
 // /updates: 300s revalidate (design notes, section 5.1), so a
@@ -10,17 +10,17 @@ import React from "react";
 export const revalidate = 300;
 
 const Updates = async () => {
-  const [updates, home, posts] = await Promise.all([
+  const [updates, home, postPage] = await Promise.all([
     getPageContent("updates"),
     getPageContent("home"),
-    getPosts(),
+    getPublicPostPage(20),
   ]);
 
   const finalCta = (
-    <FinalCta content={home.finalCta} channels={home.channels} />
+    <FinalCta key="final-cta" content={home.finalCta} channels={home.channels} />
   );
 
-  const listPosts = posts.map((post) => ({
+  const listPosts = postPage.items.map((post) => ({
     id: post.id,
     slug: post.slug,
     title: post.title,
@@ -30,7 +30,8 @@ const Updates = async () => {
     tags: post.tags,
   }));
 
-  return <UpdatesPageView content={updates} posts={listPosts} finalCta={finalCta} />;
+  const nextCursor = postPage.nextCursor ? encodePublicPostCursor(postPage.nextCursor) : null;
+  return <UpdatesPageView content={updates} posts={listPosts} nextCursor={nextCursor} finalCta={finalCta} />;
 };
 
 export default Updates;

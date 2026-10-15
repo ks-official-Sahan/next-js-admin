@@ -4,7 +4,9 @@ import { strict as assert } from "node:assert";
 import type { AuditRow } from "@/lib/data/audit";
 import type { MaintenanceRepo } from "@/lib/data/maintenance";
 
-import { AUDIT_PRUNE_BATCH, auditPruneJob, blogPublishJob, revisionPruneJob, sessionCleanupJob, CLEANUP_GRACE_MS } from "./jobs";
+import { AUDIT_PRUNE_BATCH, auditPruneJob, blogPublishJob, revisionPruneJob, sectionPruneJob, sessionCleanupJob, trashPurgeJob, webhookRetryJob, CLEANUP_GRACE_MS } from "./jobs";
+import type { WebhookRepo } from "@/lib/data/webhooks";
+import type { TrashItem, TrashRepo } from "@/lib/data/trash";
 
 // In-memory maintenance repositories. Each keeps the repository contract
 // (lib/data/maintenance.ts) over plain arrays, which is enough to prove the
@@ -69,6 +71,7 @@ function fakeMaintenance(data: {
       return removeWhere(audit, (row) => drop.has(row.id!));
     },
     pruneRevisions: unused,
+    pruneSupersededBlocks: unused,
     ping: unused,
   };
 }
@@ -177,7 +180,7 @@ describe("auditPruneJob", () => {
     assert.equal(result.deleted, 1);
     assert.equal(rows.length, 1);
     assert.equal(created.length, 1);
-    assert.equal(created[0].action, "audit.exported");
+    assert.equal(created[0].action, "audit.pruned");
   });
 
   test("deletes a backlog larger than one batch", async () => {
@@ -220,5 +223,110 @@ describe("revisionPruneJob", () => {
     const result = await revisionPruneJob({ maintenance });
     assert.equal(result.deleted, 0);
     assert.ok(result.error);
+  });
+});
+
+describe("sectionPruneJob", () => {
+  test("prunes superseded section versions to the history cap and reports the rows deleted", async () => {
+    const kept: number[] = [];
+    const maintenance = { ...fakeMaintenance({}), pruneSupersededBlocks: async (keep: number) => (kept.push(keep), 3) };
+    const result = await sectionPruneJob({ maintenance });
+    assert.equal(result.deleted, 3);
+    assert.deepEqual(kept, [20]);
+  });
+
+  test("db failure is caught and reported, not thrown", async () => {
+    const maintenance = { ...fakeMaintenance({}), pruneSupersededBlocks: async () => { throw new Error("db down"); } };
+    const result = await sectionPruneJob({ maintenance });
+    assert.equal(result.deleted, 0);
+    assert.ok(result.error);
+  });
+});
+
+describe("trashPurgeJob", () => {
+  const now = Date.parse("2026-11-30T00:00:00.000Z");
+  const item = (id: string, entityType: TrashItem["entityType"], data: unknown): TrashItem => ({
+    id,
+    entityType,
+    entityId: `e-${id}`,
+    label: id,
+    data,
+    deletedById: null,
+    deletedAt: new Date(now - 40 * 24 * 60 * 60 * 1000),
+  });
+
+  function fakeClient(expired: TrashItem[]) {
+    const removed: string[][] = [];
+    const created: AuditRow[] = [];
+    const trash = {
+      async expired(cutoff: Date) {
+        assert.ok(cutoff.getTime() < now);
+        return expired;
+      },
+      async remove(ids: string[]) {
+        removed.push(ids);
+        return ids.length;
+      },
+    } as unknown as TrashRepo;
+    const audit = {
+      async create(row: AuditRow) {
+        created.push(row);
+      },
+      createMany: unused,
+      page: unused,
+      actionNames: unused,
+    };
+    return { client: { trash, audit }, removed, created };
+  }
+
+  test("purges expired items, deletes media files, and keeps an item whose file Cloudinary refused", async () => {
+    const expired = [
+      item("post", "Post", { post: { slug: "a" } }),
+      item("img", "MediaAsset", { asset: { provider: "CLOUDINARY", publicId: "ok" } }),
+      item("bad", "MediaAsset", { asset: { provider: "CLOUDINARY", publicId: "refused" } }),
+    ];
+    const { client, removed, created } = fakeClient(expired);
+    const deletedFiles: string[] = [];
+    const result = await trashPurgeJob(
+      client,
+      async (file) => {
+        if (file.publicId === "refused") throw new Error("nope");
+        deletedFiles.push(`${file.accountId}:${file.publicId}`);
+      },
+      now
+    );
+    assert.equal(result.deleted, 2);
+    assert.deepEqual(deletedFiles, ["cloudinary:ok"]);
+    assert.deepEqual(removed, [["post", "img"]]);
+    assert.equal(created.length, 1);
+  });
+
+  test("does nothing and writes no audit row when nothing has expired", async () => {
+    const { client, removed, created } = fakeClient([]);
+    const result = await trashPurgeJob(client, async () => {}, now);
+    assert.equal(result.deleted, 0);
+    assert.equal(removed.length, 0);
+    assert.equal(created.length, 0);
+  });
+});
+
+describe("webhookRetryJob", () => {
+  test("delivers due deliveries and prunes old history", async () => {
+    const now = Date.parse("2026-11-30T00:00:00.000Z");
+    let prunedBefore: Date | null = null;
+    const webhooks = {
+      async dueIds() {
+        return ["a", "b"];
+      },
+      async pruneDeliveries(before: Date) {
+        prunedBefore = before;
+        return 3;
+      },
+    } as unknown as WebhookRepo;
+    const sent: string[][] = [];
+    const result = await webhookRetryJob({ webhooks }, async (ids) => sent.push(ids), now);
+    assert.deepEqual(result, { retried: 2, deleted: 3 });
+    assert.deepEqual(sent, [["a", "b"]]);
+    assert.ok(prunedBefore && (prunedBefore as Date).getTime() < now);
   });
 });

@@ -31,6 +31,8 @@ export const TAGS = {
   blogTaxonomy: "blog:taxonomy",
   siteConfig: "site:config",
   settingsPublic: "settings:public",
+  /** Every setting read (getSetting, getAllSettings); each key also has settings:<key>. */
+  settings: "settings",
   chatbotKnowledge: "chatbot:knowledge",
 } as const;
 
@@ -44,6 +46,7 @@ export function staticTags(): string[] {
     TAGS.blogTaxonomy,
     TAGS.siteConfig,
     TAGS.settingsPublic,
+    TAGS.settings,
     TAGS.chatbotKnowledge,
   ];
 }

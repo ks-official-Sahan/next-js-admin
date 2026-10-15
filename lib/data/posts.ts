@@ -11,6 +11,8 @@ export interface PostRow {
   contentHtml: string;
   /** Plain text for search and read time. */
   contentText: string;
+  /** The start of contentText, for lists (lib/blog/excerpt.ts). */
+  autoExcerpt: string;
   topic: string;
   tags: string[];
   status: PostStatus;
@@ -31,6 +33,7 @@ export interface PostRow {
 
 type OptionalColumn =
   | "excerpt"
+  | "autoExcerpt"
   | "coverMediaId"
   | "coverAlt"
   | "seoTitle"
@@ -51,10 +54,12 @@ export interface PublishedPostSummaryRow {
   slug: string;
   title: string;
   excerpt: string | null;
-  /** Only read to derive a missing excerpt. */
-  contentText: string;
+  /** Shown when there is no hand-written excerpt. */
+  autoExcerpt: string;
   topic: string;
   tags: string[];
+  /** Scheduled publication time; used as the effective publish date before cron promotion. */
+  publishAt: Date | null;
   publishedAt: Date | null;
   updatedAt: Date;
   readMinutes: number;
@@ -65,6 +70,15 @@ export interface PublishedPostSummaryRow {
   canonicalUrl: string | null;
   noindex: boolean;
   author: { name: string | null } | null;
+}
+
+/** The fields a sitemap or URL list needs: no text, so 1,000 rows stay small. */
+export interface PublishedPostRefRow {
+  id: string;
+  slug: string;
+  publishAt: Date | null;
+  publishedAt: Date | null;
+  updatedAt: Date;
 }
 
 export interface PublishedPostRow extends PublishedPostSummaryRow {
@@ -84,15 +98,44 @@ export interface AdminPostListRow {
 
 export interface PostRepo {
   /**
-   * Published posts, newest first, without bodies. Status is the only
-   * visibility gate: a SCHEDULED post stays hidden until something promotes
-   * it, never because its publishAt has passed.
+   * Bounded keyset page of public posts without bodies, newest first by
+   * effective publish time. A scheduled post becomes visible at publishAt
+   * even if the promotion cron is delayed. `visibleAt` (default now) is the
+   * instant visibility is judged at; a later one also returns posts that
+   * become due before it, for a cache that filters them when served.
    */
-  listPublished(): Promise<PublishedPostSummaryRow[]>;
-  /** One published post with its body. */
-  findPublished(slug: string): Promise<PublishedPostRow | null>;
+  listPublishedPage(
+    take: number,
+    after?: { publishedAt: Date; id: string },
+    indexableOnly?: boolean,
+    visibleAt?: Date
+  ): Promise<PublishedPostSummaryRow[]>;
+  /** The same keyset page of indexable posts as listPublishedPage, with reference fields only. */
+  listIndexableRefs(take: number, after?: { publishedAt: Date; id: string }): Promise<PublishedPostRefRow[]>;
+  /**
+   * Posts that become public after `from` and by `to` (a scheduled or
+   * published post whose publishAt falls in that window), soonest first:
+   * what a cached first page adds so a post appears at its publishAt.
+   */
+  listUpcoming(from: Date, to: Date, take: number, indexableOnly?: boolean): Promise<PublishedPostSummaryRow[]>;
+  /** Every post visible to the public at `visibleAt` (default now; same rule as findPublished), with its publishAt. */
+  listPublicSlugs(visibleAt?: Date): Promise<Array<{ slug: string; publishAt: Date | null }>>;
+  /** One post visible to the public at `visibleAt` (default now), with its body. */
+  findPublished(slug: string, visibleAt?: Date): Promise<PublishedPostRow | null>;
+  /** Old slugs that redirect, each with the current slug of its post. */
+  listSlugRedirects(): Promise<Array<{ slug: string; targetSlug: string }>>;
+  /**
+   * After a rename from `oldSlug` to `newSlug`: `oldSlug` redirects to the
+   * post, and any redirect that used `newSlug` is dropped (the slug is a real
+   * post again). A no-op when the slug did not change.
+   */
+  recordRename(postId: string, oldSlug: string, newSlug: string): Promise<void>;
+  /** Drops a redirect that used `slug`, for a new post that takes it. */
+  releaseSlug(slug: string): Promise<void>;
   find(id: string): Promise<PostRow | null>;
   findWithCoverUrl(id: string): Promise<(PostRow & { coverMedia: { url: string } | null }) | null>;
+  /** Any post by id, whatever its status, shaped like findPublished: for a signed preview. */
+  findForPreview(id: string): Promise<PublishedPostRow | null>;
   findMany(ids: string[]): Promise<PostRow[]>;
   /** Id of the post that uses `slug`, or null. */
   idBySlug(slug: string): Promise<string | null>;
@@ -103,6 +146,7 @@ export interface PostRepo {
   tagLists(limit: number, excludeId?: string): Promise<string[][]>;
   /** One admin list page, most recently edited first. `q` matches the title, ignoring case. */
   adminPage(input: { q?: string; status?: PostStatus; skip: number; take: number }): Promise<{ rows: AdminPostListRow[]; total: number }>;
+  /** Rows of any status. */
   count(): Promise<number>;
   /** Throws UniqueViolation when the slug is taken. */
   create(input: NewPost): Promise<PostRow>;

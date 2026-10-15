@@ -53,8 +53,15 @@ test("the audit matcher keeps ordinary fields that only look sensitive", () => {
   assert.equal(out.token, REDACTED);
 });
 
-test("the broad matcher over-redacts on purpose", () => {
-  const out = redact({ keywords: ["a"], statusCode: 500 }) as Record<string, unknown>;
-  assert.equal(out.keywords, REDACTED);
-  assert.equal(out.statusCode, REDACTED);
+test("the broad matcher keeps well-known harmless keys, and still over-redacts the rest", () => {
+  const out = redact({ keywords: ["a"], statusCode: 500, cacheKey: "blog:list", apiKey: "k", mfaCode: "1", codeHash: "h" }) as Record<
+    string,
+    unknown
+  >;
+  assert.deepEqual(out.keywords, ["a"]);
+  assert.equal(out.statusCode, 500);
+  assert.equal(out.cacheKey, "blog:list");
+  assert.equal(out.apiKey, REDACTED);
+  assert.equal(out.mfaCode, REDACTED);
+  assert.equal(out.codeHash, REDACTED);
 });

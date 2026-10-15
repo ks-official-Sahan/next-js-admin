@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import PageViewBeacon from "@/components/site/analytics/PageViewBeacon";
 import ChatWidgetLoader from "@/components/site/chat/ChatWidgetLoader";
 import SiteShell from "@/components/site/SiteShell";
 import { SiteMetadata } from "@/config/site";
@@ -33,6 +34,7 @@ export default async function SiteLayout({
   return (
     <SiteShell>
       {children}
+      <PageViewBeacon />
       {features.chatbotEnabled && chatbotEnabled() && (
         <ChatWidgetLoader enabled config={chatbotConfig} siteUrl={SiteMetadata.siteUrl} />
       )}

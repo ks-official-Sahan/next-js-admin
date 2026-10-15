@@ -32,7 +32,7 @@ test("staticTags lists every slug-independent tag once", () => {
   assert.ok(tags.includes("cms"));
   for (const slug of PAGE_SLUGS) assert.ok(tags.includes(TAGS.page(slug)));
   for (const name of COLLECTIONS) assert.ok(tags.includes(TAGS.collection(name)));
-  for (const tag of ["blog:list", "blog:taxonomy", "site:config", "settings:public", "chatbot:knowledge"]) {
+  for (const tag of ["blog:list", "blog:taxonomy", "site:config", "settings:public", "settings", "chatbot:knowledge"]) {
     assert.ok(tags.includes(tag), tag);
   }
   assert.equal(tags.some((tag) => tag.startsWith("blog:post:")), false);

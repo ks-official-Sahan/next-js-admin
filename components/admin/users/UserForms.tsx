@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Link2 } from "lucide-react";
 
+import Icon from "@/components/icons/Icon";
 import { createUser, inviteUser, regenerateInviteLink, revokeInvite } from "@/lib/actions/users";
 import type { ActionState } from "@/lib/actions/state";
 import ActionForm, { ConfirmSubmitButton, Field, SubmitButton, useActionResult } from "@/components/admin/ui/ActionForm";
 import CopyField from "@/components/admin/ui/CopyField";
-import { PasswordField } from "@/components/admin/ui/PasswordField";
 import { fieldClass } from "@/components/admin/ui/styles";
 import { ROLE_LABEL } from "@/lib/admin/roles";
 import type { RoleName } from "@/lib/auth/permissions";
@@ -79,32 +78,43 @@ export function CreateUserForm({ roles }: { roles: readonly RoleName[] }) {
     <ActionForm action={createUser} className="space-y-4">
       <Field label="Name" name="name" autoComplete="off" maxLength={80} />
       <Field label="Email" name="email" type="email" autoComplete="off" required maxLength={254} />
-      <PasswordField
-        label="Temporary password"
-        name="password"
-        autoComplete="new-password"
-        required
-        maxLength={128}
-        hint="At least 12 characters. The user must replace it at first sign-in."
-        generate
-      />
       <div>
         <label htmlFor="create-role" className="text-sm font-medium">
           Role
         </label>
         <RoleSelect id="create-role" roles={roles} />
       </div>
-      <label className="flex items-start gap-2 text-sm">
-        <input type="hidden" name="notify" value="0" />
-        <input type="checkbox" name="notify" value="1" defaultChecked className="mt-0.5 size-4 accent-primary" />
-        <span>
-          Email them a sign-in link
-          <span className="block text-xs text-muted-foreground">The password is never emailed: share it another way.</span>
-        </span>
-      </label>
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium">How do they get access?</legend>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="radio" name="access" value="invite" defaultChecked className="mt-0.5 size-4 accent-primary" />
+          <span>
+            Email an invitation link (recommended)
+            <span className="block text-xs text-muted-foreground">They set their own password. The link works once and lasts 72 hours.</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="radio" name="access" value="password" className="mt-0.5 size-4 accent-primary" />
+          <span>
+            Show me a one-time password
+            <span className="block text-xs text-muted-foreground">
+              Generated for you and shown once. Share it privately; it is never emailed, and they must change it at first sign-in.
+            </span>
+          </span>
+        </label>
+      </fieldset>
       <SubmitButton pendingLabel="Creating...">Create user</SubmitButton>
+      <CreatedAccess />
     </ActionForm>
   );
+}
+
+/** The invitation link or the one-time password from the last result, shown once. */
+function CreatedAccess() {
+  const { ok, secret, link } = useActionResult();
+  if (!ok) return null;
+  if (secret) return <CopyField label="Temporary password" value={secret} hint="Shown once. It is not stored anywhere you can read it again." />;
+  return link ? <CopyField label="Invitation link" value={link} hint="Works once. Copy it if the email does not arrive." /> : null;
 }
 
 /** Actions for one open invitation: a fresh link to copy (the old one stops working), or cancel it. */
@@ -123,7 +133,7 @@ export function InviteRowActions({ inviteId, email }: { inviteId: string; email:
             pendingLabel="Making..."
             confirmMessage={`Make a new link for ${email}? The link already sent stops working.`}
           >
-            <Link2 aria-hidden className="size-3.5" />
+            <Icon name="link" className="size-3.5" />
             New link
           </ConfirmSubmitButton>
         </ActionForm>

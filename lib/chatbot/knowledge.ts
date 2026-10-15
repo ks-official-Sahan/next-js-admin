@@ -7,7 +7,7 @@ import { loadOrNull } from "@/lib/cache/fallback";
 import { TAGS } from "@/lib/cache/tags";
 import { repos } from "@/lib/data";
 import { log } from "@/lib/log";
-import { getPosts } from "@/lib/blog/queries";
+import { getRecentPosts } from "@/lib/blog/queries";
 import { getPageContent } from "@/lib/cms/loaders";
 
 import { chatSite } from "./site";
@@ -20,7 +20,7 @@ import { chatSite } from "./site";
 
 async function siteContent(): Promise<string> {
   const parts: string[] = [];
-  const [home, contact, posts] = await Promise.all([getPageContent("home"), getPageContent("contact"), getPosts()]);
+  const [home, contact, posts] = await Promise.all([getPageContent("home"), getPageContent("contact"), getRecentPosts(10)]);
 
   parts.push("### Site Overview\n");
   if (home.hero?.title) {
@@ -31,7 +31,7 @@ async function siteContent(): Promise<string> {
   // Posts: the question visitors actually ask ("what's new?").
   if (posts.length > 0) {
     parts.push("\n### Recent writing (on /updates)\n");
-    for (const post of posts.slice(0, 10)) parts.push(`- ${post.title} (/updates/${post.slug})\n`);
+    for (const post of posts) parts.push(`- ${post.title} (/updates/${post.slug})\n`);
   }
 
   if (contact.socials?.items && Array.isArray(contact.socials.items)) {

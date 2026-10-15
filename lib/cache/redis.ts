@@ -15,7 +15,8 @@ import { FailoverKv, MemoryKv, type Kv } from "./memory";
 // (design notes, D7 and D8): it caches and limits. Every key is
 // prefixed so the instance can be shared.
 
-const PREFIX = "app:";
+export const REDIS_PREFIX = "app:";
+const PREFIX = REDIS_PREFIX;
 
 type Env = Record<string, string | undefined>;
 

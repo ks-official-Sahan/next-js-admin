@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 
+import { deliveryPatterns, storageAccountsFromEnv } from "@sahan-sac/media-kit/accounts";
 import { buildPublicCsp } from "./lib/security/public-csp";
 
 const dev = process.env.NODE_ENV !== "production";
@@ -20,6 +21,12 @@ const SECURITY_HEADERS = [
 ] as const;
 
 const nextConfig: NextConfig = {
+  // The Docker image sets NEXT_OUTPUT=standalone: a self-contained server.js
+  // with only the traced node_modules. Vercel builds leave it unset.
+  ...(process.env.NEXT_OUTPUT === "standalone" ? { output: "standalone" as const } : {}),
+  // Version-skew protection for rolling container deploys (assets carry
+  // ?dpl=<id>). Vercel sets its own when skew protection is on.
+  ...(process.env.NEXT_DEPLOYMENT_ID ? { deploymentId: process.env.NEXT_DEPLOYMENT_ID } : {}),
   poweredByHeader: false,
   // Gzip in `next start` only. In dev it buys nothing on localhost, and its
   // per-response gzip stream is what raises MaxListenersExceededWarning [Gzip]
@@ -56,19 +63,27 @@ const nextConfig: NextConfig = {
   },
   images: {
     qualities: [70, 75, 80, 85, 90, 95],
-    // Only this site's own Cloudinary cloud. Without a cloud name there are
-    // no Cloudinary images to serve, and a "**" fallback would let the
-    // optimizer fetch from any Cloudinary account.
-    remotePatterns: process.env.CLOUDINARY_CLOUD_NAME
-      ? [
-          {
-            protocol: "https",
-            hostname: "res.cloudinary.com",
-            port: "",
-            pathname: `/${process.env.CLOUDINARY_CLOUD_NAME}/**`,
-          },
-        ]
-      : [],
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "avatars.githubusercontent.com",
+        port: "",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
+        hostname: "raw.githubusercontent.com",
+        port: "",
+        pathname: "/**",
+      },
+      // Only this site's own media accounts: each Cloudinary cloud's path and
+      // each bucket's public base. A "**" fallback would let the optimizer
+      // fetch from anyone's account on a shared host.
+      ...deliveryPatterns(storageAccountsFromEnv(process.env).accounts).map((pattern) => ({
+        protocol: "https" as const,
+        ...pattern,
+      })),
+    ],
   },
   experimental: {
     optimizePackageImports: [

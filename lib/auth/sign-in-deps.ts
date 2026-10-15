@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createMfa, ensureBootstrapOwner, type AuthorizeDeps } from "@sahan-sac/auth-kit";
+import { ensureBootstrapOwner, type AuthorizeDeps } from "@sahan-sac/auth-kit";
 import { createSessionStore } from "@sahan-sac/auth-kit/session";
 import { after } from "next/server";
 
@@ -10,11 +10,12 @@ import { kv } from "@/lib/cache/redis";
 import { authAdapter, repos } from "@/lib/data";
 import { seedOwner } from "@/lib/db/seed";
 import { sendEmail } from "@/lib/email";
-import { mfaCode, newLogin } from "@/lib/email/templates";
+import { newLogin } from "@/lib/email/templates";
 import { log } from "@/lib/log";
 
 import { AUTH_SECRET } from "./kit";
 import { authKit } from "./kit-config";
+import { mfa } from "./mfa";
 
 // Everything auth-kit's sign-in decision (createAuthorize) needs, whichever
 // engine runs it: next-auth's credentials provider (config.ts) or the Better
@@ -28,24 +29,13 @@ import { authKit } from "./kit-config";
 // structurally. The buckets and categories the package actually calls with
 // are always members of the app's own literal unions.
 const limitAdapter = (bucket: string, key: string) => limit(bucket as Parameters<typeof limit>[0], key);
-const sendEmailAdapter = (
-  message: { to: string; subject: string; html: string; text: string; category: string },
-  context: { actor: { id: string; email: string } }
-) => sendEmail(message as Parameters<typeof sendEmail>[0], context);
 
 export const signInDeps: AuthorizeDeps = {
   adapter: authAdapter,
   authSecret: AUTH_SECRET,
   keyPrefix: authKit.keyPrefix,
   sessionStore: createSessionStore({ adapter: authAdapter, kv, authSecret: AUTH_SECRET }),
-  mfa: createMfa({
-    adapter: authAdapter,
-    authSecret: AUTH_SECRET,
-    limit: limitAdapter,
-    sendEmail: sendEmailAdapter,
-    audit: auditSafe,
-    renderMfaCode: mfaCode,
-  }),
+  mfa,
   after,
   bootstrap: () => ensureBootstrapOwner(authAdapter, () => seedOwner(repos, process.env, "bootstrap"), log),
   loginFailureWindowSeconds: LIMITS["login:acct"].windowSeconds,

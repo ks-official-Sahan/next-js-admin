@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Loader2, Search, X } from "lucide-react";
 import { useEffect, useState, useTransition } from "react";
 
+import Icon from "@/components/icons/Icon";
 import { fieldClass } from "@/components/admin/ui/styles";
 import type { SessionStatusFilter } from "@/lib/data/user-sessions";
 import { sessionViewSearch, type SessionView } from "@/lib/sessions/query";
@@ -62,7 +62,7 @@ export default function SessionsToolbar({ view, userLabel, shown }: { view: Sess
       >
         {view.user ? <input type="hidden" name="user" value={view.user} /> : null}
         <div className="relative min-w-0 flex-1 basis-56">
-          <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Icon name="magnifier" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <label htmlFor="sessions-q" className="sr-only">
             Search sessions by name, email or IP address
           </label>
@@ -102,7 +102,7 @@ export default function SessionsToolbar({ view, userLabel, shown }: { view: Sess
         <span className="flex min-w-24 items-center gap-1.5 text-xs text-muted-foreground" aria-live="polite">
           {pending ? (
             <>
-              <Loader2 aria-hidden className="size-3.5 animate-spin motion-reduce:animate-none" />
+              <Icon lucideIconName="Loader2" className="size-3.5 animate-spin motion-reduce:animate-none" />
               Updating…
             </>
           ) : (
@@ -120,7 +120,7 @@ export default function SessionsToolbar({ view, userLabel, shown }: { view: Sess
               aria-label="Show everyone's sessions"
               className="-mr-1 inline-flex size-5 items-center justify-center rounded-full hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <X aria-hidden className="size-3.5" />
+              <Icon name="x" className="size-3.5" />
             </Link>
           </span>
         </p>

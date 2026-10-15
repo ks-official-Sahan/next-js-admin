@@ -33,12 +33,21 @@ The admin panel is hidden behind two independent gates, both enforced in
 `proxy.ts` before any page renders:
 
 1. **Unlock.** `/admin` answers a 404-shaped "locked" page to anyone without
-   a valid unlock cookie. Get one by visiting
-   `https://<site>/admin?secret=<ADMIN_LOGIN_UNLOCK_SECRET>` once — the query
-   string is stripped and a signed, httpOnly cookie is set for 2 hours.
-   Unlock attempts are rate-limited per IP; repeated wrong secrets lock you
-   out for a while. With `ADMIN_LOGIN_UNLOCK_SECRET` unset this gate is off:
+   a valid unlock cookie (signed, httpOnly, 2 hours). Two ways to get one:
+   - a **sign-in link** (below), the everyday way;
+   - the **break-glass form** at `ADMIN_UNLOCK_PATH`, for when no valid link
+     is at hand (expired, email down). Type `ADMIN_LOGIN_UNLOCK_SECRET` into
+     its password field (or let a password manager fill it; it is saved for
+     the username `admin-unlock`). The form POSTs, so the secret never lands
+     in a URL, browser history, address-bar suggestions or request logs.
+   Both are rate-limited per IP; repeated wrong secrets lock you out for a
+   while. With `ADMIN_LOGIN_UNLOCK_SECRET` unset this gate is off:
    `/admin/login` is public and only the sign-in gate below applies.
+
+   The old `https://<site>/admin?secret=<ADMIN_LOGIN_UNLOCK_SECRET>` link
+   works only while `ADMIN_UNLOCK_PATH` is unset, and logs a warning each
+   time. It leaves the secret in browser history and logs: set
+   `ADMIN_UNLOCK_PATH`, then rotate `ADMIN_LOGIN_UNLOCK_SECRET`.
 2. **Sign in.** Once unlocked, `/admin/login` is a normal email + password
    form (plus MFA if the account has it turned on, from `/admin/account`).
    A wrong password does not reveal whether the email exists.
@@ -67,8 +76,13 @@ copy marked "Copy:", with every link left out: an invite or reset link lets
 whoever holds it take the account, so only its recipient gets it. The copy
 is sent after the original is delivered and never delays the action.
 Invitation, new-account and reset emails also carry a sign-in link, so the
-recipient can find the login page later; "Create user" can email one (the
-password is never emailed).
+recipient can find the login page later.
+
+**Creating a user.** "Create user" emails the single-use invitation link by
+default, so the person sets their own password. The other choice, "Show me a
+one-time password", generates a password, shows it to you once (copy it then)
+and never emails it; the person must change it at first sign-in. Nobody types
+a password for someone else.
 
 **Which domain links use.** Every emailed or copied link (invites, resets,
 sign-in links, the new-inquiry button) uses the first domain in `SITE_URLS`
@@ -82,6 +96,60 @@ never used.
 
 If you're locked out of both (secret lost, cookie expired, no browser
 access), see "Break-glass" below.
+
+### Second factors
+
+**Account → Authenticator app, passkeys and recovery codes** sets up the
+strong factors. With one of them, signing in asks for it after the password:
+
+- **Authenticator app:** a 6-digit code (TOTP). Scan the QR code, then
+  confirm with a code. Each code works once.
+- **Passkey:** fingerprint, face, device PIN or a security key. Passkeys work
+  on every site domain in `SITE_URLS` (else `SITE_URL`, then the site URL in
+  `config/site.ts`), and on
+  `http://localhost:3000`/`3001` in development. Never on Vercel preview
+  domains. A passkey works only on the domain where it was added, so add one
+  on each domain: then, when the primary domain is down, you sign in with a
+  passkey on a backup domain. Account → Passkeys names the other domains.
+- **Recovery codes:** ten single-use codes, shown once when the first strong
+  factor is added. Make new ones from the same section; the old ones stop
+  working.
+
+At sign-in, the second step shows one method: the one used last on this
+browser, else the strongest that works here (passkey, authenticator app,
+emailed code). **Try another way** lists the others. The emailed code is sent
+only when chosen. Recovery codes are never the method shown first: they join
+**Try another way** after two failed tries, or straight away when no other
+method works on this device.
+
+**Passkey sign-in** (Settings → Passkey sign-in, `DEVELOPER` only, off by
+default) adds **Sign in with a passkey** to the sign-in page. The browser lists
+the passkeys saved on the device for this site and each person picks their own,
+so a shared device works. The passkey must check a fingerprint, face or device
+PIN, so it replaces both the password and the second step, and counts as strong
+MFA. The unlock cookie, a per-address limit (`passkey-sign-in:ip`), the
+disabled-account check, the new-device email and the audit log still apply.
+Passkeys added before this change may not be discoverable; add them again if
+the browser does not offer them.
+
+Removing a factor or making new recovery codes asks for the password again.
+
+A `DEVELOPER` can reset someone else's second factors from **Users → (user) →
+Second factors**: the authenticator app, one passkey, the recovery codes, or
+everything. It asks for the developer's own password, signs the person out
+everywhere when an app or passkey goes, and emails them. A `DEVELOPER` or
+`SUPER_ADMIN` left without an app or passkey must set one up again before using
+the admin. **Sign out everywhere** in the same sheet ends sessions without
+touching the factors.
+Adding the first strong factor signs out every other session.
+
+`DEVELOPER` and `SUPER_ADMIN` must have an authenticator app or a passkey
+(`strongMfaRoles` in `lib/auth/kit-config.ts`):
+
+- Until they add one, the account page is the only page they can open, and
+  actions and admin API routes refuse them.
+- Everyone, these roles included, may still choose the emailed code at
+  sign-in while "Two-factor sign-in" is on in the account page.
 
 ## Roles and permissions
 
@@ -257,7 +325,7 @@ truth.
 ## Packages
 
 The reusable parts of the admin CMS come from npm packages (source and
-releases live in the Sahan monorepo). This app wires them together; none of
+releases live in their own monorepo). This app wires them together; none of
 them touches Prisma or React, and only auth-kit depends on Next.js.
 
 | Package | What it holds | Stays in the app |
@@ -267,10 +335,11 @@ them touches Prisma or React, and only auth-kit depends on Next.js.
 | `@sahan-sac/email-kit` | Email providers with fallback, guards, env schema, health, Brevo diagnostics, the layout and redacted CC copies | `lib/email/index.ts` (env and audit wiring), templates, `lib/email/account-mail.ts` |
 | `@sahan-sac/blog-kit` | Post, SEO, draft and cover generation, `generateBlogImage` with its `ImageSink` port, Markdown, charts, slugs, revisions | Post schema, queries, rendering (`sanitizeRich`), seed, `lib/ai/image-sink.ts` |
 | `@sahan-sac/chat-kit` | `runChat`, chat prompts and output filter, knowledge builder, `ChatStore` contract, visitor cookie | `/api/chat` (origin, rate limits, cookie, storage), `lib/chatbot/{knowledge,session,site}.ts`, the widget |
-| `@sahan-sac/media-kit` | Cloudinary client, upload validation, URL signing, delivery transforms, browser upload client | `lib/media/service.ts` (DB rows and audit), `lib/media/cloudinary-client.ts` |
+| `@sahan-sac/media-kit` | Storage accounts (Cloudinary, S3, R2) and failover, upload validation, URL and SigV4 signing, delivery transforms, browser upload client | `lib/media/service.ts` (DB rows and audit), `lib/media/storage.ts` (accounts, full marks, usage), `lib/media/files.ts` |
+| `@sahan-sac/analytics-kit` | Cookie-free page analytics on Redis: collect handler with bot, DNT and GPC filtering, daily-salted visitor ids, one-round-trip range reads, browser beacon | `/api/collect`, `lib/analytics/store.ts`, the dashboard panel |
 
 `ai-core`, `blog-kit` and `chat-kit` release together under one version;
-`auth-kit`, `email-kit` and `media-kit` are versioned on their own. `chat-kit` never
+`auth-kit`, `email-kit`, `media-kit` and `analytics-kit` are versioned on their own. `chat-kit` never
 imports `blog-kit` (blog posts reach the chatbot as a knowledge source), and
 `blog-kit` never imports `media-kit` (images go through `ImageSink`).
 
@@ -303,12 +372,42 @@ are not opened. With the chatbot off,
 the site widget is not rendered, `/api/chat` answers 503, and
 `/admin/chatbot` says why.
 
+## Media storage accounts
+
+Uploads can go to several accounts: up to 10 each of Cloudinary, AWS S3 and
+Cloudflare R2. Set them up as numbered `MEDIA_ACCOUNT_<n>_*` slots
+(`.env.example` lists every variable). The single `CLOUDINARY_*` account
+stays first, with the id `cloudinary`.
+
+- **Order.** A new upload goes to the first account, in slot order, that is
+  not read-only, not marked full, and under its soft cap
+  (`MEDIA_ACCOUNT_<n>_CAP_GB`). To change the order, renumber the slots.
+  Never change an `_ID` that already holds files.
+- **Failover.** When an account is full, rate-limited, down or refusing its
+  keys, the upload moves to the next one. Only a real "full" answer keeps an
+  account out of uploads, for `MEDIA_FULL_TTL_S` (6 hours by default). A file
+  the account itself refuses (wrong type, too big) is not retried elsewhere.
+- **Where each file lives.** Every asset records its account. Serving,
+  deleting and the trash purge go to that account only. Nothing searches
+  other accounts for a file.
+- **Retire an account** with `MEDIA_ACCOUNT_<n>_READ_ONLY=true`. Its files
+  keep working and can still be deleted, and nothing new goes there. Do not
+  remove an account that still holds files: their deletes would fail and stay
+  in the trash for a retry.
+- **Buckets** need a public read URL (`_PUBLIC_URL`, an r2.dev URL or a
+  custom domain) and a CORS rule that allows `PUT` from the site's origin
+  with the `content-type` header. Without that rule, browser uploads fail
+  and move on to the next account.
+- **Checking.** `/admin/settings` lists each account, its order, its cap and
+  whether it answers, and names any slot with a missing or invalid variable.
+
 ## Verify everything is configured
 
 - `pnpm exec tsx scripts/check-env-example.mts` — `.env.example` matches
   `lib/env.ts`.
 - `/admin/settings` → integration health panel — reports database, Redis,
-  Resend, Brevo and Cloudinary as configured/reachable, and the AI providers
+  Resend, Brevo and each media storage account as configured/reachable (plus
+  a "Media settings" row naming any misconfigured slot), and the AI providers
   and chains as configured (press Check for reachability),
   never printing a secret or a fragment of one.
 - `/admin` dashboard → security status widget — shows MFA state and whether

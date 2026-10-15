@@ -21,7 +21,8 @@ test("nav links are unique, sit under /admin and use a known group", () => {
 test("every link asks for a catalogue permission or for none", () => {
   const known = new Set<string>(PERMISSIONS);
   for (const item of ADMIN_NAV) {
-    assert.ok(item.permission === null || known.has(item.permission), item.href);
+    const needed = item.permission === null ? [] : typeof item.permission === "string" ? [item.permission] : item.permission;
+    assert.ok(needed.every((permission) => known.has(permission)), item.href);
   }
 });
 

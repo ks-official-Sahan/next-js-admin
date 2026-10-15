@@ -1,6 +1,6 @@
-import { SearchX } from "lucide-react";
 import Link from "next/link";
 
+import Icon from "@/components/icons/Icon";
 import EmptyState from "@/components/admin/ui/EmptyState";
 import { buttonVariants } from "@/components/ui/button";
 
@@ -12,7 +12,7 @@ export default function PanelNotFound() {
   return (
     <div className="mx-auto w-full max-w-5xl">
       <EmptyState
-        icon={<SearchX />}
+        icon={<Icon lucideIconName="SearchX" className="size-6" />}
         title="Page not found"
         description="This admin page does not exist, or it is not available to you."
         action={

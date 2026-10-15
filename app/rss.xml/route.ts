@@ -1,5 +1,5 @@
 import { SiteMetadata } from "@/config/site";
-import { getIndexablePosts } from "@/lib/blog/queries";
+import { getRecentIndexablePosts } from "@/lib/blog/queries";
 
 // RSS 2.0 feed of the last 20 published posts (design notes,
 // Step 12). Same 300s window as /updates, since both read the same cached
@@ -18,7 +18,7 @@ const escapeXml = (value: string): string =>
     .replace(/'/g, "&apos;");
 
 export async function GET() {
-  const posts = (await getIndexablePosts()).slice(0, MAX_ITEMS);
+  const posts = await getRecentIndexablePosts(MAX_ITEMS);
   const siteUrl = SiteMetadata.siteUrl;
   const now = new Date().toUTCString();
   // The newest post, not the render time: an unchanged feed keeps the same date across regenerations.

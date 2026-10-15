@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { Bot, Send, X } from "lucide-react";
 
+import Icon from "@/components/icons/Icon";
 import type { ChatbotConfig } from "@/lib/settings/schema";
 import { useChat } from "@/lib/chatbot/use-chat";
 
@@ -137,7 +137,7 @@ export default function ChatWidget({ enabled, config, siteUrl }: ChatWidgetProps
         <div className="flex items-center justify-between gap-3 border-b border-bBORDERFADE px-4 py-3.5">
           <div className="flex items-center gap-2.5">
             <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-bICON_FADE text-bICON">
-              <Bot size={16} aria-hidden="true" />
+              <Icon name="brain-circuit" className="size-4" />
               <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-bICON ring-2 ring-bCARD" aria-hidden="true" />
             </span>
             <h2 className="text-sm font-semibold">Site assistant</h2>
@@ -148,7 +148,7 @@ export default function ChatWidget({ enabled, config, siteUrl }: ChatWidgetProps
             className="press flex h-8 w-8 items-center justify-center rounded-full text-current opacity-70 transition-colors hover:bg-bICON_FADE hover:opacity-100"
             aria-label="Close chat"
           >
-            <X size={16} />
+            <Icon name="x" className="size-4" />
           </button>
         </div>
 
@@ -227,7 +227,7 @@ export default function ChatWidget({ enabled, config, siteUrl }: ChatWidgetProps
               className="press flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-bICON text-white transition-opacity disabled:opacity-30 dark:text-black"
               aria-label="Send message"
             >
-              <Send size={14} />
+              <Icon name="send" className="size-3.5" />
             </button>
           </div>
           <p className="mt-1.5 px-1 text-[11px] opacity-50">{input.length}/1000</p>
@@ -245,18 +245,12 @@ export default function ChatWidget({ enabled, config, siteUrl }: ChatWidgetProps
         className="press flex h-11 w-11 items-center justify-center rounded-full bg-bICON text-white shadow-lg shadow-black/20 transition-transform dark:text-black"
       >
         <span className="relative grid h-6 w-6 place-items-center">
-          <Bot
-            size={24}
-            className={`absolute transition-[opacity,transform] duration-200 ${
+          <Icon name="brain-circuit" className={`size-6 ${`absolute transition-[opacity,transform] duration-200 ${
               isOpen ? "scale-75 opacity-0" : "scale-100 opacity-100"
-            }`}
-          />
-          <X
-            size={22}
-            className={`absolute transition-[opacity,transform] duration-200 ${
+            }`}`} />
+          <Icon name="x" className={`size-[22px] ${`absolute transition-[opacity,transform] duration-200 ${
               isOpen ? "scale-100 opacity-100" : "scale-75 opacity-0"
-            }`}
-          />
+            }`}`} />
         </span>
       </button>
     </div>

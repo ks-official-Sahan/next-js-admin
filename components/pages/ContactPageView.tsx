@@ -1,5 +1,6 @@
 "use client";
 
+import Icon from "@/components/icons/Icon";
 import type { PageContent } from "@/lib/cms/registry";
 import ContactDetailsCard from "@/components/contact/ContactDetailsCard";
 import ContactForm from "@/components/contact/ContactForm";
@@ -8,8 +9,6 @@ import HeroBackdrop from "@/components/home/HeroBackdrop";
 import { HomeContainer, stagger } from "@/components/home/HomeSection";
 import ProcessSection from "@/components/home/ProcessSection";
 import { Site } from "@/config/site";
-import { IconBrandTelegram, IconBrandWhatsapp } from "@tabler/icons-react";
-import { Mail, MapPin, Phone } from "lucide-react";
 import React from "react";
 
 interface ContactPageViewProps {
@@ -61,14 +60,14 @@ const ContactPageView = ({ content, home }: ContactPageViewProps) => {
               <ContactDetailsCard
                 copy
                 href={`mailto:${Site.email}`}
-                icon={<Mail size={20} />}
+                icon={<Icon name="mail-filled" className="size-5" />}
                 title="Email"
                 value={Site.email}
               />
               <ContactDetailsCard
                 copy
                 href={`tel:${Site.phone}`}
-                icon={<Phone size={20} />}
+                icon={<Icon name="telephone" className="size-5" />}
                 title="Phone"
                 value={Site.phone}
                 displayValue={Site.phoneDisplay}
@@ -76,7 +75,7 @@ const ContactPageView = ({ content, home }: ContactPageViewProps) => {
               <ContactDetailsCard
                 external
                 href={Site.whatsAppUrl}
-                icon={<IconBrandWhatsapp size={20} />}
+                icon={<Icon name="whatsapp" className="size-5" />}
                 title="WhatsApp"
                 value={Site.phone}
                 displayValue="Chat now"
@@ -84,13 +83,13 @@ const ContactPageView = ({ content, home }: ContactPageViewProps) => {
               <ContactDetailsCard
                 external
                 href={Site.telegramUrl}
-                icon={<IconBrandTelegram size={20} />}
+                icon={<Icon name="brand-telegram" className="size-5" />}
                 title="Telegram"
                 value={Site.phone}
                 displayValue="Message me"
               />
               <ContactDetailsCard
-                icon={<MapPin size={20} />}
+                icon={<Icon name="map-pin" className="size-5" />}
                 title="Location"
                 value={Site.location}
               />

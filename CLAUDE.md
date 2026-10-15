@@ -1,1 +1,3 @@
 @AGENTS.md
+
+Avoid using token burning agents, use token efficient sub-agents using token-efficiency and caveman skills, and use haiku 5.5 for the agents with these skills, and ensure to give detailed instructions need to ensure best results. Do not use token-heavy models like sonnet 5.5 or opus 5.5 models for agents, if must have to use them, keep it to minimum and handover the heavy work to multiple subagents with token-efficient models.

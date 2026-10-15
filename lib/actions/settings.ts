@@ -8,7 +8,7 @@ import { done, fail, fieldErrorsFrom, type ActionState } from "@/lib/actions/sta
 import { blogPublishJob, housekeepingPruneJob, sessionCleanupJob } from "@/lib/cron/jobs";
 import { auditSafe } from "@/lib/admin/audit";
 import { hasPermission } from "@/lib/auth/dal";
-import type { Permission } from "@/lib/auth/permissions";
+import { SUPER_ROLE, type Permission } from "@/lib/auth/permissions";
 import { isIpAllowed, isValidAllowlistEntry } from "@/lib/security/allowlist";
 import { clientIp, UNKNOWN_IP } from "@/lib/security/ip";
 import {
@@ -282,4 +282,19 @@ export async function runCronJobAction(_previous: ActionState, formData: FormDat
   revalidatePath(ADMIN_SETTINGS_PATH);
   const count = "published" in result ? result.published : "deleted" in result ? result.deleted : 0;
   return done(`${job} ran: ${count} row(s) affected.`);
+}
+
+/**
+ * Passwordless passkey sign-in changes how every account can sign in, so only
+ * a DEVELOPER may switch it. The change is audited by updateSetting.
+ */
+export async function updatePasskeySignInAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+  const authz = await authorizeAction("manageSettings");
+  if (!authz.ok) return fail(authz.error);
+  if (authz.user.role !== SUPER_ROLE) return fail("You do not have permission to do that.");
+
+  const enabled = checkbox(formData, "enabled");
+  await updateSetting("security.passkeySignIn", { enabled }, authz.user);
+  revalidatePath(ADMIN_SETTINGS_PATH);
+  return done(enabled ? "Passkey sign-in is on." : "Passkey sign-in is off.");
 }

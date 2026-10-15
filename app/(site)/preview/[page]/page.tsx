@@ -9,7 +9,7 @@ import UpdatesPageView from "@/components/pages/UpdatesPageView";
 import { requirePermission } from "@/lib/auth/dal";
 import { isCmsPage } from "@/lib/cms/registry";
 import { loadPreviewContent } from "@/lib/cms/service";
-import { getPosts } from "@/lib/blog/queries";
+import { getRecentPosts } from "@/lib/blog/queries";
 
 // What visitors would see if every saved draft were published: draft over
 // published over the code defaults. It reuses the same page views as the public
@@ -38,7 +38,7 @@ export default async function PreviewPage({ params }: { params: Promise<{ page: 
       view = <HomePageView content={home} />;
       break;
     case "updates": {
-      const posts = (await getPosts()).map((post) => ({
+      const posts = (await getRecentPosts(50)).map((post) => ({
         id: post.id,
         slug: post.slug,
         title: post.title,
@@ -47,7 +47,7 @@ export default async function PreviewPage({ params }: { params: Promise<{ page: 
         topic: post.topic,
         tags: post.tags,
       }));
-      view = <UpdatesPageView content={await loadPreviewContent("updates")} posts={posts} finalCta={finalCta} />;
+      view = <UpdatesPageView content={await loadPreviewContent("updates")} posts={posts} nextCursor={null} finalCta={finalCta} />;
       break;
     }
     case "contact":

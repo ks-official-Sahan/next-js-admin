@@ -10,7 +10,10 @@ test("candidates: SITE_URLS wins, else SITE_URL then the defaults; origins only,
   assert.deepEqual(siteUrlCandidates({}, [COM, APP]), [COM, APP]);
   assert.deepEqual(siteUrlCandidates({ SITE_URL: `${COM}/` }, [COM, APP]), [COM, APP]);
   assert.deepEqual(siteUrlCandidates({ SITE_URL: "https://staging.example" }, [COM, APP]), ["https://staging.example", COM, APP]);
-  assert.deepEqual(siteUrlCandidates({ SITE_URLS: [`${APP}/x`, "ftp://bad", "not a url", APP], SITE_URL: COM }, [COM]), [APP]);
+  // SITE_URLS sets the order; SITE_URL outside it stays, as the last backup.
+  assert.deepEqual(siteUrlCandidates({ SITE_URLS: [`${APP}/x`, "ftp://bad", "not a url", APP], SITE_URL: COM }, [COM]), [APP, COM]);
+  // https only, except http on localhost; no credentials in a site address.
+  assert.deepEqual(siteUrlCandidates({ SITE_URLS: ["http://sahansachintha.com", "http://localhost:3000", "https://user:pw@evil.example", APP] }, []), ["http://localhost:3000", APP]);
 });
 
 const respond = (status: number, body: unknown) => async () => new Response(JSON.stringify(body), { status });

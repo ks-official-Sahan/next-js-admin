@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { Check, Copy, Eye, EyeOff, Wand2 } from "lucide-react";
 
+import Icon from "@/components/icons/Icon";
 import { generatePassword } from "@/lib/admin/generate-password";
 import { toast } from "@/lib/admin/toast";
 import { cn } from "@/lib/utils";
@@ -97,10 +97,10 @@ export function PasswordInput({ id, name, generate = false, className, disabled,
         {generate ? (
           <>
             <button type="button" className={iconButton} onClick={fillGenerated} disabled={disabled} aria-label="Generate a strong password" title="Generate">
-              <Wand2 size={15} aria-hidden />
+              <Icon name="sparkles" className="size-[15px]" />
             </button>
             <button type="button" className={iconButton} onClick={copy} disabled={disabled} aria-label="Copy password" title="Copy">
-              {copied ? <Check size={15} aria-hidden className="text-emerald-600 dark:text-emerald-400" /> : <Copy size={15} aria-hidden />}
+              {copied ? <Icon name="checked" className="size-[15px] text-emerald-600 dark:text-emerald-400" /> : <Icon name="copy" className="size-[15px]" />}
             </button>
           </>
         ) : null}
@@ -114,7 +114,7 @@ export function PasswordInput({ id, name, generate = false, className, disabled,
           aria-controls={inputId}
           title={visible ? "Hide" : "Show"}
         >
-          {visible ? <EyeOff size={15} aria-hidden /> : <Eye size={15} aria-hidden />}
+          {visible ? <Icon name="eye-off" className="size-[15px]" /> : <Icon name="eye" className="size-[15px]" />}
         </button>
       </div>
     </div>

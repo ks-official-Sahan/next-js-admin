@@ -1,11 +1,11 @@
 import { SiteMetadata } from "@/config/site";
-import { getIndexablePosts } from "@/lib/blog/queries";
+import { getAllIndexablePosts } from "@/lib/blog/queries";
 import { getPageLastModified } from "@/lib/cms/loaders";
 import type { CmsPage } from "@/lib/cms/registry";
 import type { MetadataRoute } from "next";
 
 // Revalidated on a fixed schedule instead of per request: lastModified now
-// comes from cached CMS reads (getPageLastModified) and getIndexablePosts() instead of
+// comes from cached CMS reads (getPageLastModified) and getAllIndexablePosts() instead of
 // `new Date()` on every crawl, so there is no correctness reason left to force
 // dynamic rendering here. A publish still shows up within this window (or
 // sooner — lib/cache/plan.ts's forPost()/forPostList()/forCollection() already
@@ -22,7 +22,7 @@ const STATIC_ROUTES: Array<{ path: string; page: CmsPage | null }> = [
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [posts, lastModifiedByRoute] = await Promise.all([
-    getIndexablePosts(),
+    getAllIndexablePosts(),
     Promise.all(STATIC_ROUTES.map((route) => (route.page ? getPageLastModified(route.page) : Promise.resolve(null)))),
   ]);
 

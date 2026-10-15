@@ -88,7 +88,7 @@ function lastModifiedReaderFor(page: CmsPage): () => Promise<string | null> {
  * string, for sitemap `lastModified`. Null when the database is not
  * configured, the page has no stored blocks yet, or the read fails during
  * `next build` — callers should fall back to something reasonable (see
- * app/sitemap.ts).
+ * app/sitemaps/sitemap.ts).
  */
 export function getPageLastModified(page: CmsPage): Promise<string | null> {
   return loadOrNull(lastModifiedReaderFor(page), {

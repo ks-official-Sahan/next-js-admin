@@ -101,7 +101,7 @@ function RoleForm({ title, role, lockedRank, onDone }: { title: string; role?: R
   return (
     <section aria-label={title} className="rounded-lg border border-border p-4">
       <h3 className="mb-3 text-sm font-semibold">{title}</h3>
-      <ActionForm action={role ? updateRoleAction : createRoleAction} onResult={(state) => state.ok && onDone()} className="grid gap-4 sm:grid-cols-2">
+      <ActionForm action={role ? updateRoleAction : createRoleAction} onResult={(state) => state.ok && onDone()} className="grid gap-4 s640:grid-cols-2">
         {role ? (
           <input type="hidden" name="role" value={role.name} />
         ) : (
@@ -119,8 +119,8 @@ function RoleForm({ title, role, lockedRank, onDone }: { title: string; role?: R
             hint="1 to 1000. Lower ranks manage higher ones; see the ranks in the table above."
           />
         )}
-        <Field label="Description" name="description" multiline maxLength={300} defaultValue={role?.description ?? ""} className="sm:col-span-2" />
-        <div className="flex gap-2 sm:col-span-2">
+        <Field label="Description" name="description" multiline maxLength={300} defaultValue={role?.description ?? ""} className="s640:col-span-2" />
+        <div className="flex gap-2 s640:col-span-2">
           <SubmitButton pendingLabel="Saving...">{role ? "Save role" : "Add role"}</SubmitButton>
           <button type="button" className={buttonVariants.secondary} onClick={onDone}>
             Cancel

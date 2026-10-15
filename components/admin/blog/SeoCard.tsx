@@ -1,7 +1,7 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
 
+import Icon from "@/components/icons/Icon";
 import { Field } from "@/components/admin/ui/ActionForm";
 import { fieldClass } from "@/components/admin/ui/styles";
 import { cn } from "@/lib/utils";
@@ -70,7 +70,7 @@ export default function SeoCard({
           >
             {seoBusy ? (
               <>
-                <Loader2 size={12} className="animate-spin motion-reduce:animate-none" aria-hidden />
+                <Icon lucideIconName="Loader2" className="size-3 animate-spin motion-reduce:animate-none" />
                 Cancel
               </>
             ) : (

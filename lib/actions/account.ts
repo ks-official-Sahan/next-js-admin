@@ -8,6 +8,7 @@ import { retryMessage } from "@/lib/admin/rate-limited";
 import { authorizeAction } from "@/lib/actions/guard";
 import { done, fail, fieldErrorsFrom, formValues, type ActionState } from "@/lib/actions/state";
 import type { AuthUser } from "@/lib/auth/dal";
+import { confirmPassword } from "@/lib/auth/confirm-password";
 import { keepSessionAfterPasswordChange } from "@/lib/auth/engine";
 import { consumeChallenge, issueChallenge, verifyChallenge } from "@/lib/auth/mfa";
 import { CODE_FAILURES, MFA_TTL_MINUTES, normalizeCode } from "@/lib/auth/mfa-rules";
@@ -29,7 +30,8 @@ import { requestDetails } from "@/lib/security/request-device";
 
 const ACCOUNT_PATH = "/admin/account";
 const UNEXPECTED = "Something went wrong. Nothing was changed.";
-const OPTIONS = { allowPasswordChange: true } as const;
+// Open to a user who must still change their password or set up a strong factor.
+const OPTIONS = { allowPasswordChange: true, allowMfaSetup: true } as const;
 
 const secret = () => {
   const value = getEnv().AUTH_SECRET;
@@ -42,22 +44,6 @@ async function mail(user: Pick<AuthUser, "id" | "email">, rendered: Rendered) {
     { to: user.email, subject: rendered.subject, html: rendered.html, text: rendered.text, category: "security" },
     { actor: user }
   ).catch(() => undefined);
-}
-
-/** Re-asks for the password before a sensitive change. Counts every try against the account. */
-async function confirmPassword(user: AuthUser, given: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (typeof given !== "string" || given.length === 0 || given.length > 128) {
-    return { ok: false, error: "Enter your current password." };
-  }
-  if (!(await limit("login:acct", `pw:${user.id}`)).ok) {
-    return { ok: false, error: "Too many attempts. Wait a while and try again." };
-  }
-  const passwordHash = await repos.users.findPasswordHash(user.id);
-  if (!passwordHash || !(await verifyPassword(given, passwordHash))) {
-    await auditSafe({ action: "auth.password.check_failed", actor: user, entityType: "User", entityId: user.id });
-    return { ok: false, error: "The current password is not correct." };
-  }
-  return { ok: true };
 }
 
 export async function updateProfile(_previous: ActionState, formData: FormData): Promise<ActionState> {

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { authorizeAction } from "@/lib/actions/guard";
 import { done, fail, type ActionState } from "@/lib/actions/state";
 import { auditSafe } from "@/lib/admin/audit";
+import { SITEMAP_PATHS } from "@/lib/cache/plan";
 import { collectIndexableUrls, isIndexNowConfigured, pingIndexNowWithStatus } from "@/lib/seo/indexnow";
 import { regenerateLlmsTxt } from "@/lib/seo/llms-txt";
 
@@ -40,7 +41,10 @@ export async function regenerateSitemapAction(_previous: ActionState, _formData:
   const authz = await authorizeAction("manageSettings");
   if (!authz.ok) return fail(authz.error);
 
-  revalidatePath("/sitemap.xml");
+  for (const entry of SITEMAP_PATHS) {
+    if (typeof entry === "string") revalidatePath(entry);
+    else revalidatePath(entry.path, entry.type);
+  }
   await auditSafe({
     action: "seo.sitemap.regenerated",
     actor: { id: authz.user.id, email: authz.user.email },

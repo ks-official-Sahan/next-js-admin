@@ -1,7 +1,7 @@
 import "server-only";
 
 import { getSetting, updateSetting } from "@/lib/settings/service";
-import { getIndexablePosts } from "@/lib/blog/queries";
+import { getRecentIndexablePosts } from "@/lib/blog/queries";
 import { getPageContent } from "@/lib/cms/loaders";
 import { Site, SiteMetadata } from "@/config/site";
 import type { AuthUser } from "@/lib/auth/dal";
@@ -31,7 +31,7 @@ function externalLink(url: string, title: string, note?: string): string {
 /** Builds fresh llms.txt content from the same data sources the site itself renders. */
 export async function generateLlmsTxt(): Promise<string> {
   const [posts, home] = await Promise.all([
-    getIndexablePosts(),
+    getRecentIndexablePosts(10),
     getPageContent("home"),
   ]);
 
@@ -55,7 +55,7 @@ export async function generateLlmsTxt(): Promise<string> {
 
   if (posts.length > 0) {
     lines.push("## Recent updates");
-    for (const post of posts.slice(0, 10)) {
+    for (const post of posts) {
       lines.push(link(`/updates/${post.slug}`, post.title, post.excerpt));
     }
     lines.push("");

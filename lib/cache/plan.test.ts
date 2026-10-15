@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   PAGE_PATHS,
+  SITEMAP_PATHS,
   forCacheClear,
   forCollection,
   forContentPublish,
@@ -16,7 +17,7 @@ import { staticTags } from "./tags";
 test("publishing a section invalidates its page tag and the chatbot knowledge", () => {
   const plan = forContentPublish("about");
   assert.deepEqual(plan.tags, ["cms:page:about", "chatbot:knowledge"]);
-  assert.deepEqual(plan.paths, ["/about"]);
+  assert.deepEqual(plan.paths, ["/about", "/api/content/v1/pages/about"]);
 });
 
 test("a shared section revalidates every page that shows it", () => {
@@ -25,7 +26,7 @@ test("a shared section revalidates every page that shows it", () => {
     section: "finalCta",
   });
   assert.deepEqual(plan.tags, ["cms:page:home", "chatbot:knowledge"]);
-  assert.deepEqual(plan.paths, ["/", "/about", "/works", "/updates"]);
+  assert.deepEqual(plan.paths, ["/", "/about", "/works", "/updates", "/api/content/v1/pages/home"]);
 });
 
 test("publishing a site section also expires the site config, and seo adds the sitemap", () => {
@@ -34,36 +35,38 @@ test("publishing a site section also expires the site config, and seo adds the s
   assert.deepEqual(identity.paths, PAGE_PATHS.site);
 
   const seo = forContentPublish("site", { section: "seo" });
-  assert.deepEqual(seo.paths, [...PAGE_PATHS.site, "/sitemap.xml"]);
+  assert.deepEqual(seo.paths, [...PAGE_PATHS.site, ...SITEMAP_PATHS]);
 });
 
 test("a collection change refreshes home, about and works", () => {
   const plan = forCollection("skills");
   assert.deepEqual(plan.tags, ["collection:skills", "chatbot:knowledge"]);
-  assert.deepEqual(plan.paths, ["/", "/about", "/works"]);
+  assert.deepEqual(plan.paths, ["/", "/about", "/works", "/api/content/v1/skills"]);
 });
 
 test("projects and experience also feed llms.txt (its Featured projects and Current role sections)", () => {
-  assert.deepEqual(forCollection("projects").paths, ["/", "/about", "/works", "/llms.txt"]);
-  assert.deepEqual(forCollection("experience").paths, ["/", "/about", "/works", "/llms.txt"]);
+  assert.deepEqual(forCollection("projects").paths, ["/", "/about", "/works", "/api/content/v1/projects", "/llms.txt"]);
+  assert.deepEqual(forCollection("experience").paths, ["/", "/about", "/works", "/api/content/v1/experience", "/llms.txt"]);
   assert.equal(forCollection("services").paths.includes("/llms.txt"), false);
+  assert.equal(forCollection("services").paths.includes("/api/content/v1/services"), true);
+  assert.equal(forCollection("skills").paths.includes("/api/content/v1/skills"), true);
 });
 
 test("a post change refreshes the list, the post, taxonomy, feeds, the sitemap and llms.txt", () => {
   const plan = forPost("hello-world");
   assert.deepEqual(plan.tags, ["blog:list", "blog:post:hello-world", "blog:taxonomy", "chatbot:knowledge"]);
-  assert.deepEqual(plan.paths, ["/updates", "/updates/hello-world", "/sitemap.xml", "/rss.xml", "/llms.txt"]);
+  assert.deepEqual(plan.paths, ["/updates", "/updates/hello-world", "/api/content/v1/posts", "/api/content/v1/posts/hello-world", ...SITEMAP_PATHS, "/rss.xml", "/llms.txt"]);
 });
 
 test("the post list plan also revalidates llms.txt", () => {
-  assert.deepEqual(forPostList().paths, ["/updates", "/sitemap.xml", "/rss.xml", "/llms.txt"]);
+  assert.deepEqual(forPostList().paths, ["/updates", "/api/content/v1/posts", ...SITEMAP_PATHS, "/rss.xml", "/llms.txt"]);
 });
 
 test("publishing About's hero or bento section also revalidates llms.txt (its Author bio), other sections do not", () => {
-  assert.deepEqual(forContentPublish("about", { section: "hero" }).paths, ["/about", "/llms.txt"]);
-  assert.deepEqual(forContentPublish("about", { section: "bento" }).paths, ["/about", "/llms.txt"]);
-  assert.deepEqual(forContentPublish("about", { section: "skills" }).paths, ["/about"]);
-  assert.deepEqual(forContentPublish("works", { section: "hero" }).paths, ["/works"]);
+  assert.deepEqual(forContentPublish("about", { section: "hero" }).paths, ["/about", "/api/content/v1/pages/about", "/llms.txt"]);
+  assert.deepEqual(forContentPublish("about", { section: "bento" }).paths, ["/about", "/api/content/v1/pages/about", "/llms.txt"]);
+  assert.deepEqual(forContentPublish("about", { section: "skills" }).paths, ["/about", "/api/content/v1/pages/about"]);
+  assert.deepEqual(forContentPublish("works", { section: "hero" }).paths, ["/works", "/api/content/v1/pages/works"]);
 });
 
 test("a post plan refuses an unsafe slug", () => {
@@ -80,7 +83,7 @@ test("the post list plan has no per-post tag", () => {
 test("settings refresh the public layout", () => {
   const plan = forSettings();
   assert.deepEqual(plan.tags, ["settings:public"]);
-  assert.deepEqual(plan.paths, [{ path: "/", type: "layout" }]);
+  assert.deepEqual(plan.paths, [{ path: "/", type: "layout" }, "/api/content/v1/posts"]);
 });
 
 test("training entries only touch the chatbot knowledge", () => {

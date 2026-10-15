@@ -1,9 +1,9 @@
 "use client";
 
+import Icon from "@/components/icons/Icon";
 import type { PageContent } from "@/lib/cms/registry";
 import { Site } from "@/config/site";
 import { cn } from "@/lib/utils";
-import { Check, Copy, Send } from "lucide-react";
 import React, { useId, useState, useEffect, useRef } from "react";
 
 type ChannelId = "email" | "whatsapp";
@@ -293,7 +293,7 @@ const ContactForm = ({ content }: ContactFormProps) => {
           type="submit"
           className="press inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-full bg-bCHIPSELECTED px-7 text-[15px] font-semibold text-white dark:text-black"
         >
-          <Send size={18} aria-hidden="true" />
+          <Icon name="send" className="size-[18px]" />
           {content.form.submitButtonText}
         </button>
         <button
@@ -302,9 +302,9 @@ const ContactForm = ({ content }: ContactFormProps) => {
           className="press inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-bBORDERFADE bg-bFCARD px-6 text-[15px] font-semibold"
         >
           {status === "copied" ? (
-            <Check size={18} aria-hidden="true" />
+            <Icon name="checked" className="size-[18px]" />
           ) : (
-            <Copy size={18} aria-hidden="true" />
+            <Icon name="copy" className="size-[18px]" />
           )}
           {status === "copied" ? content.form.copiedButtonText : content.form.copyButtonText}
         </button>

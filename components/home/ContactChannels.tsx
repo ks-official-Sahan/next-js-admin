@@ -1,8 +1,7 @@
+import Icon, { type IconSpec } from "@/components/icons/Icon";
 import type { PageContent } from "@/lib/cms/registry";
 import { Site } from "@/config/site";
 import { cn } from "@/lib/utils";
-import { IconBrandTelegram, IconBrandWhatsapp } from "@tabler/icons-react";
-import { ArrowUpRight, Mail } from "lucide-react";
 import React from "react";
 
 interface ContactChannelsProps {
@@ -22,21 +21,21 @@ const ContactChannels = ({ content: channels, variant, className }: ContactChann
       ...channels.whatsApp,
       href: Site.whatsAppUrl,
       external: true,
-      Icon: IconBrandWhatsapp,
+      icon: { name: "whatsapp" } satisfies IconSpec,
     },
     {
       id: "telegram",
       ...channels.telegram,
       href: Site.telegramUrl,
       external: true,
-      Icon: IconBrandTelegram,
+      icon: { name: "brand-telegram" } satisfies IconSpec,
     },
     {
       id: "email",
       ...channels.email,
       href: `mailto:${Site.email}`,
       external: false,
-      Icon: Mail,
+      icon: { name: "mail-filled" } satisfies IconSpec,
     },
   ];
 
@@ -47,7 +46,7 @@ const ContactChannels = ({ content: channels, variant, className }: ContactChann
       className
     )}
   >
-    {items.map(({ id, label, detail, href, external, Icon }) => (
+    {items.map(({ id, label, detail, href, external, icon }) => (
       <li key={id}>
         <a
           href={href}
@@ -68,7 +67,7 @@ const ContactChannels = ({ content: channels, variant, className }: ContactChann
               variant === "tiles" ? "h-9 w-9" : "h-11 w-11"
             )}
           >
-            <Icon size={variant === "tiles" ? 20 : 22} />
+            <Icon {...icon} size={variant === "tiles" ? 20 : 22} />
           </span>
 
           {variant === "tiles" ? (
@@ -89,11 +88,7 @@ const ContactChannels = ({ content: channels, variant, className }: ContactChann
                 </span>
                 <span className="truncate text-sm opacity-70">{detail}</span>
               </span>
-              <ArrowUpRight
-                size={18}
-                aria-hidden="true"
-                className="arrow-nudge-icon shrink-0 opacity-60"
-              />
+              <Icon name="arrow-up-right" className="size-[18px] shrink-0 opacity-60" />
             </>
           )}
         </a>

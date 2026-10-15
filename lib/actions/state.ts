@@ -25,11 +25,13 @@ export interface ActionState {
    * ever carries it: the database keeps the token's hash, never the link.
    */
   link?: string;
+  /** A one-time secret (a webhook signing secret). Only this response carries it in the clear. */
+  secret?: string;
 }
 
 export const idleState: ActionState = { ok: false, message: null, error: null };
 
-export const done = (message: string, extra: { challengeId?: string; link?: string } = {}): ActionState => ({
+export const done = (message: string, extra: { challengeId?: string; link?: string; secret?: string } = {}): ActionState => ({
   ok: true,
   message,
   error: null,

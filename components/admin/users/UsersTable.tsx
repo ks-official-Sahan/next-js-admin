@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowDown, ArrowUp, ArrowUpDown, Settings2 } from "lucide-react";
 import { useState } from "react";
 
+import Icon from "@/components/icons/Icon";
 import ActionForm, { ConfirmSubmitButton, SubmitButton } from "@/components/admin/ui/ActionForm";
 import { badgeClass, fieldClass, tableClass, tdClass, thClass } from "@/components/admin/ui/styles";
 import { bulkUsers } from "@/lib/actions/users";
@@ -35,11 +35,14 @@ export interface SortHeader {
 const EMPTY: ReadonlySet<string> = new Set();
 
 function SortLink({ label, header }: { label: string; header: SortHeader }) {
-  const Icon = header.state === "ascending" ? ArrowUp : header.state === "descending" ? ArrowDown : ArrowUpDown;
   return (
     <Link href={header.href} scroll={false} replace className="inline-flex items-center gap-1 rounded hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
       {label}
-      <Icon aria-hidden className={cn("size-3", !header.state && "opacity-40")} />
+      {header.state ? (
+        <Icon name={header.state === "ascending" ? "arrow-narrow-up" : "arrow-narrow-down"} className="size-3" />
+      ) : (
+        <Icon lucideIconName="ArrowUpDown" className="size-3 opacity-40" />
+      )}
     </Link>
   );
 }
@@ -282,7 +285,8 @@ export default function UsersTable({
                     onClick={() => setOpenId(row.id)}
                     className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    <Settings2 aria-hidden className="size-3.5" />
+                    {/* Static: one per row, so no animation runtime per row. */}
+                    <Icon lucideIconName="SlidersHorizontal" className="size-3.5" />
                     {row.self ? "View" : "Manage"}
                     <span className="sr-only"> {row.name ?? row.email}</span>
                   </button>

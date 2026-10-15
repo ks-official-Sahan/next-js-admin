@@ -32,15 +32,19 @@ function Frame({
   label,
   help,
   error,
+  counter,
   children,
 }: {
   id: string;
   label: string;
   help?: string;
   error?: string;
+  counter?: boolean;
   children: (describedBy: string | undefined) => ReactNode;
 }) {
-  const describedBy = [help ? `${id}-help` : null, error ? `${id}-error` : null].filter(Boolean).join(" ") || undefined;
+  const describedBy = [help ? `${id}-help` : null, error ? `${id}-error` : null, counter ? `${id}-counter` : null]
+    .filter(Boolean)
+    .join(" ") || undefined;
   return (
     <div>
       <label htmlFor={id} className="text-sm font-medium">
@@ -61,14 +65,15 @@ function Frame({
   );
 }
 
-function Counter({ value, max }: { value: string; max?: number }) {
+function Counter({ id, value, max }: { id: string; value: string; max?: number }) {
   if (!max) return null;
   return (
     <p
+      id={id}
       className={cn("mt-1 text-right text-xs", value.length > max ? "text-destructive" : "text-muted-foreground")}
-      aria-hidden="true"
+      aria-live="off"
     >
-      {value.length}/{max}
+      {value.length} of {max} characters
     </p>
   );
 }
@@ -98,13 +103,14 @@ function One({ field, path, ...shared }: { field: FieldDescriptor; path: Path } 
     case "text": {
       const text = typeof value === "string" ? value : "";
       return (
-        <Frame id={id} label={field.label} help={field.help} error={errors[key]}>
+        <Frame id={id} label={field.label} help={field.help} error={errors[key]} counter={Boolean(field.maxLength)}>
           {(describedBy) => (
             <>
               <input
                 id={id}
                 type="text"
                 value={text}
+                maxLength={field.maxLength}
                 disabled={disabled}
                 placeholder={field.placeholder}
                 aria-invalid={errors[key] ? true : undefined}
@@ -113,7 +119,7 @@ function One({ field, path, ...shared }: { field: FieldDescriptor; path: Path } 
                 className={fieldClass}
                 onChange={(event) => set(event.target.value)}
               />
-              <Counter value={text} max={field.maxLength} />
+              <Counter id={`${id}-counter`} value={text} max={field.maxLength} />
             </>
           )}
         </Frame>
@@ -123,12 +129,13 @@ function One({ field, path, ...shared }: { field: FieldDescriptor; path: Path } 
     case "longtext": {
       const text = typeof value === "string" ? value : "";
       return (
-        <Frame id={id} label={field.label} help={field.help} error={errors[key]}>
+        <Frame id={id} label={field.label} help={field.help} error={errors[key]} counter={Boolean(field.maxLength)}>
           {(describedBy) => (
             <>
               <textarea
                 id={id}
                 value={text}
+                maxLength={field.maxLength}
                 rows={field.rows ?? 4}
                 disabled={disabled}
                 aria-invalid={errors[key] ? true : undefined}
@@ -137,7 +144,7 @@ function One({ field, path, ...shared }: { field: FieldDescriptor; path: Path } 
                 className={textareaClass}
                 onChange={(event) => set(event.target.value)}
               />
-              <Counter value={text} max={field.maxLength} />
+              <Counter id={`${id}-counter`} value={text} max={field.maxLength} />
             </>
           )}
         </Frame>

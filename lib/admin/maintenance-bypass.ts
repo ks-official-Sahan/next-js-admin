@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 
 import { constantTimeEqual } from "@sahan-sac/auth-kit/login-unlock";
 
@@ -32,14 +32,19 @@ export function bypassKeysFromEnv(env: Record<string, string | undefined> = proc
   return { secret };
 }
 
+/** Clock skew tolerated for a cookie issued by another instance. */
+const FUTURE_SKEW_MS = 60_000;
+
+const bypassMac = (timestamp: number, nonce: string, secret: string): string =>
+  createHmac("sha256", secret).update(`${timestamp}:${nonce}:bypass`).digest("hex");
+
 /**
- * Sign the bypass cookie with HMAC-SHA256. The signature covers
- * the timestamp and a constant prefix to prevent replays.
+ * Sign the bypass cookie with HMAC-SHA256 over the issue time and a random
+ * nonce, so no two cookies are alike and one cannot be predicted from the
+ * time it was issued.
  */
-export function signBypassCookie(timestamp: number, keys: BypassCookieKeys): string {
-  const payload = `${timestamp}:bypass`;
-  const hmac = createHmac("sha256", keys.secret).update(payload).digest("hex");
-  return `${timestamp}.${hmac}`;
+export function signBypassCookie(timestamp: number, keys: BypassCookieKeys, nonce = randomBytes(16).toString("base64url")): string {
+  return `${timestamp}.${nonce}.${bypassMac(timestamp, nonce, keys.secret)}`;
 }
 
 /**
@@ -52,20 +57,16 @@ export function verifyBypassCookie(
 ): boolean {
   if (!cookieValue) return false;
 
-  const [timestampStr, hmac] = cookieValue.split(".");
-  if (!timestampStr || !hmac) return false;
+  const parts = cookieValue.split(".");
+  if (parts.length !== 3) return false;
+  const [timestampStr, nonce, hmac] = parts;
+  if (!/^\d{1,15}$/.test(timestampStr) || !/^[\w-]{16,64}$/.test(nonce) || !hmac) return false;
 
-  const timestamp = parseInt(timestampStr, 10);
-  if (isNaN(timestamp)) return false;
+  const timestamp = Number(timestampStr);
+  // Expired (2 hours), or issued in the future.
+  if (now - timestamp > BYPASS_COOKIE_MAX_AGE * 1000 || timestamp - now > FUTURE_SKEW_MS) return false;
 
-  // Check expiry (2 hours)
-  if (now - timestamp > BYPASS_COOKIE_MAX_AGE * 1000) return false;
-
-  const expected = createHmac("sha256", keys.secret)
-    .update(`${timestamp}:bypass`)
-    .digest("hex");
-
-  return constantTimeEqual(hmac, expected);
+  return constantTimeEqual(hmac, bypassMac(timestamp, nonce, keys.secret));
 }
 
 /**

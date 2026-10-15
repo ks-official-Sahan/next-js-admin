@@ -75,5 +75,8 @@ test("pruneRevisions is one ranked DELETE capped at the kept count", async () =>
   assert.equal(await repo.pruneRevisions(20), 7);
   assert.equal(calls.length, 1);
   assert.match(calls[0].method, /row_number\(\) OVER \(PARTITION BY "postId" ORDER BY "createdAt" DESC\)/);
-  assert.deepEqual(calls[0].args, [20]);
+  const args = calls[0].args as unknown[];
+  assert.equal(args.at(-1), 20);
+  // Both table references are schema-qualified (lib/data/prisma/raw.ts).
+  assert.equal(args.filter((value) => (value as { sql?: string }).sql === `"public"."post_revisions"`).length, 2);
 });

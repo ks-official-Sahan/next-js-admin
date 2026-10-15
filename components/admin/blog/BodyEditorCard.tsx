@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Columns2 } from "lucide-react";
 
+import Icon from "@/components/icons/Icon";
 import { cardClass } from "@/components/admin/ui/styles";
 import { htmlToMarkdown, markdownToHtml } from "@sahan-sac/blog-kit/markdown";
 import { cn } from "@/lib/utils";
@@ -56,13 +56,12 @@ export default function BodyEditorCard({ content, onChange }: { content: string;
         </span>
 
         <div className="ml-auto flex items-center gap-2">
-          <div role="tablist" aria-label="Editor" className="inline-flex rounded-md border border-input p-0.5">
+          <div role="group" aria-label="Body format" className="inline-flex rounded-md border border-input p-0.5">
             {(["visual", "markdown"] as const).map((option) => (
               <button
                 key={option}
                 type="button"
-                role="tab"
-                aria-selected={editor === option}
+                aria-pressed={editor === option}
                 onClick={() => setEditor(option)}
                 className={cn(
                   "rounded px-3 py-1 text-xs font-medium capitalize transition-colors",
@@ -83,7 +82,7 @@ export default function BodyEditorCard({ content, onChange }: { content: string;
               split ? "border-primary bg-primary/10 text-foreground" : "border-input text-muted-foreground hover:text-foreground"
             )}
           >
-            <Columns2 size={14} aria-hidden />
+            <Icon name="layout-sidebar-right" className="size-3.5" />
             Live preview
           </button>
         </div>

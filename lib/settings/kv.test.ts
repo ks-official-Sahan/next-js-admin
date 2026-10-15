@@ -42,3 +42,20 @@ test("writeKvSetting on this instance is visible to the very next read", async (
   await writeKvSetting("maintenance", on);
   assert.deepEqual(await readKvSetting("maintenance", t0 + 1), on);
 });
+
+test("a failed KV read keeps the last known value instead of reading as not set", async () => {
+  const t0 = 9_000_000;
+  await writeKvSetting("maintenance", on);
+  assert.deepEqual(await readKvSetting("maintenance", t0), on);
+
+  const original = kv.get;
+  kv.get = async () => {
+    throw new Error("redis down");
+  };
+  try {
+    // Past the staleness bound the read waits for KV, which fails: the last known value answers.
+    assert.deepEqual(await readKvSetting("maintenance", t0 + 120_000), on);
+  } finally {
+    kv.get = original;
+  }
+});

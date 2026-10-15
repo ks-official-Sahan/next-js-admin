@@ -59,6 +59,10 @@ export async function GET(
     deliveryUrl = asset.url.replace("/upload/", `/upload/${transforms.join(",")}/`);
   }
 
-  // Redirect to Cloudinary delivery URL
-  return NextResponse.redirect(deliveryUrl, { status: 307 });
+  // Redirect to the Cloudinary delivery URL. A signed URL always maps to the
+  // same asset and transform, so caches may keep the redirect, but only
+  // briefly: a deleted or replaced asset stops resolving within minutes.
+  const response = NextResponse.redirect(deliveryUrl, { status: 307 });
+  response.headers.set("Cache-Control", "public, max-age=300, s-maxage=300, stale-while-revalidate=3600");
+  return response;
 }

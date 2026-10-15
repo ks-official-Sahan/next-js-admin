@@ -9,7 +9,7 @@ import { invalidate } from "@/lib/cache/invalidate";
 import { forContentPublish } from "@/lib/cache/plan";
 import { isPageSlug } from "@/lib/cache/tags";
 import { getDefinition } from "@/lib/cms/registry";
-import { discardDraft, publishDraft, restoreVersion, saveDraft, type Failure } from "@/lib/cms/service";
+import { discardDraft, restoreVersion, saveAndPublish, saveDraft, type Failure } from "@/lib/cms/service";
 import type { SectionDefinition } from "@/lib/cms/types";
 
 // The four changes an editor makes to a section. Each one authorizes first (a
@@ -108,29 +108,20 @@ export async function publishAction(_previous: ContentActionState, formData: For
   if (!payload.ok) return payload.state;
 
   const { definition, user } = allowed;
-  const saved = await saveDraft({
+  // One transaction: a publish that fails saves nothing, so the editor's base
+  // stays valid and nothing half-done is left in the draft.
+  const published = await saveAndPublish({
     page: definition.page,
     key: definition.key,
     data: payload.data,
     base: baseOf(formData),
+    note: String(formData.get("note") ?? "").slice(0, 200),
     actor: user,
   });
-  if (!saved.ok) return failed(saved);
-
-  const note = String(formData.get("note") ?? "").slice(0, 200);
-  // The draft that was just saved is the one to publish. If another save landed in
-  // between, the publish is refused instead of putting someone else's text live.
-  const published = await publishDraft({
-    page: definition.page,
-    key: definition.key,
-    note,
-    base: saved.updatedAt,
-    actor: user,
-  });
-  if (!published.ok) return { ...failed(published), base: published.code === "conflict" ? null : saved.updatedAt };
+  if (!published.ok) return failed(published);
 
   if (isPageSlug(definition.page)) {
-    invalidate(forContentPublish(definition.page, { consumers: definition.consumers, section: definition.key }));
+    await invalidate(forContentPublish(definition.page, { consumers: definition.consumers, section: definition.key }));
   }
   revalidatePath(`/admin/content/${definition.page}`);
   return {

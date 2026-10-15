@@ -4,6 +4,7 @@ import type { RoleName } from "@/lib/auth/permissions";
 
 import type { PresentRoles, UserListItem, UserPage, UserQuery, UserRepo, UserStatusFilter } from "../users";
 import type { DbClient } from "./client";
+import { table } from "./raw";
 
 const ref = { id: true, email: true, name: true, role: true, disabledAt: true } as const;
 const asRole = <T extends { role: string }>(row: T) => ({ ...row, role: row.role as RoleName });
@@ -183,7 +184,7 @@ export function userRepo(client: DbClient): UserRepo {
       return client.user.count({ where: { role: "DEVELOPER", disabledAt: null } });
     },
     async lockActiveDevelopers() {
-      await client.$queryRaw`SELECT id FROM users WHERE role = 'DEVELOPER' FOR UPDATE`;
+      await client.$queryRaw`SELECT id FROM ${table("users")} WHERE role = 'DEVELOPER' FOR UPDATE`;
       return client.user.count({ where: { role: "DEVELOPER", disabledAt: null } });
     },
     create(input) {

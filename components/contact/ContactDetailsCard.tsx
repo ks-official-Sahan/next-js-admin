@@ -1,7 +1,7 @@
 "use client";
 
+import Icon from "@/components/icons/Icon";
 import { cn } from "@/lib/utils";
-import { ArrowUpRight, Check, Copy } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 
 interface ContactDetailsCardProps {
@@ -79,11 +79,7 @@ const ContactDetailsCard = ({
           )}
         >
           {body}
-          <ArrowUpRight
-            size={16}
-            aria-hidden="true"
-            className="arrow-nudge-icon shrink-0 opacity-60"
-          />
+          <Icon name="arrow-up-right" className="size-4 shrink-0 opacity-60" />
           {external && <span className="sr-only"> (opens in a new tab)</span>}
         </a>
       ) : (
@@ -99,9 +95,9 @@ const ContactDetailsCard = ({
             className="press flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-bBORDERFADE bg-bCARD"
           >
             {copied ? (
-              <Check size={16} aria-hidden="true" />
+              <Icon name="checked" className="size-4" />
             ) : (
-              <Copy size={16} aria-hidden="true" />
+              <Icon name="copy" className="size-4" />
             )}
           </button>
           <span role="status" className="sr-only">

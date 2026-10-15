@@ -15,6 +15,7 @@ import { buildCsp, clientIp, generateNonce, isAllowedOrigin, isScannerPath, pars
 import { NextResponse, type NextRequest } from "next/server";
 
 import { UNLOCK_COOKIE } from "@/lib/admin/login-unlock";
+import { UNLOCK_FORM_HEADERS, UNLOCK_FORM_MAX_BYTES, unlockFormHtml, unlockFormPath } from "@/lib/admin/unlock-form";
 import {
   bypassKeysFromEnv,
   BYPASS_COOKIE,
@@ -30,7 +31,9 @@ import { authKit } from "@/lib/auth/kit-config";
 import { hasSessionCookie } from "@/lib/auth/session-cookie";
 import { limit } from "@/lib/cache/ratelimit";
 import { log } from "@/lib/log";
+import { maintenancePageHtml, retryAfterSeconds, type MaintenanceNotice } from "@/lib/admin/maintenance-page";
 import { readKvSetting } from "@/lib/settings/kv";
+import { enforcedIpAllowlist } from "@/lib/settings/schema";
 
 // Optimistic checks only: the proxy reads cookies and never the database. The
 // data access layer (lib/auth/dal.ts) is the authority. Responsibilities 1, 2, 3, 4, 5
@@ -60,46 +63,28 @@ function ip(request: NextRequest): string {
   return clientIp(request.headers, authKit.trustProxy);
 }
 
-/** Maintenance flag from the KV mirror; not set or unreadable reads as off. */
-async function isMaintenanceActive(): Promise<boolean> {
-  return Boolean((await readKvSetting("maintenance"))?.enabled);
+/** The maintenance setting from the KV mirror while it is on; null when off, not set or unreadable. */
+async function activeMaintenance(): Promise<MaintenanceNotice | null> {
+  const setting = await readKvSetting("maintenance");
+  return setting?.enabled ? setting : null;
 }
 
-/** IP allowlist from the KV mirror; not set or unreadable reads as empty (fail-open, see step 5). */
+/** Enforced IP allowlist from the KV mirror: empty when switched off, not set or unreadable (fail-open, see step 5). */
 async function getIpAllowlist(): Promise<string[]> {
-  return (await readKvSetting("security.ipAllowlist"))?.ips ?? [];
+  return enforcedIpAllowlist(await readKvSetting("security.ipAllowlist"));
 }
 
-/**
- * Serve a maintenance page (503 Service Unavailable).
- * Public response indicates the service is temporarily down.
- */
-function maintenancePage(): NextResponse {
-  return new NextResponse(
-    `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex, nofollow">
-  <title>Maintenance</title>
-  <style>body{font-family:sans-serif;text-align:center;padding:2rem}h1{font-size:2rem}p{color:#666}</style>
-</head>
-<body>
-  <h1>Maintenance in Progress</h1>
-  <p>The site is temporarily unavailable. Please try again later.</p>
-</body>
-</html>`,
-    {
-      status: 503,
-      headers: {
-        "Content-Type": "text/html; charset=utf-8",
-        "Retry-After": "3600",
-        "X-Robots-Tag": "noindex, nofollow, nocache",
-        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-      },
-    }
-  );
+/** The maintenance page (503), with the saved reason and expected end time. */
+function maintenancePage(notice: MaintenanceNotice | null, now: number): NextResponse {
+  return new NextResponse(maintenancePageHtml(notice, now), {
+    status: 503,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Retry-After": String(retryAfterSeconds(notice, now)),
+      "X-Robots-Tag": "noindex, nofollow, nocache",
+      "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    },
+  });
 }
 
 /** Nonce CSP for one admin request; Next reads the nonce from the request header. */
@@ -153,6 +138,59 @@ async function shortLink(request: NextRequest, link: ShortLink, now: number): Pr
   return response;
 }
 
+/**
+ * The break-glass unlock form at ADMIN_UNLOCK_PATH (lib/admin/unlock-form.ts).
+ * GET shows it; POST checks the secret with the same per-IP limit and
+ * constant-time comparison the old ?secret= query used, sets the unlock
+ * cookie and goes to the login page. The secret travels in a POST body only,
+ * never in a URL. With the gate off there is nothing to unlock: a 404.
+ */
+async function unlockForm(request: NextRequest, path: string): Promise<NextResponse> {
+  const keys = unlockKeysFromEnv();
+  if (!loginUnlockEnabled() || !keys) return locked(request);
+  const page = (failed: boolean) => new NextResponse(unlockFormHtml({ action: path, failed }), { status: failed ? 401 : 200, headers: UNLOCK_FORM_HEADERS });
+  if (request.method === "GET" || request.method === "HEAD") return page(false);
+  if (request.method !== "POST") return locked(request);
+
+  // The form posts to itself. A cross-site post, or a body bigger than a
+  // short secret needs, is answered like any unknown page. Sec-Fetch-Site is
+  // set by the browser itself and covers a browser that still sends
+  // `Origin: null` for a same-origin form post.
+  const origin = request.headers.get("origin");
+  const sameOrigin =
+    isAllowedOrigin(origin, {
+      hosts: [request.headers.get("host"), request.headers.get("x-forwarded-host")],
+      siteUrl: process.env.SITE_URL,
+      extraOrigins: extraOrigins(),
+    }) ||
+    ((origin === null || origin === "null") && request.headers.get("sec-fetch-site") === "same-origin");
+  // Content-Length may be absent (a proxy re-chunking the body): then the
+  // body is read and measured instead of trusted.
+  const declared = request.headers.get("content-length");
+  if (!sameOrigin || (declared !== null && !(Number(declared) <= UNLOCK_FORM_MAX_BYTES))) {
+    log.warn("admin unlock form post refused before reading", { sameOrigin, declared });
+    return locked(request);
+  }
+
+  const callerIp = ip(request);
+  // Same R22 rule as the ?secret= unlock below: an unknown IP is shared by
+  // every caller, so limiting it would let one caller lock the owner out.
+  const limited = callerIp === UNKNOWN_IP ? false : !(await limit("unlock:ip", callerIp)).ok;
+  const raw = limited ? null : await request.text().catch(() => null);
+  const body = raw !== null && raw.length <= UNLOCK_FORM_MAX_BYTES ? new URLSearchParams(raw) : null;
+  const secret = body?.get("secret");
+  const accepted = typeof secret === "string" && secret.length <= 512 && isUnlockSecret(secret, keys);
+  if (!accepted) {
+    log.warn("admin unlock form refused", { ip: callerIp, limited });
+    return page(true);
+  }
+  const response = NextResponse.redirect(new URL(LOGIN_PATH, request.url), 303);
+  response.cookies.set(UNLOCK_COOKIE, signUnlockCookie(Date.now(), keys), unlockCookieOptions(PRODUCTION));
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Referrer-Policy", "no-referrer");
+  return response;
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
 
@@ -162,6 +200,10 @@ export async function proxy(request: NextRequest) {
   // 1a. Short links, before maintenance mode: an emailed link works during it too.
   const short = request.method === "GET" || request.method === "HEAD" ? parseShortLink(pathname, request.nextUrl.search) : null;
   if (short) return shortLink(request, short, Date.now());
+
+  // 1b. The break-glass unlock form, when ADMIN_UNLOCK_PATH is set.
+  const unlockPath = unlockFormPath(process.env.ADMIN_UNLOCK_PATH);
+  if (unlockPath && pathname === unlockPath) return unlockForm(request, unlockPath);
 
   const adminPage = isAdminPage(pathname);
   const adminApi = isAdminApi(pathname);
@@ -194,13 +236,12 @@ export async function proxy(request: NextRequest) {
   // bypass cookie. Called here with hasBypassCookie=false, it reduces to the
   // path-only check that decides whether to enter this block at all.
   if (!isMaintenanceExempt(pathname, false)) {
-    const maintenance = await isMaintenanceActive();
-    if (maintenance && !isMaintenanceExempt(pathname, hasBypassCookie)) {
-      return maintenancePage();
-    }
+    const maintenance = await activeMaintenance();
 
-    // 2a. Bypass query for maintenance: ?bypass-secret=...
-    if (maintenance && searchParams.has(BYPASS_QUERY) && bypassKeys) {
+    // 2a. Bypass query for maintenance: ?bypass-secret=... Checked before the
+    // page below, which would otherwise answer every request without the
+    // cookie, so the query that sets the cookie could never be reached.
+    if (maintenance && !hasBypassCookie && searchParams.has(BYPASS_QUERY) && bypassKeys) {
       const callerIp = ip(request);
       // Same R22 rule as the unlock query below: an unknown IP is shared by
       // every caller, so limiting it would let one caller lock the owner out.
@@ -208,7 +249,7 @@ export async function proxy(request: NextRequest) {
       const accepted = !limited && isValidBypassSecret(searchParams.get(BYPASS_QUERY), bypassKeys);
       if (!accepted) {
         log.warn("maintenance bypass refused", { ip: callerIp, limited });
-        return maintenancePage();
+        return maintenancePage(maintenance, now);
       }
       const clean = request.nextUrl.clone();
       clean.searchParams.delete(BYPASS_QUERY);
@@ -220,6 +261,10 @@ export async function proxy(request: NextRequest) {
       );
       response.headers.set("Cache-Control", "no-store");
       return response;
+    }
+
+    if (maintenance && !isMaintenanceExempt(pathname, hasBypassCookie)) {
+      return maintenancePage(maintenance, now);
     }
 
     // Public pages continue normally
@@ -254,8 +299,11 @@ export async function proxy(request: NextRequest) {
   const unlockGate = loginUnlockEnabled();
   const keys = unlockKeysFromEnv();
 
-  // 4a. Unlock query: /admin or /admin/login with ?secret=...
-  if (unlockGate && adminPage && searchParams.has(UNLOCK_QUERY) && (pathname === "/admin" || pathname === LOGIN_PATH)) {
+  // 4a. Legacy unlock query: /admin or /admin/login with ?secret=... It puts
+  // the secret in the URL (history, address-bar suggestions, request logs),
+  // so it only works until ADMIN_UNLOCK_PATH is set; after that the
+  // break-glass form (1b) and emailed sign-in links are the only ways in.
+  if (unlockGate && !unlockPath && adminPage && searchParams.has(UNLOCK_QUERY) && (pathname === "/admin" || pathname === LOGIN_PATH)) {
     const callerIp = ip(request);
     // Same R22 fail-open rule as the IP allowlist above: without
     // TRUSTED_PROXY_HOPS (or off Vercel), every caller shares UNKNOWN_IP, so
@@ -269,6 +317,7 @@ export async function proxy(request: NextRequest) {
       log.warn("admin unlock refused", { ip: callerIp, limited, configured: keys !== null });
       return locked(request);
     }
+    log.warn("admin unlocked with the legacy ?secret= link; set ADMIN_UNLOCK_PATH and rotate ADMIN_LOGIN_UNLOCK_SECRET");
     const clean = request.nextUrl.clone();
     clean.searchParams.delete(UNLOCK_QUERY);
     const response = NextResponse.redirect(clean, 307);

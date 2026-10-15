@@ -1,8 +1,8 @@
 "use client";
 
-import { Check, Copy } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
+import Icon from "@/components/icons/Icon";
 import { toast } from "@/lib/admin/toast";
 import { cn } from "@/lib/utils";
 
@@ -73,7 +73,7 @@ export default function CopyField({
           onClick={() => void copy()}
           className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {copied ? <Check aria-hidden className="size-4 text-emerald-600 dark:text-emerald-400" /> : <Copy aria-hidden className="size-4" />}
+          {copied ? <Icon name="checked" className="text-emerald-600 dark:text-emerald-400" /> : <Icon name="copy" />}
           {copied ? "Copied" : "Copy"}
         </button>
       </div>

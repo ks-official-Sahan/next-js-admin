@@ -12,11 +12,13 @@ import FeaturesForm from "@/components/admin/settings/FeaturesForm";
 import IntegrationHealthPanel from "@/components/admin/settings/IntegrationHealthPanel";
 import IpAllowlistForm from "@/components/admin/settings/IpAllowlistForm";
 import MaintenanceForm from "@/components/admin/settings/MaintenanceForm";
+import PasskeySignInForm from "@/components/admin/settings/PasskeySignInForm";
 import SeoToolsPanel from "@/components/admin/settings/SeoToolsPanel";
 import SettingsNav from "@/components/admin/settings/SettingsNav";
 import { getCachedIntegrationHealth } from "@/lib/admin/integrations";
 import { bypassKeysFromEnv } from "@/lib/admin/maintenance-bypass";
 import { hasPermission, requireUser } from "@/lib/auth/dal";
+import { SUPER_ROLE } from "@/lib/auth/permissions";
 import { getKnownIps } from "@/lib/auth/session-store";
 import { getEnv } from "@/lib/env";
 import { clientIp } from "@/lib/security/ip";
@@ -53,9 +55,11 @@ export default async function SettingsPage() {
   const canConfigureChatbot = hasPermission(user, "manageChatbot");
   const canToggleChatbot = hasPermission(user, "manageChatbotTraining");
   const canViewSecurity = hasPermission(user, "viewSecurityStatus");
+  // Passwordless sign-in changes how every account signs in: developers only.
+  const canSwitchPasskeySignIn = canManageSettings && user.role === SUPER_ROLE;
   if (!canManageSettings && !canManageAllowlist && !canClearCache && !canManageCron && !canConfigureChatbot) notFound();
 
-  const [features, maintenance, ipAllowlist, chatbotConfig, emailRouting, aiContext, requestHeaders, knownIps] = await Promise.all([
+  const [features, maintenance, ipAllowlist, chatbotConfig, emailRouting, aiContext, requestHeaders, knownIps, passkeySignIn] = await Promise.all([
     canManageSettings ? getSetting("features") : Promise.resolve(null),
     canManageSettings ? getSetting("maintenance") : Promise.resolve(null),
     canManageAllowlist ? getSetting("security.ipAllowlist") : Promise.resolve(null),
@@ -64,6 +68,7 @@ export default async function SettingsPage() {
     canManageSettings ? getSetting("ai.context") : Promise.resolve(null),
     headers(),
     canManageAllowlist ? getKnownIps() : Promise.resolve([]),
+    canSwitchPasskeySignIn ? getSetting("security.passkeySignIn") : Promise.resolve(null),
   ]);
 
   const callerIp = clientIp(requestHeaders);
@@ -98,6 +103,14 @@ export default async function SettingsPage() {
             knownIps={knownIps.map((known) => ({ ...known, lastSeenAt: known.lastSeenAt.toISOString() }))}
           />
         ),
+      },
+    canSwitchPasskeySignIn &&
+      passkeySignIn && {
+        id: "passkey-sign-in",
+        title: "Passkey sign-in",
+        nav: "Passkey sign-in",
+        description: "Let accounts sign in with a passkey alone, without the password or a second step.",
+        content: <PasskeySignInForm value={passkeySignIn} />,
       },
     canConfigureChatbot &&
       chatbotConfig && {
@@ -170,7 +183,7 @@ export default async function SettingsPage() {
 
       <div className="lg:grid lg:grid-cols-[12rem_minmax(0,1fr)] lg:gap-10">
         <SettingsNav items={visible.map(({ id, nav }) => ({ id, label: nav }))} />
-        <div className="min-w-0 max-w-4xl space-y-12 pb-40">
+        <div className="min-w-0 max-w-4xl space-y-12 pb-[54dvh]">
           {visible.map((section) => (
             <Section key={section.id} id={section.id} title={section.title} description={section.description}>
               {section.content}

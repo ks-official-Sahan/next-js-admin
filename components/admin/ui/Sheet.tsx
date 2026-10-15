@@ -1,8 +1,8 @@
 "use client";
 
-import { X } from "lucide-react";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 
+import Icon from "@/components/icons/Icon";
 import { cn } from "@/lib/utils";
 
 /**
@@ -74,7 +74,7 @@ export default function Sheet({
           onClick={() => dialogRef.current?.close()}
           className="-mr-2 -mt-1 inline-flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <X aria-hidden className="size-5" />
+          <Icon name="x" className="size-5" />
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5">{children}</div>

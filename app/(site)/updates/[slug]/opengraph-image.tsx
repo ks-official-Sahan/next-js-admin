@@ -3,7 +3,7 @@ import { ImageResponse } from "next/og";
 import { cloudinaryImageUrl } from "@sahan-sac/media-kit/delivery";
 
 import { SiteMetadata } from "@/config/site";
-import { getPostBySlug, getPosts } from "@/lib/blog/queries";
+import { getPostBySlug, getRecentPosts } from "@/lib/blog/queries";
 
 // Per-post social card. Not a page — a sibling file-convention image next to
 // app/(site)/updates/[slug]/page.tsx (that page is owned by another stream;
@@ -28,7 +28,7 @@ export const contentType = "image/png";
 export const revalidate = 300;
 
 export async function generateStaticParams() {
-  const posts = await getPosts();
+  const posts = await getRecentPosts(50);
   return posts.map((post) => ({ slug: post.slug }));
 }
 
@@ -38,10 +38,12 @@ export default async function Image({ params }: { params: Promise<{ slug: string
 
   if (post?.coverUrl) {
     return new ImageResponse(
-      // eslint-disable-next-line @next/next/no-img-element -- next/og's Satori renderer, not next/image
+      // next/og's Satori renderer, not next/image. Decorative: alt stays empty.
+      // eslint-disable-next-line @next/next/no-img-element -- Satori requires an inline img element.
       <img
         // Pre-cropped JPEG at card size: Satori cannot read AVIF/WebP, and the original may be many MB.
         src={cloudinaryImageUrl(post.coverUrl, { ...size, format: "jpg" })}
+        alt=""
         width={size.width}
         height={size.height}
         style={{ objectFit: "cover" }}

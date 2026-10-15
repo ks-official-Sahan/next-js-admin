@@ -1,13 +1,13 @@
 import "server-only";
 
-import { getPosts } from "@/lib/blog/queries";
+import { getAllIndexablePosts } from "@/lib/blog/queries";
 import { SiteMetadata } from "@/config/site";
 
 // IndexNow: tells Bing and every other participating search engine about a
 // changed URL immediately, instead of waiting for the next crawl. Ported
 // from the same pattern in ValoremAdminPanel's lib/indexnow.ts, scoped down
 // to this site's actual routes (no per-project pages — projects live inline
-// on /works, matching app/sitemap.ts).
+// on /works, matching app/sitemaps/sitemap.ts).
 //
 // The key doubles as the filename of its own proof file: public/<key>.txt
 // must contain exactly the key. IndexNow verifies ownership by fetching
@@ -34,7 +34,7 @@ export function isIndexNowConfigured(): boolean {
 export async function collectIndexableUrls(): Promise<string[]> {
   const staticUrls = STATIC_ROUTES.map((route) => absoluteSiteUrl(route));
 
-  const posts = await getPosts();
+  const posts = await getAllIndexablePosts();
   const postUrls = posts.map((post) => absoluteSiteUrl(`/updates/${post.slug}`));
 
   return [...new Set([...staticUrls, ...postUrls])];

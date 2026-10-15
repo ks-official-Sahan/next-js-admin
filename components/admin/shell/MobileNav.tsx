@@ -1,7 +1,8 @@
 "use client";
 
-import { Menu, X } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
+
+import Icon from "@/components/icons/Icon";
 
 import Nav, { type NavSectionView } from "./Nav";
 
@@ -34,7 +35,7 @@ export default function MobileNav({ sections }: { sections: NavSectionView[] }) 
         onClick={() => dialogRef.current?.showModal()}
         className="inline-flex size-9 items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <Menu aria-hidden="true" className="size-5" />
+        <Icon lucideIconName="Menu" className="size-5" />
       </button>
       <dialog
         ref={dialogRef}
@@ -56,7 +57,7 @@ export default function MobileNav({ sections }: { sections: NavSectionView[] }) 
               onClick={() => dialogRef.current?.close()}
               className="inline-flex size-9 items-center justify-center rounded-md transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <X aria-hidden="true" className="size-5" />
+              <Icon name="x" className="size-5" />
             </button>
           </div>
           <Nav sections={sections} onNavigate={() => dialogRef.current?.close()} />

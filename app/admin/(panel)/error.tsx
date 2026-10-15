@@ -1,8 +1,8 @@
 "use client";
 
-import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
 
+import Icon from "@/components/icons/Icon";
 import EmptyState from "@/components/admin/ui/EmptyState";
 import { Button, buttonVariants } from "@/components/ui/button";
 
@@ -19,7 +19,7 @@ export default function PanelError({
   return (
     <div className="mx-auto w-full max-w-5xl">
       <EmptyState
-        icon={<TriangleAlert />}
+        icon={<Icon name="triangle-alert" className="size-6" />}
         title="Something went wrong"
         description={
           error.digest

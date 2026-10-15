@@ -3,7 +3,7 @@
 import React from "react";
 import ThemeSwitch from "../theme/theme-switch";
 import Link from "next/link";
-import { Menu } from "lucide-react";
+import Icon from "@/components/icons/Icon";
 import { SiteNavigations } from "@/config/nav";
 import NavItem from "./NavItem";
 
@@ -64,7 +64,7 @@ const NavBar = ({ title, currentPath, opened, toggle }: NavBarProps) => {
           aria-label={opened ? "Close navigation" : "Open navigation"}
           className="flex h-11 w-11 items-center justify-center rounded text-white/90"
         >
-          <Menu size={24} aria-hidden="true" />
+          <Icon lucideIconName="Menu" className="size-6" />
         </button>
       </div>
     </nav>

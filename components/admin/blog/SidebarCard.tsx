@@ -1,8 +1,8 @@
 "use client";
 
 import { type ReactNode, useId, useState } from "react";
-import { ChevronDown } from "lucide-react";
 
+import Icon from "@/components/icons/Icon";
 import { cn } from "@/lib/utils";
 
 // A collapsible sidebar card (work item 3: "right sidebar cards... collapsible"),
@@ -37,7 +37,7 @@ export default function SidebarCard({
           onClick={() => setOpen((value) => !value)}
           className="flex flex-1 items-center gap-1.5 text-left text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <ChevronDown size={14} aria-hidden className={cn("shrink-0 text-muted-foreground transition-transform", !open && "-rotate-90")} />
+          <Icon name="down-chevron" className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", !open && "-rotate-90")} />
           {title}
         </button>
         {actions}

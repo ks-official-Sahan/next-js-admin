@@ -1,24 +1,22 @@
-import { and, asc, desc, eq, ilike, inArray, like, ne } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, isNotNull, isNull, like, lt, lte, ne, or, type SQL } from "drizzle-orm";
 
-import { mediaAssets, postRevisions, posts, users } from "@/lib/db/schema";
+import { mediaAssets, postRevisions, postSlugRedirects, posts, users } from "@/lib/db/schema";
 
 import type { PostRepo, PostRevisionRepo, PostRow } from "../posts";
 import { containsPattern, countRows, first, one, prefixPattern, type DbClient } from "./client";
 import { translateUnique } from "./errors";
 
-/** The public visibility rule: status alone, never publishAt. */
-export const PUBLISHED = eq(posts.status, "PUBLISHED");
+type Cursor = { publishedAt: Date; id: string };
 
-const asRow = <T extends { tags: string[] | null }>(row: T) => ({ ...row, tags: row.tags ?? [] }) as T & { tags: string[] };
-
-const summaryColumns = {
+const SUMMARY_COLUMNS = {
   id: posts.id,
   slug: posts.slug,
   title: posts.title,
   excerpt: posts.excerpt,
-  contentText: posts.contentText,
+  autoExcerpt: posts.autoExcerpt,
   topic: posts.topic,
   tags: posts.tags,
+  publishAt: posts.publishAt,
   publishedAt: posts.publishedAt,
   updatedAt: posts.updatedAt,
   readMinutes: posts.readMinutes,
@@ -28,33 +26,177 @@ const summaryColumns = {
   seoDescription: posts.seoDescription,
   canonicalUrl: posts.canonicalUrl,
   noindex: posts.noindex,
-  author: { name: users.name },
+  author: { id: users.id, name: users.name },
 };
+
+const REF_COLUMNS = {
+  id: posts.id,
+  slug: posts.slug,
+  publishAt: posts.publishAt,
+  publishedAt: posts.publishedAt,
+  updatedAt: posts.updatedAt,
+};
+
+type JoinedSummary = {
+  tags: string[] | null;
+  coverMedia: { url: string | null; width: number | null; height: number | null } | null;
+  author: { id: string | null; name: string | null } | null;
+};
+
+/** Shapes a joined row like the Prisma reference: null when there is no cover or author. */
+function toSummary<T extends JoinedSummary>(row: T) {
+  const { coverMedia, author, ...rest } = row;
+  return {
+    ...rest,
+    tags: row.tags ?? [],
+    coverMedia: coverMedia && coverMedia.url !== null ? { url: coverMedia.url, width: coverMedia.width, height: coverMedia.height } : null,
+    author: author && author.id !== null ? { name: author.name } : null,
+  };
+}
+
+const asRow = <T extends { tags: string[] | null }>(row: T) => ({ ...row, tags: row.tags ?? [] }) as T & { tags: string[] };
+
+const effectivePublishedAt = (row: { publishedAt: Date | null; publishAt: Date | null }): Date => row.publishAt ?? row.publishedAt ?? new Date(0);
+
+function newestFirst<T extends { id: string; publishedAt: Date | null; publishAt: Date | null }>(rows: T[]): T[] {
+  return rows.sort((a, b) => effectivePublishedAt(b).getTime() - effectivePublishedAt(a).getTime() || b.id.localeCompare(a.id));
+}
+
+/** Keyset continuation after `cursor` on the given sort column (same tie-break on id as the sort). */
+function afterCursor(column: typeof posts.publishAt, cursor?: Cursor): SQL | undefined {
+  if (!cursor) return undefined;
+  return or(lt(column, cursor.publishedAt), and(eq(column, cursor.publishedAt), lt(posts.id, cursor.id)));
+}
+
+/**
+ * The three public branches, each with its own cursor and sort, mirroring the
+ * Prisma reference: published posts without publishAt sort by publishedAt; a
+ * promoted or due scheduled post sorts by publishAt. Each branch is cut to
+ * `take` before the JS merge.
+ */
+function publicBranches(now: Date, after: Cursor | undefined, indexableOnly: boolean): Array<{ where: SQL | undefined; sortBy: "publishedAt" | "publishAt" }> {
+  const indexable = indexableOnly ? eq(posts.noindex, false) : undefined;
+  return [
+    {
+      where: and(eq(posts.status, "PUBLISHED"), isNull(posts.publishAt), indexable, afterCursor(posts.publishedAt, after)),
+      sortBy: "publishedAt",
+    },
+    {
+      where: and(
+        eq(posts.status, "PUBLISHED"),
+        isNotNull(posts.publishAt),
+        lte(posts.publishAt, now),
+        indexable,
+        afterCursor(posts.publishAt, after)
+      ),
+      sortBy: "publishAt",
+    },
+    {
+      where: and(eq(posts.status, "SCHEDULED"), lte(posts.publishAt, now), indexable, afterCursor(posts.publishAt, after)),
+      sortBy: "publishAt",
+    },
+  ];
+}
+
+/** Visible to the public at `now`: published (and its publishAt, if any, has passed) or scheduled and due. */
+function publicNow(now: Date): SQL | undefined {
+  return or(
+    and(eq(posts.status, "PUBLISHED"), or(isNull(posts.publishAt), lte(posts.publishAt, now))),
+    and(eq(posts.status, "SCHEDULED"), lte(posts.publishAt, now))
+  );
+}
 
 export function postRepo(client: DbClient): PostRepo {
   const byId = async (id: string) => first(await client.select().from(posts).where(eq(posts.id, id)).limit(1));
   return {
-    async listPublished() {
+    async listPublishedPage(take, after, indexableOnly = false, visibleAt) {
+      const now = visibleAt ?? new Date();
+      const pages = await Promise.all(
+        publicBranches(now, after, indexableOnly).map(({ where, sortBy }) =>
+          client
+            .select(SUMMARY_COLUMNS)
+            .from(posts)
+            .leftJoin(mediaAssets, eq(mediaAssets.id, posts.coverMediaId))
+            .leftJoin(users, eq(users.id, posts.authorId))
+            .where(where)
+            .orderBy(desc(posts[sortBy]), desc(posts.id))
+            .limit(take)
+        )
+      );
+      return newestFirst(pages.flat().map((row) => toSummary(row))).slice(0, take);
+    },
+    async listIndexableRefs(take, after) {
+      const pages = await Promise.all(
+        publicBranches(new Date(), after, true).map(({ where, sortBy }) =>
+          client.select(REF_COLUMNS).from(posts).where(where).orderBy(desc(posts[sortBy]), desc(posts.id)).limit(take)
+        )
+      );
+      return newestFirst(pages.flat()).slice(0, take);
+    },
+    async listUpcoming(from, to, take, indexableOnly) {
       const rows = await client
-        .select(summaryColumns)
+        .select(SUMMARY_COLUMNS)
         .from(posts)
         .leftJoin(mediaAssets, eq(mediaAssets.id, posts.coverMediaId))
         .leftJoin(users, eq(users.id, posts.authorId))
-        .where(PUBLISHED)
-        .orderBy(desc(posts.publishedAt));
-      return rows.map(asRow);
+        .where(
+          and(
+            inArray(posts.status, ["PUBLISHED", "SCHEDULED"]),
+            gt(posts.publishAt, from),
+            lte(posts.publishAt, to),
+            indexableOnly ? eq(posts.noindex, false) : undefined
+          )
+        )
+        .orderBy(asc(posts.publishAt), asc(posts.id))
+        .limit(take);
+      return rows.map((row) => toSummary(row));
     },
-    async findPublished(slug) {
+    async listPublicSlugs(visibleAt) {
+      return client
+        .select({ slug: posts.slug, publishAt: posts.publishAt })
+        .from(posts)
+        .where(publicNow(visibleAt ?? new Date()));
+    },
+    async findPublished(slug, visibleAt) {
       const row = first(
         await client
-          .select({ ...summaryColumns, contentHtml: posts.contentHtml })
+          .select({ ...SUMMARY_COLUMNS, contentHtml: posts.contentHtml })
           .from(posts)
           .leftJoin(mediaAssets, eq(mediaAssets.id, posts.coverMediaId))
           .leftJoin(users, eq(users.id, posts.authorId))
-          .where(and(PUBLISHED, eq(posts.slug, slug)))
+          .where(and(eq(posts.slug, slug), publicNow(visibleAt ?? new Date())))
           .limit(1)
       );
-      return row && asRow(row);
+      return row && toSummary(row);
+    },
+    async listSlugRedirects() {
+      return client
+        .select({ slug: postSlugRedirects.slug, targetSlug: posts.slug })
+        .from(postSlugRedirects)
+        .innerJoin(posts, eq(posts.id, postSlugRedirects.postId));
+    },
+    async recordRename(postId, oldSlug, newSlug) {
+      if (oldSlug === newSlug) return;
+      await client.delete(postSlugRedirects).where(eq(postSlugRedirects.slug, newSlug));
+      await client
+        .insert(postSlugRedirects)
+        .values({ slug: oldSlug, postId })
+        .onConflictDoUpdate({ target: postSlugRedirects.slug, set: { postId } });
+    },
+    async releaseSlug(slug) {
+      await client.delete(postSlugRedirects).where(eq(postSlugRedirects.slug, slug));
+    },
+    async findForPreview(id) {
+      const row = first(
+        await client
+          .select({ ...SUMMARY_COLUMNS, contentHtml: posts.contentHtml })
+          .from(posts)
+          .leftJoin(mediaAssets, eq(mediaAssets.id, posts.coverMediaId))
+          .leftJoin(users, eq(users.id, posts.authorId))
+          .where(eq(posts.id, id))
+          .limit(1)
+      );
+      return row && toSummary(row);
     },
     async find(id) {
       const row = await byId(id);

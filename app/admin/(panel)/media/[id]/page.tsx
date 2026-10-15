@@ -1,164 +1,88 @@
-import { Metadata } from "next";
-import { Container, Grid, GridCol, Card, CardSection, Stack, Text, TextInput, Textarea, Button, Group, Badge, Alert, List, ListItem } from "@mantine/core";
-import { AlertTriangle, Trash2, ArrowLeft } from "lucide-react";
+import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import { Alert, Badge, Button, Card, CardSection, Container, Grid, GridCol, Group, List, ListItem, Stack, Text } from "@mantine/core";
 
+import Icon from "@/components/icons/Icon";
+import MediaDetailsForm from "@/components/admin/media/MediaDetailsForm";
 import { getOptionalUser, hasPermission } from "@/lib/auth/dal";
 import { repos } from "@/lib/data";
-import { notFound } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "Media Details",
   robots: "noindex",
 };
 
-interface MediaDetailPageProps {
-  params: Promise<{ id: string }>;
-}
-
-export default async function MediaDetailPage({ params }: MediaDetailPageProps) {
+export default async function MediaDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await getOptionalUser();
-  if (!user || !hasPermission(user, "viewMedia")) return notFound();
+  if (!user || user.mustChangePassword || !hasPermission(user, "viewMedia")) return notFound();
 
   const asset = await repos.media.findWithUsages(id);
-
   if (!asset) return notFound();
 
+  const canEdit = hasPermission(user, "uploadMedia");
   const canDelete = asset.usages.length === 0 && hasPermission(user, "deleteMedia");
 
   return (
     <Container>
       <Group mb="lg">
-        <Link href="/admin/media">
-          <Button leftSection={<ArrowLeft size={16} />} variant="light">
-            Back
-          </Button>
-        </Link>
-        <Text size="lg" fw={700}>
-          {asset.title || asset.publicId || "Media"}
-        </Text>
+        <Button component={Link} href="/admin/media" leftSection={<Icon name="arrow-narrow-left" className="size-4" />} variant="light">
+          Back
+        </Button>
+        <Text size="lg" fw={700}>{asset.title || asset.publicId || "Media"}</Text>
       </Group>
 
       <Grid>
         <GridCol span={{ base: 12, md: 8 }}>
           <Stack gap="lg">
-            {asset.kind === "IMAGE" && asset.url && (
+            {asset.kind === "IMAGE" && asset.url ? (
               <Card withBorder>
                 <CardSection>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={asset.url} alt={asset.alt || "Media"} style={{ maxWidth: "100%", maxHeight: 400 }} />
+                  {/* eslint-disable-next-line @next/next/no-img-element -- admin preview of a Cloudinary/LOCAL asset */}
+                  <img src={asset.url} alt={asset.alt || asset.title || asset.publicId || "Uploaded image"} style={{ maxWidth: "100%", maxHeight: 400 }} />
                 </CardSection>
               </Card>
-            )}
+            ) : null}
 
             <Card withBorder>
-              <Stack gap="md">
-                <div>
-                  <Text size="sm" fw={600} mb="xs">
-                    Alt Text *
-                  </Text>
-                  <Textarea
-                    placeholder="Describe this image for accessibility"
-                    value={asset.alt || ""}
-                    readOnly
-                    minRows={3}
-                  />
-                  <Text size="xs" c="dimmed" mt="xs">
-                    Alt text is required for all images. Edit from the upload page.
-                  </Text>
-                </div>
-
-                <div>
-                  <Text size="sm" fw={600} mb="xs">
-                    Title
-                  </Text>
-                  <TextInput placeholder="Optional title" value={asset.title || ""} readOnly />
-                </div>
-
-                <div>
-                  <Text size="sm" fw={600} mb="xs">
-                    Folder
-                  </Text>
-                  <Badge>{asset.folder}</Badge>
-                </div>
-
-                <div>
-                  <Text size="sm" fw={600} mb="xs">
-                    Details
-                  </Text>
-                  <Group>
-                    <div>
-                      <Text size="xs" c="dimmed">
-                        Size
-                      </Text>
-                      <Text size="sm" fw={500}>
-                        {(asset.sizeBytes / 1024 / 1024).toFixed(2)} MB
-                      </Text>
-                    </div>
-                    {asset.width && asset.height && (
-                      <div>
-                        <Text size="xs" c="dimmed">
-                          Dimensions
-                        </Text>
-                        <Text size="sm" fw={500}>
-                          {asset.width} × {asset.height}
-                        </Text>
-                      </div>
-                    )}
-                    <div>
-                      <Text size="xs" c="dimmed">
-                        Provider
-                      </Text>
-                      <Text size="sm" fw={500}>
-                        {asset.provider}
-                      </Text>
-                    </div>
-                  </Group>
-                </div>
-              </Stack>
+              <MediaDetailsForm
+                mediaId={asset.id}
+                kind={asset.kind}
+                initialAlt={asset.alt || ""}
+                initialTitle={asset.title || ""}
+                initialTags={asset.tags}
+                canEdit={canEdit}
+                canDelete={canDelete}
+              />
             </Card>
           </Stack>
         </GridCol>
 
         <GridCol span={{ base: 12, md: 4 }}>
           <Stack gap="lg">
-            {asset.usages.length > 0 && (
-              <Alert icon={<AlertTriangle size={16} />} color="yellow" title="In Use">
-                This media is used in {asset.usages.length} place{asset.usages.length === 1 ? "" : "s"}. It cannot be deleted
-                until those references are removed.
+            {asset.usages.length > 0 ? (
+              <Alert icon={<Icon name="triangle-alert" className="size-4" />} color="yellow" title="In use">
+                This media is referenced in {asset.usages.length} place{asset.usages.length === 1 ? "" : "s"}; remove those references before deleting it.
                 <List size="sm" mt="xs">
                   {asset.usages.slice(0, 5).map((usage) => (
-                    <ListItem key={usage.id}>
-                      {usage.entityType} ({usage.field})
-                    </ListItem>
+                    <ListItem key={usage.id}>{usage.entityType} ({usage.field})</ListItem>
                   ))}
-                  {asset.usages.length > 5 && <ListItem>... and {asset.usages.length - 5} more</ListItem>}
+                  {asset.usages.length > 5 ? <ListItem>{asset.usages.length - 5} more</ListItem> : null}
                 </List>
               </Alert>
-            )}
-
-            {canDelete && (
-              <Card withBorder style={{ backgroundColor: "var(--mantine-color-red-0)" }}>
-                <Stack gap="md">
-                  <Text size="sm" c="red">
-                    Delete this media permanently. This action cannot be undone.
-                  </Text>
-                  <Button color="red" leftSection={<Trash2 size={16} />} fullWidth>
-                    Delete
-                  </Button>
-                </Stack>
-              </Card>
-            )}
+            ) : null}
 
             <Card withBorder>
               <Stack gap="xs">
-                <Text size="sm" fw={600}>
-                  Created
-                </Text>
-                <Text size="sm">
-                  {asset.createdAt.toLocaleDateString()} {asset.createdAt.toLocaleTimeString()}
-                </Text>
+                <Group justify="space-between"><Text size="sm" fw={600}>Kind</Text><Badge>{asset.kind}</Badge></Group>
+                <Group justify="space-between"><Text size="sm" fw={600}>Folder</Text><Badge variant="light">{asset.folder}</Badge></Group>
+                <Group justify="space-between"><Text size="sm" fw={600}>Size</Text><Text size="sm">{(asset.sizeBytes / 1024 / 1024).toFixed(2)} MB</Text></Group>
+                {asset.width && asset.height ? (
+                  <Group justify="space-between"><Text size="sm" fw={600}>Dimensions</Text><Text size="sm">{asset.width} × {asset.height}</Text></Group>
+                ) : null}
+                <Group justify="space-between"><Text size="sm" fw={600}>Provider</Text><Text size="sm">{asset.provider}</Text></Group>
+                <Text size="xs" c="dimmed">Created {asset.createdAt.toLocaleDateString()} {asset.createdAt.toLocaleTimeString()}</Text>
               </Stack>
             </Card>
           </Stack>

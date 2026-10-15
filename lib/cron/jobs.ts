@@ -5,7 +5,12 @@ import { invalidate } from "@/lib/cache/invalidate";
 import { forPostList } from "@/lib/cache/plan";
 import { audit } from "@/lib/admin/audit";
 import { REVISIONS_KEPT } from "@sahan-sac/blog-kit/revisions";
+import { HISTORY_KEPT } from "@/lib/cms/versions";
 import { log } from "@/lib/log";
+import { deleteTrashedFile, trashedFile, type TrashedFile } from "@/lib/trash/media-file";
+import { trashCutoff } from "@/lib/trash/policy";
+import { deliverByIds } from "@/lib/webhooks/dispatch";
+import { DELIVERY_KEEP_DAYS } from "@/lib/webhooks/policy";
 
 // Shared cron job logic, called by both the /api/cron/* routes (automatic,
 // CRON_SECRET) and the manual "run now" action on the settings screen
@@ -54,7 +59,7 @@ export async function blogPublishJob(client: BlogPublishDb = repos): Promise<{ p
     // reported as "nothing was published" when the database write already
     // succeeded, so it is isolated from the job's own result.
     try {
-      invalidate(forPostList());
+      await invalidate(forPostList());
     } catch (err) {
       log.warn("blog publish cron: cache invalidation failed", { error: String(err) });
     }
@@ -134,7 +139,7 @@ export async function auditPruneJob(
 
     await audit(
       {
-        action: "audit.exported",
+        action: "audit.pruned",
         entityType: "AuditLog",
         meta: { op: "prune", deletedRows: result.count, retentionDays },
       },
@@ -153,14 +158,111 @@ export async function auditPruneJob(
 /** The daily audit-prune schedule: old audit rows and surplus post revisions, pruned together. */
 export async function housekeepingPruneJob(
   options: { retentionDays?: number } = {}
-): Promise<{ deleted: number; auditRows: number; revisions: number; error?: string }> {
-  const [auditResult, revisionResult] = await Promise.all([auditPruneJob(options), revisionPruneJob()]);
+): Promise<{ deleted: number; auditRows: number; revisions: number; sectionVersions: number; trash: number; webhooks: number; error?: string }> {
+  const [auditResult, revisionResult, sectionResult, trashResult, webhookResult] = await Promise.all([
+    auditPruneJob(options),
+    revisionPruneJob(),
+    sectionPruneJob(),
+    trashPurgeJob(),
+    webhookRetryJob(),
+  ]);
+  const error = auditResult.error ?? revisionResult.error ?? sectionResult.error ?? trashResult.error ?? webhookResult.error;
   return {
-    deleted: auditResult.deleted + revisionResult.deleted,
+    deleted: auditResult.deleted + revisionResult.deleted + sectionResult.deleted + trashResult.deleted + webhookResult.deleted,
     auditRows: auditResult.deleted,
     revisions: revisionResult.deleted,
-    ...(auditResult.error || revisionResult.error ? { error: auditResult.error ?? revisionResult.error } : {}),
+    sectionVersions: sectionResult.deleted,
+    trash: trashResult.deleted,
+    webhooks: webhookResult.retried,
+    ...(error ? { error } : {}),
   };
+}
+
+export type WebhookRetryDb = Pick<Repos, "webhooks">;
+
+/** Most deliveries one run retries; the rest wait for the next run. */
+export const WEBHOOK_RETRY_BATCH = 100;
+
+/**
+ * Retries webhook deliveries whose next attempt is due (Vercel Hobby allows
+ * only a daily cron, so later retries land on this run), then prunes
+ * finished delivery history older than DELIVERY_KEEP_DAYS.
+ */
+export async function webhookRetryJob(
+  client: WebhookRetryDb = repos,
+  deliver: (ids: string[]) => Promise<unknown> = deliverByIds,
+  now = Date.now()
+): Promise<{ retried: number; deleted: number; error?: string }> {
+  try {
+    const due = await client.webhooks.dueIds(new Date(now), WEBHOOK_RETRY_BATCH);
+    if (due.length > 0) await deliver(due);
+    const deleted = await client.webhooks.pruneDeliveries(new Date(now - DELIVERY_KEEP_DAYS * 24 * 60 * 60 * 1000));
+    if (due.length > 0 || deleted > 0) log.info("webhook cron: retried and pruned deliveries", { retried: due.length, pruned: deleted });
+    return { retried: due.length, deleted };
+  } catch (err) {
+    const error = String(err);
+    log.error("webhook cron failed", { error });
+    return { retried: 0, deleted: 0, error };
+  }
+}
+
+export type TrashPurgeDb = Pick<Repos, "trash" | "audit">;
+
+/** Most items one run purges; the next daily run continues. */
+export const TRASH_PURGE_BATCH = 200;
+
+/**
+ * Deletes trash items past TRASH_DAYS for good, with the stored file of
+ * each purged media asset. A file its account refuses keeps its snapshot, so
+ * the next run retries it rather than orphaning the file.
+ */
+export async function trashPurgeJob(
+  client: TrashPurgeDb = repos,
+  deleteFile: (file: TrashedFile) => Promise<void> = deleteTrashedFile,
+  now = Date.now()
+): Promise<{ deleted: number; error?: string }> {
+  try {
+    const expired = await client.trash.expired(trashCutoff(now), TRASH_PURGE_BATCH);
+    if (expired.length === 0) return { deleted: 0 };
+
+    const files = await Promise.allSettled(
+      expired.map(async (item) => {
+        const file = item.entityType === "MediaAsset" ? trashedFile(item.data) : null;
+        if (file) await deleteFile(file);
+        return item.id;
+      })
+    );
+    const purgeable = files.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+    const kept = files.length - purgeable.length;
+    if (kept > 0) log.warn("trash purge cron: media files kept for retry", { count: kept });
+
+    const deleted = await client.trash.remove(purgeable);
+    if (deleted > 0) {
+      await audit({ action: "trash.purged", entityType: "TrashItem", meta: { op: "expired", count: deleted } }, client);
+      log.info("trash purge cron: purged expired trash", { count: deleted });
+    }
+    return { deleted };
+  } catch (err) {
+    const error = String(err);
+    log.error("trash purge cron failed", { error });
+    return { deleted: 0, error };
+  }
+}
+
+/**
+ * Keeps each CMS section's newest HISTORY_KEPT superseded versions, in one
+ * statement. Drafts and published rows are never touched. Idempotent.
+ */
+export async function sectionPruneJob(client: RevisionPruneDb = repos): Promise<{ deleted: number; error?: string }> {
+  try {
+    const deleted = await client.maintenance.pruneSupersededBlocks(HISTORY_KEPT);
+    if (deleted > 0) log.info("section prune cron: pruned old section versions", { count: deleted, kept: HISTORY_KEPT });
+    return { deleted };
+  } catch (err) {
+    const error = String(err);
+    log.error("section prune cron failed", { error });
+    return { deleted: 0, error };
+  }
 }
 
 /**

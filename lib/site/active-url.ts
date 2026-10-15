@@ -10,17 +10,28 @@ export const HEALTH_PATH = "/api/health";
 /** The health route answers with this, so a parked domain's generic 200 never counts. */
 export const HEALTH_SERVICE = "admin-site";
 
-/** Origins only (`https://host[:port]`), http(s) only, in order, without repeats. */
+const LOCAL_HOST = /^(?:localhost|127\.0\.0\.1|\[::1\])$/;
+
+/**
+ * Origins only (`https://host[:port]`), in order, without repeats. SITE_URLS
+ * sets the order (primary first, then backups); SITE_URL, when it is not in
+ * that list, is kept as the last backup rather than dropped. Without
+ * SITE_URLS: SITE_URL, then the defaults. Only https counts, except plain
+ * http on localhost for development; a value with a user name or password
+ * is refused.
+ */
 export function siteUrlCandidates(
   env: { SITE_URLS?: readonly string[]; SITE_URL?: string },
   defaults: readonly string[]
 ): string[] {
-  const listed = env.SITE_URLS?.length ? env.SITE_URLS : [env.SITE_URL, ...defaults];
+  const listed = env.SITE_URLS?.length ? [...env.SITE_URLS, env.SITE_URL] : [env.SITE_URL, ...defaults];
   const origins = listed.flatMap((value) => {
     if (!value) return [];
     try {
-      const url = new URL(value);
-      return url.protocol === "https:" || url.protocol === "http:" ? [url.origin] : [];
+      const url = new URL(value.trim());
+      if (url.username || url.password) return [];
+      const secure = url.protocol === "https:" || (url.protocol === "http:" && LOCAL_HOST.test(url.hostname));
+      return secure ? [url.origin] : [];
     } catch {
       return [];
     }

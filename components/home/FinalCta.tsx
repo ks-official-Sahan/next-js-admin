@@ -1,11 +1,11 @@
 "use client";
 
+import Icon from "@/components/icons/Icon";
 import ContactChannels from "@/components/home/ContactChannels";
 import HomeSection from "@/components/home/HomeSection";
 import type { PageContent } from "@/lib/cms/registry";
 import { Site, SiteMetadata } from "@/config/site";
 import { getShareUrl } from "@/lib/client/domain-check";
-import { ArrowUpRight, Check, Copy, Share2 } from "lucide-react";
 import Link from "next/link";
 import React, { useEffect, useRef, useState } from "react";
 
@@ -110,11 +110,7 @@ const FinalCta = ({ content: finalCta, channels }: FinalCtaProps) => {
                 className="press arrow-nudge inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-bCHIPSELECTED px-7 text-[15px] font-semibold text-white dark:text-black"
               >
                 {finalCta.primary.label}
-                <ArrowUpRight
-                  size={18}
-                  aria-hidden="true"
-                  className="arrow-nudge-icon"
-                />
+                <Icon name="arrow-up-right" className="size-[18px]" />
               </Link>
 
               <button
@@ -123,9 +119,9 @@ const FinalCta = ({ content: finalCta, channels }: FinalCtaProps) => {
                 className="press inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-bBORDERFADE bg-bFCARD px-6 text-[15px] font-semibold"
               >
                 {copied ? (
-                  <Check size={18} aria-hidden="true" />
+                  <Icon name="checked" className="size-[18px]" />
                 ) : (
-                  <Copy size={18} aria-hidden="true" />
+                  <Icon name="copy" className="size-[18px]" />
                 )}
                 {copied ? finalCta.copiedLabel : finalCta.copyLabel}
               </button>
@@ -146,9 +142,9 @@ const FinalCta = ({ content: finalCta, channels }: FinalCtaProps) => {
               className="press mt-1 inline-flex min-h-11 w-fit items-center gap-2 rounded-full px-2 text-sm font-medium opacity-80 hover:opacity-100"
             >
               {linkCopied ? (
-                <Check size={16} aria-hidden="true" />
+                <Icon name="checked" className="size-4" />
               ) : (
-                <Share2 size={16} aria-hidden="true" />
+                <Icon lucideIconName="Share2" className="size-4" />
               )}
               {linkCopied ? "Link copied" : "Know someone who'd like this? Share it"}
             </button>

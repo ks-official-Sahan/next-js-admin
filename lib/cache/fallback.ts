@@ -17,8 +17,8 @@ export interface LoadContext {
  * - the read failed while `next build` runs.
  *
  * Any other failure is rethrown, so a stale ISR page keeps being served instead
- * of a wrong default. A read that legitimately finds nothing also returns
- * null, and the caller treats that the same way.
+ * of a wrong default. Empty collections remain empty: callers can distinguish
+ * a valid empty result from unavailable storage and avoid resurrecting defaults.
  *
  * Call this OUTSIDE cached(), so a fallback is never written into the data
  * cache.

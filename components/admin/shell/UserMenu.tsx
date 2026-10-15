@@ -1,5 +1,4 @@
-import { LogOut } from "lucide-react";
-
+import Icon from "@/components/icons/Icon";
 import { signOutAction } from "@/lib/actions/auth";
 
 export interface UserMenuUser {
@@ -28,10 +27,10 @@ export default function UserMenu({ user }: { user: UserMenuUser }) {
       <form action={signOutAction}>
         <button
           type="submit"
-          className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-sm s480:px-3 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <LogOut aria-hidden="true" className="size-3.5" />
-          Sign out
+          <Icon name="logout" className="size-3.5" />
+          <span className="sr-only s480:not-sr-only">Sign out</span>
         </button>
       </form>
     </div>

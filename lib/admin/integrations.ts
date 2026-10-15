@@ -1,6 +1,8 @@
 import "server-only";
 
 import { BUILTIN_ADAPTERS, providerStatuses } from "@sahan-sac/ai-core/adapters";
+import { describeAccount, storageAccountsFromEnv, type EnvSource, type StorageAccount } from "@sahan-sac/media-kit/accounts";
+import { probeBucket, type BucketProbe } from "@sahan-sac/media-kit/bucket";
 
 import { repos } from "@/lib/data";
 import { getEnv } from "@/lib/env";
@@ -53,10 +55,10 @@ const DATABASE = { name: "Database", group: "Core", hint: "DATABASE_URL. Checked
 const REDIS = { name: "Redis", group: "Core", hint: "UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN. Checked by writing and reading a 30 s probe key." } as const;
 const RESEND = { name: "Resend", group: "Email", hint: "RESEND_API_KEY. Checked against the domains API; a send-only key also counts as reachable." } as const;
 const BREVO = { name: "Brevo", group: "Email", hint: "EMAIL_BREVO_API_KEY. Checked against the account API." } as const;
-const CLOUDINARY = {
-  name: "Cloudinary",
+const MEDIA = {
+  name: "Media storage",
   group: "Media",
-  hint: "CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET. Checked by listing one image.",
+  hint: "CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET, or MEDIA_ACCOUNT_<n>_* slots for several Cloudinary, S3 and R2 accounts (docs/admin.md).",
 } as const;
 const AI_CHAIN = { name: "AI chain", group: "AI", hint: "" } as const;
 const INDEXNOW = { name: "IndexNow", group: "SEO", hint: "INDEXNOW_KEY and its public key file. Checked by fetching the key file." } as const;
@@ -115,17 +117,53 @@ export async function checkBrevo(fetchImpl: FetchLike = fetch): Promise<Integrat
   return { ...BREVO, configured, reachable };
 }
 
-export async function checkCloudinary(fetchImpl: FetchLike = fetch): Promise<IntegrationStatus> {
-  const cloud = process.env.CLOUDINARY_CLOUD_NAME;
-  const key = process.env.CLOUDINARY_API_KEY;
-  const secret = process.env.CLOUDINARY_API_SECRET;
-  const configured = Boolean(cloud && key && secret);
-  if (!configured) return { ...CLOUDINARY, configured, reachable: null };
-  const auth = Buffer.from(`${key}:${secret}`).toString("base64");
-  const reachable = await pingUrl(fetchImpl, `https://api.cloudinary.com/v1_1/${cloud}/resources/image?max_results=1`, {
-    headers: { Authorization: `Basic ${auth}` },
-  });
-  return { ...CLOUDINARY, configured, reachable };
+const PROBE_NOTES: Record<BucketProbe, string> = {
+  ok: "",
+  "no-list-permission": " The keys may not list the bucket; uploads only need read and write, so this is fine.",
+  "missing-bucket": " Last check: the bucket was not found.",
+  "bad-credentials": " Last check: the bucket refused the access keys.",
+  unavailable: " Last check: no answer.",
+};
+
+async function pingMediaAccount(fetchImpl: FetchLike, account: StorageAccount): Promise<{ reachable: boolean; note: string }> {
+  if (account.provider === "cloudinary") {
+    const auth = Buffer.from(`${account.apiKey}:${account.apiSecret}`).toString("base64");
+    const reachable = await pingUrl(fetchImpl, `https://api.cloudinary.com/v1_1/${account.cloudName}/resources/image?max_results=1`, {
+      headers: { Authorization: `Basic ${auth}` },
+    });
+    return { reachable, note: "" };
+  }
+  // A one-key listing of the bucket, raced against the ping timeout.
+  const timeout = new Promise<BucketProbe>((resolve) => setTimeout(() => resolve("unavailable"), PING_TIMEOUT_MS));
+  const probe = await Promise.race([probeBucket(account, fetchImpl as typeof fetch), timeout]);
+  return { reachable: probe === "ok" || probe === "no-list-permission", note: PROBE_NOTES[probe] };
+}
+
+/**
+ * One row per media storage account, in upload priority order, each pinged
+ * with its own credentials, plus one row naming any misconfigured slots
+ * (variable names only, never values).
+ */
+export async function checkMediaAccounts(fetchImpl: FetchLike = fetch, env: EnvSource = process.env): Promise<IntegrationStatus[]> {
+  const { accounts, problems } = storageAccountsFromEnv(env);
+  const rows = await Promise.all(
+    accounts.map(async (account): Promise<IntegrationStatus> => {
+      const shown = describeAccount(account);
+      const cap = shown.capBytes ? `, soft cap ${Math.round(shown.capBytes / 1024 ** 3)} GB` : "";
+      const role = shown.readOnly ? "read-only (serves and deletes, takes no uploads)" : `upload priority ${accounts.indexOf(account) + 1}`;
+      const ping = await pingMediaAccount(fetchImpl, account).catch(() => ({ reachable: false, note: "" }));
+      return {
+        name: `Media: ${shown.id}`,
+        group: "Media",
+        hint: `${shown.provider === "cloudinary" ? "Cloudinary cloud" : shown.provider.toUpperCase() + " bucket"} ${shown.where}, ${role}${cap}.${ping.note}`,
+        configured: true,
+        reachable: ping.reachable,
+      };
+    })
+  );
+  if (accounts.length === 0) rows.push({ ...MEDIA, configured: false, reachable: null });
+  if (problems.length > 0) rows.push({ ...MEDIA, name: "Media settings", hint: problems.join(" "), configured: false, reachable: false });
+  return rows;
 }
 
 const AI_VARS: Record<string, string> = {
@@ -133,6 +171,10 @@ const AI_VARS: Record<string, string> = {
   openrouter: "OPENROUTER_API_KEY. Free models only, unless OPENROUTER_ALLOW_PAID_MODELS=true.",
   "openrouter-2": "OPENROUTER_API_KEY_2: a second OpenRouter key, tried after the first.",
   nvidia: "NVIDIA_API_KEY.",
+  omniroute: "OMNIROUTE_BASE_URL (your self-hosted OmniRoute gateway, https) and OMNIROUTE_API_KEY (a gateway key from its dashboard). Free only: model auto/best-free, or an OMNIROUTE_MODEL free route (-free, :free). Paid routes need OMNIROUTE_ALLOW_PAID and AI_ALLOW_PAID.",
+  groq: "GROQ_API_KEY (free plan, no card).",
+  mistral: "MISTRAL_API_KEY. Free plan may train on prompts, so chat uses it only when AI_PROVIDER_ORDER_CHAT lists it.",
+  cloudflare: "CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_AI_API_TOKEN (Workers AI read). 10,000 free neurons a day.",
   openai: "OPENAI_API_KEY (OPENAI_BASE_URL for a compatible gateway).",
   anthropic: "ANTHROPIC_API_KEY.",
   deepseek: "DEEPSEEK_API_KEY.",
@@ -209,7 +251,6 @@ export async function getIntegrationHealth(fetchImpl: FetchLike = fetch): Promis
     checkRedis(),
     checkResend(fetchImpl),
     checkBrevo(fetchImpl),
-    checkCloudinary(fetchImpl),
     checkIndexNow(),
   ];
   const results = await Promise.allSettled(checks);
@@ -224,10 +265,17 @@ export async function getIntegrationHealth(fetchImpl: FetchLike = fetch): Promis
     log.warn("integration health: AI env invalid", { error: String(err) });
     ai = [{ ...AI_CHAIN, hint: "The AI environment variables do not parse. Check the server log.", configured: false, reachable: false }];
   }
-  return [...statuses, ...ai];
+  let media: IntegrationStatus[];
+  try {
+    media = await checkMediaAccounts(fetchImpl);
+  } catch (err) {
+    log.warn("integration health: media check failed", { error: String(err) });
+    media = [{ ...MEDIA, configured: false, reachable: false }];
+  }
+  return [...statuses, ...media, ...ai];
 }
 
-const INTEGRATIONS = [DATABASE, REDIS, RESEND, BREVO, CLOUDINARY, INDEXNOW];
+const INTEGRATIONS = [DATABASE, REDIS, RESEND, BREVO, INDEXNOW];
 
 const HEALTH_TTL_MS = 60_000;
 let healthCache: { at: number; value: Promise<IntegrationStatus[]> } | null = null;

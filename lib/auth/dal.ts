@@ -27,6 +27,8 @@ const dal = createAuthDal({
   after,
   expirePath: authKit.paths.expire,
   accountPasswordChangePath: authKit.paths.accountPasswordChange,
+  strongMfaRoles: authKit.strongMfaRoles,
+  mfaSetupPath: authKit.paths.mfaSetup,
 });
 
 /** Same shape as the package's `AuthUser`, with `role`/`permissions` narrowed to this app's own catalogue. */
@@ -36,10 +38,16 @@ export interface AuthUser extends Omit<PackageAuthUser, "role" | "permissions"> 
 }
 
 export const getOptionalUser = dal.getOptionalUser as () => Promise<AuthUser | null>;
-export const requireUser = dal.requireUser as (options?: { allowPasswordChange?: boolean }) => Promise<AuthUser>;
+export const requireUser = dal.requireUser as (options?: { allowPasswordChange?: boolean; allowMfaSetup?: boolean }) => Promise<AuthUser>;
 export const getSessionStatus = dal.getSessionStatus;
-export const hasPermission = dal.hasPermission as (user: Pick<AuthUser, "permissions">, permission: Permission) => boolean;
+/**
+ * A user who must still set up an authenticator app or passkey holds no
+ * permission until they do: this is what keeps the admin API routes and
+ * per-item checks closed to them, as requireUser keeps the pages closed.
+ */
+export const hasPermission = (user: Pick<AuthUser, "permissions" | "mfaSetupRequired">, permission: Permission): boolean =>
+  !user.mfaSetupRequired && dal.hasPermission(user, permission);
 export const requirePermission = dal.requirePermission as (
   permission: Permission,
-  options?: { allowPasswordChange?: boolean }
+  options?: { allowPasswordChange?: boolean; allowMfaSetup?: boolean }
 ) => Promise<AuthUser>;

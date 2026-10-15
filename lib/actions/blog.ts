@@ -11,8 +11,12 @@ import { hasPermission } from "@/lib/auth/dal";
 import { invalidate } from "@/lib/cache/invalidate";
 import { forPost, forPostList, mergePlans } from "@/lib/cache/plan";
 import { isDbUnavailable, repos, withTx } from "@/lib/data";
+import type { Repos } from "@/lib/data/repos";
 import { UniqueViolation } from "@/lib/data/errors";
 import { extractText, sanitizeRich } from "@/lib/cms/rich-text";
+import { autoExcerptOf } from "@/lib/blog/excerpt";
+import { syncPostMediaUsage } from "@/lib/blog/media-ids";
+import { isPublicPost } from "@/lib/blog/publication";
 import { postInputSchema, publishActionSchema } from "@/lib/blog/schema";
 import { parseSubmittedUpdatedAt, UPDATE_CONFLICT_MESSAGE } from "@sahan-sac/blog-kit/concurrency";
 import { computeReadMinutes } from "@sahan-sac/blog-kit/readtime";
@@ -36,6 +40,22 @@ const ADMIN_LIST_PATH = "/admin/blog";
  * transaction with a typed reason" idiom as lib/cms/service.ts's `Abort`. */
 class UpdateConflictError extends Error {}
 
+/**
+ * A post row for the audit log, without its body fields (content,
+ * contentHtml, contentText: up to hundreds of KB each). Revisions keep the
+ * text of every edit, so the audit row only needs what changed around it.
+ * Deletes are the exception and keep the full row: until posts have a trash,
+ * that audit row is the only copy left.
+ */
+function auditView<T extends object>(post: T): Omit<T, "content" | "contentHtml" | "contentText"> {
+  const { content: _content, contentHtml: _html, contentText: _text, ...rest } = post as T & {
+    content?: unknown;
+    contentHtml?: unknown;
+    contentText?: unknown;
+  };
+  return rest;
+}
+
 // A UniqueViolation maps a slug collision to a field error instead of a 500,
 // whether it came from the slugTaken() pre-check missing a race or a row
 // edited directly elsewhere. isDbUnavailable means the change was rolled back
@@ -47,7 +67,7 @@ const UNEXPECTED_MESSAGE = "Something went wrong. Please try again.";
 function computed(content: string) {
   const contentHtml = sanitizeRich(content);
   const contentText = extractText(contentHtml);
-  return { contentHtml, contentText, readMinutes: computeReadMinutes(contentText) };
+  return { contentHtml, contentText, autoExcerpt: autoExcerptOf(contentText), readMinutes: computeReadMinutes(contentText) };
 }
 
 async function slugTaken(slug: string, excludeId?: string): Promise<boolean> {
@@ -113,6 +133,7 @@ export async function createPostAction(_previous: ActionState, formData: FormDat
         content: parsed.data.content,
         contentHtml: extra.contentHtml,
         contentText: extra.contentText,
+        autoExcerpt: extra.autoExcerpt,
         readMinutes: extra.readMinutes,
         topic: parsed.data.topic,
         tags: parsed.data.tags,
@@ -128,6 +149,9 @@ export async function createPostAction(_previous: ActionState, formData: FormDat
         generatedByAI: String(formData.get("generatedByAI") ?? "") === "1",
         authorId: auth.user.id,
       });
+      await syncPostMediaUsage(tx, row.id, row.coverMediaId, row.content);
+      // An old slug of another post now belongs to this one.
+      await tx.posts.releaseSlug(row.slug);
       await audit(
         {
           action: resolved.status === "DRAFT" ? "post.created" : "post.created.published",
@@ -135,13 +159,13 @@ export async function createPostAction(_previous: ActionState, formData: FormDat
           entityType: "Post",
           entityId: row.id,
           before: null,
-          after: row,
+          after: auditView(row),
         },
         tx
       );
       return row;
     });
-    if (resolved.status === "PUBLISHED") invalidate(forPost(created.slug));
+    if (resolved.status === "PUBLISHED") await invalidate(forPost(created.slug));
     revalidatePath(ADMIN_LIST_PATH);
     createdId = created.id;
   } catch (error) {
@@ -196,6 +220,9 @@ export async function updatePostAction(_previous: ActionState, formData: FormDat
   try {
     const before = await repos.posts.find(id);
     if (!before) return fail("Post not found.");
+    if (before.status !== "DRAFT" && !hasPermission(auth.user, "publishBlog")) {
+      return fail("Only draft posts can be edited with your current permissions.");
+    }
 
     if (parsed.data.slug !== before.slug && (await slugTaken(parsed.data.slug, id))) {
       return fail("Some fields need attention.", { slug: "This slug is already in use." });
@@ -222,12 +249,14 @@ export async function updatePostAction(_previous: ActionState, formData: FormDat
       // else saved since this editor loaded, so nothing is written.
       const row = await tx.posts.updateIfUnchanged(id, submittedUpdatedAt, { ...next, ...extra });
       if (!row) throw new UpdateConflictError();
+      await syncPostMediaUsage(tx, id, row.coverMediaId, row.content);
+      await tx.posts.recordRename(id, before.slug, row.slug);
       // A save that changed nothing editable leaves no revision behind.
       if (!sameSnapshot(previous, next)) {
         await tx.postRevisions.create({ postId: id, title: previous.title, data: previous, reason: "update", createdById: auth.user.id });
       }
       await audit(
-        { action: "post.updated", actor: auth.user, entityType: "Post", entityId: id, before, after: row },
+        { action: "post.updated", actor: auth.user, entityType: "Post", entityId: id, before: auditView(before), after: auditView(row) },
         tx
       );
       return row;
@@ -235,9 +264,9 @@ export async function updatePostAction(_previous: ActionState, formData: FormDat
 
     // Editing the text of a post that is already public must refresh what
     // visitors see; a draft edit has nothing public to invalidate.
-    if (before.status === "PUBLISHED" || updated.slug !== before.slug) {
-      invalidate(forPost(before.slug));
-      if (updated.slug !== before.slug) invalidate(forPost(updated.slug));
+    if (isPublicPost(before.status, before.publishAt) || isPublicPost(updated.status, updated.publishAt) || updated.slug !== before.slug) {
+      await invalidate(forPost(before.slug));
+      if (updated.slug !== before.slug) await invalidate(forPost(updated.slug));
     }
     revalidatePath(ADMIN_LIST_PATH);
     // The fresh updatedAt travels back so the form can re-arm its hidden
@@ -275,6 +304,9 @@ export async function restorePostRevisionAction(_previous: ActionState, formData
       repos.postRevisions.findData(revisionId, postId),
     ]);
     if (!before || !revision) return fail("Revision not found.");
+    if (before.status !== "DRAFT" && !hasPermission(auth.user, "publishBlog")) {
+      return fail("Only draft posts can be restored with your current permissions.");
+    }
 
     const snapshot = parseSnapshot(revision.data);
     if (!snapshot) return fail("This revision can no longer be restored.");
@@ -291,6 +323,8 @@ export async function restorePostRevisionAction(_previous: ActionState, formData
     const restored = await withTx(async (tx) => {
       const row = await tx.posts.updateIfUnchanged(postId, before.updatedAt, { ...snapshot, ...extra });
       if (!row) throw new UpdateConflictError();
+      await syncPostMediaUsage(tx, postId, row.coverMediaId, row.content);
+      await tx.posts.recordRename(postId, before.slug, row.slug);
       await tx.postRevisions.create({ postId, title: before.title, data: snapshotOf(before), reason: "restore", createdById: auth.user.id });
       await audit(
         {
@@ -298,8 +332,8 @@ export async function restorePostRevisionAction(_previous: ActionState, formData
           actor: auth.user,
           entityType: "Post",
           entityId: postId,
-          before,
-          after: row,
+          before: auditView(before),
+          after: auditView(row),
           meta: { revisionId },
         },
         tx
@@ -307,9 +341,9 @@ export async function restorePostRevisionAction(_previous: ActionState, formData
       return row;
     });
 
-    if (before.status === "PUBLISHED" || restored.slug !== before.slug) {
-      invalidate(forPost(before.slug));
-      if (restored.slug !== before.slug) invalidate(forPost(restored.slug));
+    if (isPublicPost(before.status, before.publishAt) || isPublicPost(restored.status, restored.publishAt) || restored.slug !== before.slug) {
+      await invalidate(forPost(before.slug));
+      if (restored.slug !== before.slug) await invalidate(forPost(restored.slug));
     }
     revalidatePath(ADMIN_LIST_PATH);
     revalidatePath(`${ADMIN_LIST_PATH}/${postId}`);
@@ -330,11 +364,13 @@ async function deleteOne(id: string, actor: { id: string; email: string }): Prom
   if (!before) return false;
 
   await withTx(async (tx) => {
+    await tx.trash.put((await tx.trash.snapshotPosts([id])).map((item) => ({ entityType: "Post", entityId: item.id, label: item.label, data: item.data, deletedById: actor.id })));
+    await tx.media.clearUsage("Post", id);
     await tx.posts.delete(id);
     await audit({ action: "post.deleted", actor, entityType: "Post", entityId: id, before, after: null }, tx);
   });
 
-  if (before.status === "PUBLISHED" || before.status === "SCHEDULED") invalidate(forPost(before.slug));
+  if (isPublicPost(before.status, before.publishAt)) await invalidate(forPost(before.slug));
   return true;
 }
 
@@ -350,7 +386,7 @@ export async function deletePostAction(_previous: ActionState, formData: FormDat
     if (!deleted) return fail("Post not found.");
 
     revalidatePath(ADMIN_LIST_PATH);
-    return done("Post deleted.");
+    return done("Post moved to the trash. Restore it there within 30 days.");
   } catch (error) {
     log.error("delete post failed", { error: error instanceof Error ? error.message : String(error) });
     return fail("Something went wrong. Please try again.");
@@ -390,15 +426,19 @@ async function applyStatus(
     const data = statusData(action, publishAt);
 
     const updated = await withTx(async (tx) => {
-      const row = await tx.posts.update(id, data);
+      // Conditional on the row read above: a save or status change that lands
+      // in between makes this match nothing, so it never overwrites that
+      // change with a status decided against the older row.
+      const row = await tx.posts.updateIfUnchanged(id, before.updatedAt, data);
+      if (!row) throw new UpdateConflictError();
       await audit(
         {
           action: STATUS_AUDIT_ACTION[action],
           actor,
           entityType: "Post",
           entityId: id,
-          before,
-          after: row,
+          before: auditView(before),
+          after: auditView(row),
         },
         tx
       );
@@ -408,8 +448,8 @@ async function applyStatus(
     // Any status change touching PUBLISHED (becoming it, or leaving it) must
     // refresh the public cache; a draft <-> scheduled transition has nothing
     // public to invalidate yet.
-    if (before.status === "PUBLISHED" || updated.status === "PUBLISHED") {
-      invalidate(forPost(before.slug));
+    if (isPublicPost(before.status, before.publishAt) || isPublicPost(updated.status, updated.publishAt)) {
+      await invalidate(forPost(before.slug));
     }
     revalidatePath(ADMIN_LIST_PATH);
     // The edit page shows the status too; without this its controls stay stale until a reload.
@@ -423,6 +463,7 @@ async function applyStatus(
     };
     return done(messages[action]);
   } catch (error) {
+    if (error instanceof UpdateConflictError) return fail(UPDATE_CONFLICT_MESSAGE);
     log.error("post status change failed", { error: error instanceof Error ? error.message : String(error), action });
     return fail("Something went wrong. Please try again.");
   }
@@ -434,7 +475,7 @@ export async function setPostStatusAction(_previous: ActionState, formData: Form
 
   const id = String(formData.get("id") ?? "");
   const actionParsed = publishActionSchema.safeParse(formData.get("action"));
-  if (!id || !actionParsed.success) return fail("Invalid request.");
+  if (!id || !actionParsed.success || actionParsed.data === "archive") return fail("Invalid request.");
 
   let publishAt: Date | null = null;
   if (actionParsed.data === "schedule") {
@@ -447,6 +488,16 @@ export async function setPostStatusAction(_previous: ActionState, formData: Form
   }
 
   return applyStatus(id, actionParsed.data, publishAt, auth.user);
+}
+
+/** Archive is destructive lifecycle control and follows deleteBlog, not publishBlog. */
+export async function archivePostAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+  const auth = await authorizeAction("deleteBlog");
+  if (!auth.ok) return fail(auth.error);
+
+  const id = String(formData.get("id") ?? "");
+  if (!id) return fail("Post ID is required.");
+  return applyStatus(id, "archive", null, auth.user);
 }
 
 const MAX_BULK = 100;
@@ -472,8 +523,8 @@ export async function bulkPostStatusAction(_previous: ActionState, formData: For
   if (!auth.ok) return fail(auth.error);
 
   const actionParsed = publishActionSchema.safeParse(formData.get("action"));
-  if (!actionParsed.success || actionParsed.data === "schedule") {
-    return fail("Bulk schedule is not supported; open each post to schedule it.");
+  if (!actionParsed.success || actionParsed.data === "schedule" || actionParsed.data === "archive") {
+    return fail("Choose publish or unpublish. Archive and schedule use their own controls.");
   }
 
   const parsedIds = parseBulkIds(formData);
@@ -496,8 +547,8 @@ export async function bulkPostStatusAction(_previous: ActionState, formData: For
           actor: auth.user,
           entityType: "Post",
           entityId: before.id,
-          before,
-          after: { ...before, ...data },
+          before: auditView(before),
+          after: auditView({ ...before, ...data }),
         })),
         tx
       );
@@ -505,10 +556,12 @@ export async function bulkPostStatusAction(_previous: ActionState, formData: For
 
     // Anything that was or now is public needs its pages refreshed: one
     // merged plan, so shared tags and paths are revalidated once, not per post.
-    invalidate(
+    await invalidate(
       mergePlans(
         befores
-          .filter((before) => before.status === "PUBLISHED" || data.status === "PUBLISHED")
+          .filter((before) =>
+            isPublicPost(before.status, before.publishAt) || isPublicPost(data.status, data.publishAt)
+          )
           .map((before) => forPost(before.slug))
       )
     );
@@ -516,6 +569,43 @@ export async function bulkPostStatusAction(_previous: ActionState, formData: For
     return done(`Updated ${befores.length} of ${parsedIds.ids.length} posts.`);
   } catch (error) {
     log.error("bulk post status change failed", { error: error instanceof Error ? error.message : String(error), action });
+    return fail("Something went wrong. Nothing was changed.");
+  }
+}
+
+/** Bulk archive requires deleteBlog. Kept separate from publishing so role grants stay meaningful. */
+export async function bulkArchivePostsAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+  const auth = await authorizeAction("deleteBlog");
+  if (!auth.ok) return fail(auth.error);
+
+  const parsedIds = parseBulkIds(formData);
+  if (!parsedIds.ok) return parsedIds.state;
+
+  try {
+    const befores = await repos.posts.findMany(parsedIds.ids);
+    if (befores.length === 0) return fail("None of the selected posts exist any more.");
+    const data = statusData("archive", null);
+
+    await withTx(async (tx) => {
+      await tx.posts.updateMany(befores.map((post) => post.id), data);
+      await auditMany(
+        befores.map((before) => ({
+          action: STATUS_AUDIT_ACTION.archive,
+          actor: auth.user,
+          entityType: "Post",
+          entityId: before.id,
+          before: auditView(before),
+          after: auditView({ ...before, ...data }),
+        })),
+        tx
+      );
+    });
+
+    await invalidate(mergePlans(befores.filter((post) => isPublicPost(post.status, post.publishAt)).map((post) => forPost(post.slug))));
+    revalidatePath(ADMIN_LIST_PATH);
+    return done(`Archived ${befores.length} of ${parsedIds.ids.length} posts.`);
+  } catch (error) {
+    log.error("bulk post archive failed", { error: error instanceof Error ? error.message : String(error) });
     return fail("Something went wrong. Nothing was changed.");
   }
 }
@@ -537,6 +627,9 @@ export async function bulkDeletePostsAction(_previous: ActionState, formData: Fo
     if (befores.length === 0) return fail("None of the selected posts exist any more.");
 
     await withTx(async (tx) => {
+      const snapshots = await tx.trash.snapshotPosts(befores.map((post) => post.id));
+      await tx.trash.put(snapshots.map((item) => ({ entityType: "Post", entityId: item.id, label: item.label, data: item.data, deletedById: auth.user.id })));
+      await tx.media.clearUsage("Post", befores.map((post) => post.id));
       await tx.posts.deleteMany(befores.map((post) => post.id));
       await auditMany(
         befores.map((before) => ({
@@ -551,10 +644,10 @@ export async function bulkDeletePostsAction(_previous: ActionState, formData: Fo
       );
     });
 
-    invalidate(
+    await invalidate(
       mergePlans(
         befores
-          .filter((before) => before.status === "PUBLISHED" || before.status === "SCHEDULED")
+          .filter((before) => isPublicPost(before.status, before.publishAt))
           .map((before) => forPost(before.slug))
       )
     );

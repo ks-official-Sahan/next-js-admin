@@ -172,7 +172,7 @@ export function runRepoContract(name: string, open: () => Promise<RepoHarness>) 
         newPost({ status: "PUBLISHED", publishedAt: new Date(), coverMediaId: cover.id, authorId: author.id })
       );
       await h.repos.posts.create(newPost({ status: "SCHEDULED", publishAt: new Date(Date.now() - HOUR) }));
-      const listed = await h.repos.posts.listPublished();
+      const listed = await h.repos.posts.listPublishedPage(50);
       const row = listed.find((post) => post.id === live.id);
       assert.ok(row);
       assert.ok(listed.every((post) => post.id !== draft.id));

@@ -72,6 +72,8 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
         reset: manageable && hasPermission(actor, "resetPassword"),
         delete: manageable && mayDelete,
         signOut: manageable && hasPermission(actor, "forceLogout"),
+        // Resetting someone's second factors: developers only, never their own row.
+        factors: mayManage && actor.role === SUPER_ROLE && user.id !== actor.id,
       },
     };
   });

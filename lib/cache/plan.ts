@@ -21,6 +21,13 @@ export const PAGE_PATHS: Record<PageSlug, string[]> = {
   site: ["/", "/about", "/works", "/updates", "/contact"],
 };
 
+/**
+ * The sitemap index (app/sitemap.xml/route.ts) and every sitemap file under
+ * /sitemaps (app/sitemaps/sitemap.ts, ids from generateSitemaps), so a change
+ * refreshes the files themselves, not only the index that lists them.
+ */
+export const SITEMAP_PATHS: PathEntry[] = ["/sitemap.xml", { path: "/sitemaps", type: "layout" }];
+
 const unique = <T>(items: T[]): T[] => [...new Set(items)];
 
 /** One plan for several changes (bulk actions): each tag and path once. */
@@ -41,7 +48,8 @@ export function forContentPublish(
   if (page === "site") tags.push(TAGS.siteConfig);
 
   const paths: PathEntry[] = [...(options.consumers ?? PAGE_PATHS[page])];
-  if (page === "site" && options.section === "seo") paths.push("/sitemap.xml");
+  if (page !== "site") paths.push(`/api/content/v1/pages/${page}`);
+  if (page === "site" && options.section === "seo") paths.push(...SITEMAP_PATHS);
   // llms-txt.ts's generateLlmsTxt() reads the About page's hero/bento sections
   // for its "## Author" bio line — publishing either revalidates /llms.txt too.
   if (page === "about" && (options.section === "hero" || options.section === "bento")) {
@@ -56,6 +64,9 @@ export function forCollection(name: CollectionName): InvalidationPlan {
   const paths: string[] = ["/", "/about", "/works"];
   // Experience affects about and home team/timeline
   if (name === "experience") paths.push("/about");
+  paths.push(`/api/content/v1/${name}`);
+  if (name === "services") paths.push("/api/content/v1/services");
+  if (name === "skills") paths.push("/api/content/v1/skills");
   // Projects affect home featured works and works page
   if (name === "projects") {
     // Already included: "/", "/about", "/works"
@@ -74,10 +85,10 @@ export function forCollection(name: CollectionName): InvalidationPlan {
 export function forPost(slug: string): InvalidationPlan {
   return {
     tags: [TAGS.blogList, TAGS.blogPost(slug), TAGS.blogTaxonomy, TAGS.chatbotKnowledge],
-    // llms.txt's "Recent updates" section is built from the same getPosts()
-    // read as /updates and /rss.xml, so a post change revalidates it too
+    // llms.txt's "Recent updates" section is built from the same bounded
+    // indexable-post read as /rss.xml, so a post change revalidates it too
     // (lib/seo/llms-txt.ts, app/llms.txt/route.ts).
-    paths: ["/updates", `/updates/${slug}`, "/sitemap.xml", "/rss.xml", "/llms.txt"],
+    paths: ["/updates", `/updates/${slug}`, "/api/content/v1/posts", `/api/content/v1/posts/${slug}`, ...SITEMAP_PATHS, "/rss.xml", "/llms.txt"],
   };
 }
 
@@ -85,7 +96,7 @@ export function forPost(slug: string): InvalidationPlan {
 export function forPostList(): InvalidationPlan {
   return {
     tags: [TAGS.blogList, TAGS.blogTaxonomy, TAGS.chatbotKnowledge],
-    paths: ["/updates", "/sitemap.xml", "/rss.xml", "/llms.txt"],
+    paths: ["/updates", "/api/content/v1/posts", ...SITEMAP_PATHS, "/rss.xml", "/llms.txt"],
   };
 }
 
@@ -93,7 +104,7 @@ export function forPostList(): InvalidationPlan {
 export function forSettings(): InvalidationPlan {
   return {
     tags: [TAGS.settingsPublic],
-    paths: [{ path: "/", type: "layout" }],
+    paths: [{ path: "/", type: "layout" }, "/api/content/v1/posts"],
   };
 }
 

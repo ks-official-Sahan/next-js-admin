@@ -11,6 +11,19 @@ import { cn } from "@/lib/utils";
 
 import { PreservedBlock } from "./PreservedBlock";
 
+const LibraryImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      mediaId: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-media-id"),
+        renderHTML: (attributes) => (attributes.mediaId ? { "data-media-id": attributes.mediaId } : {}),
+      },
+    };
+  },
+});
+
 // TipTap 3 editor for a post body, loaded on demand only
 // (components/admin/blog/RichEditorField.tsx dynamic-imports this with
 // ssr:false), so TipTap never ships to the public bundle
@@ -42,7 +55,7 @@ export default function RichEditor({ value, onChange, className }: RichEditorPro
           isAllowedUri: (url) => isSafeHref(url),
         },
       }),
-      Image.configure({ inline: false }),
+      LibraryImage.configure({ inline: false }),
       PreservedBlock,
     ],
     content: value,
@@ -55,6 +68,9 @@ export default function RichEditor({ value, onChange, className }: RichEditorPro
           "post-content min-h-[320px] overflow-y-auto rounded-md border border-input bg-background px-4 py-3 text-[15px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           className
         ),
+        role: "textbox",
+        "aria-label": "Post body",
+        "aria-multiline": "true",
       },
     },
   });
@@ -93,47 +109,50 @@ export default function RichEditor({ value, onChange, className }: RichEditorPro
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap gap-1.5" role="toolbar" aria-label="Formatting">
-        <button type="button" aria-label="Bold" title="Bold" className={buttonClass(editor.isActive("bold"))} onClick={() => editor.chain().focus().toggleBold().run()}>
+      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Formatting">
+        <button type="button" aria-label="Bold" aria-pressed={editor.isActive("bold")} title="Bold" className={buttonClass(editor.isActive("bold"))} onClick={() => editor.chain().focus().toggleBold().run()}>
           <strong>B</strong>
         </button>
-        <button type="button" aria-label="Italic" title="Italic" className={buttonClass(editor.isActive("italic"))} onClick={() => editor.chain().focus().toggleItalic().run()}>
+        <button type="button" aria-label="Italic" aria-pressed={editor.isActive("italic")} title="Italic" className={buttonClass(editor.isActive("italic"))} onClick={() => editor.chain().focus().toggleItalic().run()}>
           <em>I</em>
         </button>
-        <button type="button" aria-label="Strikethrough" title="Strikethrough" className={buttonClass(editor.isActive("strike"))} onClick={() => editor.chain().focus().toggleStrike().run()}>
+        <button type="button" aria-label="Strikethrough" aria-pressed={editor.isActive("strike")} title="Strikethrough" className={buttonClass(editor.isActive("strike"))} onClick={() => editor.chain().focus().toggleStrike().run()}>
           <s>S</s>
         </button>
-        <button type="button" aria-label="Heading 2" title="Heading 2" className={buttonClass(editor.isActive("heading", { level: 2 }))} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
+        <button type="button" aria-label="Heading 2" aria-pressed={editor.isActive("heading", { level: 2 })} title="Heading 2" className={buttonClass(editor.isActive("heading", { level: 2 }))} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
           H2
         </button>
-        <button type="button" aria-label="Heading 3" title="Heading 3" className={buttonClass(editor.isActive("heading", { level: 3 }))} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>
+        <button type="button" aria-label="Heading 3" aria-pressed={editor.isActive("heading", { level: 3 })} title="Heading 3" className={buttonClass(editor.isActive("heading", { level: 3 }))} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>
           H3
         </button>
-        <button type="button" aria-label="Bullet list" title="Bullet list" className={buttonClass(editor.isActive("bulletList"))} onClick={() => editor.chain().focus().toggleBulletList().run()}>
+        <button type="button" aria-label="Bullet list" aria-pressed={editor.isActive("bulletList")} title="Bullet list" className={buttonClass(editor.isActive("bulletList"))} onClick={() => editor.chain().focus().toggleBulletList().run()}>
           • List
         </button>
-        <button type="button" aria-label="Numbered list" title="Numbered list" className={buttonClass(editor.isActive("orderedList"))} onClick={() => editor.chain().focus().toggleOrderedList().run()}>
+        <button type="button" aria-label="Numbered list" aria-pressed={editor.isActive("orderedList")} title="Numbered list" className={buttonClass(editor.isActive("orderedList"))} onClick={() => editor.chain().focus().toggleOrderedList().run()}>
           1. List
         </button>
-        <button type="button" aria-label="Blockquote" title="Blockquote" className={buttonClass(editor.isActive("blockquote"))} onClick={() => editor.chain().focus().toggleBlockquote().run()}>
+        <button type="button" aria-label="Blockquote" aria-pressed={editor.isActive("blockquote")} title="Blockquote" className={buttonClass(editor.isActive("blockquote"))} onClick={() => editor.chain().focus().toggleBlockquote().run()}>
           Quote
         </button>
-        <button type="button" aria-label="Inline code" title="Inline code" className={buttonClass(editor.isActive("code"))} onClick={() => editor.chain().focus().toggleCode().run()}>
+        <button type="button" aria-label="Inline code" aria-pressed={editor.isActive("code")} title="Inline code" className={buttonClass(editor.isActive("code"))} onClick={() => editor.chain().focus().toggleCode().run()}>
           Code
         </button>
-        <button type="button" aria-label="Code block" title="Code block" className={buttonClass(editor.isActive("codeBlock"))} onClick={() => editor.chain().focus().toggleCodeBlock().run()}>
+        <button type="button" aria-label="Code block" aria-pressed={editor.isActive("codeBlock")} title="Code block" className={buttonClass(editor.isActive("codeBlock"))} onClick={() => editor.chain().focus().toggleCodeBlock().run()}>
           {"</>"}
         </button>
         <button type="button" aria-label="Horizontal rule" title="Horizontal rule" className={buttonClass(false)} onClick={() => editor.chain().focus().setHorizontalRule().run()}>
           HR
         </button>
-        <button type="button" aria-label="Link" title="Link" className={buttonClass(editor.isActive("link"))} onClick={setLink}>
+        <button type="button" aria-label="Link" aria-pressed={editor.isActive("link")} title="Link" className={buttonClass(editor.isActive("link"))} onClick={setLink}>
           Link
         </button>
         <MediaPicker
           kind="IMAGE"
           onSelect={(result) => {
-            editor.chain().focus().setImage({ src: result.src, alt: result.alt || "" }).run();
+            editor.chain().focus().insertContent({
+              type: "image",
+              attrs: { src: result.src, alt: result.alt, mediaId: result.mediaId },
+            }).run();
           }}
         />
         <button

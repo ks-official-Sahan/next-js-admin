@@ -9,7 +9,7 @@ import { log } from "@/lib/log";
 import { resolveSection } from "./merge";
 import { getDefinition, sectionsOf, type CmsPage, type PageContent } from "./registry";
 import type { SectionDefinition } from "./types";
-import { findDraft, findPublished, issuePath, nextVersion, planSave, type BlockStatus } from "./versions";
+import { findDraft, findPublished, HISTORY_KEPT, issuePath, nextVersion, planSave, type BlockStatus } from "./versions";
 
 // The database side of the CMS: reading a section for the editor, and the four
 // changes an editor can make (save a draft, publish, restore, discard). Every
@@ -132,7 +132,7 @@ export async function loadEditorSection(definition: SectionDefinition<unknown>):
     publishedVersion: published?.version ?? null,
     history: rows
       .filter((row) => row.status !== "DRAFT")
-      .slice(0, 20)
+      .slice(0, HISTORY_KEPT)
       .map((row) => ({
         version: row.version,
         status: row.status,
@@ -246,55 +246,84 @@ export async function saveDraft(input: {
   );
 }
 
-export async function publishDraft(input: {
+/** Publishes the section's draft inside `tx`; `base` is the draft's updatedAt the caller means. */
+async function publishIn(
+  tx: Repos,
+  definition: SectionDefinition<unknown>,
+  base: string | null | undefined,
+  note: string | undefined,
+  actor: Actor
+): Promise<Saved> {
+  const rows = await rowsOf(tx, definition.page, definition.key);
+  const draft = findDraft(rows);
+  if (!draft) throw new Abort(fail("nothing", "There is no draft to publish."));
+  if (base !== undefined && draft.updatedAt.toISOString() !== base) {
+    throw new Abort(fail("conflict", CONFLICT));
+  }
+
+  // The schema may have been tightened since the draft was saved.
+  const parsed = definition.schema.safeParse(draft.data);
+  if (!parsed.success) {
+    throw new Abort(fail("invalid", "The draft no longer passes validation.", fieldErrorsOf(parsed.error)));
+  }
+
+  const previous = findPublished(rows);
+  if (previous) await tx.contentBlocks.supersede(previous.id);
+  const promoted = await tx.contentBlocks.publishDraft(draft.id, draft.updatedAt, {
+    publishedAt: new Date(),
+    publishedById: actor.id,
+    note: note?.trim() || null,
+  });
+  if (!promoted) throw new Abort(fail("conflict", CONFLICT));
+
+  await audit(
+    auditFor("content.published", actor, definition, {
+      before: previous?.data ?? definition.defaults(),
+      after: parsed.data,
+      meta: {
+        version: draft.version,
+        previousVersion: previous?.version ?? null,
+        note: note?.trim() || undefined,
+      },
+    }),
+    tx
+  );
+  const updatedAt = await tx.contentBlocks.updatedAt(draft.id);
+  return { ok: true as const, version: draft.version, updatedAt: updatedAt.toISOString() };
+}
+
+/**
+ * Saves what is on screen as the draft and publishes it, in one transaction:
+ * a publish that fails (a conflict, a tightened schema) leaves no half-saved
+ * draft behind, and two audit rows (draft saved, published) or none.
+ */
+export async function saveAndPublish(input: {
   page: string;
   key: string;
+  data: unknown;
+  /** `updatedAt` of the draft the editor loaded, or null when there was none. */
+  base: string | null;
   note?: string;
-  /** `updatedAt` of the draft the caller means to publish. A different draft is a conflict. */
-  base?: string | null;
   actor: Actor;
 }): Promise<Saved | Failure> {
   const definition = definitionOf(input.page, input.key);
   if ("ok" in definition) return definition;
 
+  const parsed = definition.schema.safeParse(input.data);
+  if (!parsed.success) return fail("invalid", "Some fields need attention.", fieldErrorsOf(parsed.error));
+
   return run(() =>
     withTx(async (tx) => {
-      const rows = await rowsOf(tx, definition.page, definition.key);
-      const draft = findDraft(rows);
-      if (!draft) throw new Abort(fail("nothing", "There is no draft to publish."));
-      if (input.base !== undefined && draft.updatedAt.toISOString() !== input.base) {
-        throw new Abort(fail("conflict", CONFLICT));
-      }
-
-      // The schema may have been tightened since the draft was saved.
-      const parsed = definition.schema.safeParse(draft.data);
-      if (!parsed.success) {
-        throw new Abort(fail("invalid", "The draft no longer passes validation.", fieldErrorsOf(parsed.error)));
-      }
-
-      const previous = findPublished(rows);
-      if (previous) await tx.contentBlocks.supersede(previous.id);
-      const promoted = await tx.contentBlocks.publishDraft(draft.id, draft.updatedAt, {
-        publishedAt: new Date(),
-        publishedById: input.actor.id,
-        note: input.note?.trim() || null,
-      });
-      if (!promoted) throw new Abort(fail("conflict", CONFLICT));
-
+      const written = await writeDraft(tx, definition, parsed.data, input.base, input.actor);
       await audit(
-        auditFor("content.published", input.actor, definition, {
-          before: previous?.data ?? definition.defaults(),
+        auditFor("content.draft_saved", input.actor, definition, {
+          before: written.before,
           after: parsed.data,
-          meta: {
-            version: draft.version,
-            previousVersion: previous?.version ?? null,
-            note: input.note?.trim() || undefined,
-          },
+          meta: { version: written.version },
         }),
         tx
       );
-      const updatedAt = await tx.contentBlocks.updatedAt(draft.id);
-      return { ok: true as const, version: draft.version, updatedAt: updatedAt.toISOString() };
+      return publishIn(tx, definition, written.updatedAt.toISOString(), input.note, input.actor);
     })
   );
 }

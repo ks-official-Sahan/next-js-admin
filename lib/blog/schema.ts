@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { isSafeHref } from "@/lib/cms/href";
+import { isAbsoluteHttpsUrl } from "@/lib/cms/href";
 
 import { isValidSlug, SLUG_MAX_LENGTH } from "@sahan-sac/blog-kit/slug";
 
@@ -23,7 +23,7 @@ export const slugSchema = z
 const canonicalUrlSchema = z
   .string()
   .trim()
-  .refine((value) => value.length === 0 || isSafeHref(value), "Invalid canonical URL")
+  .refine((value) => value.length === 0 || isAbsoluteHttpsUrl(value), "Use a full https:// URL")
   .optional()
   .transform((value) => (value ? value : undefined));
 

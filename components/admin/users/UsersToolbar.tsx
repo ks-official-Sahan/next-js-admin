@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Loader2, Search } from "lucide-react";
 import { useEffect, useState, useTransition } from "react";
 
+import Icon from "@/components/icons/Icon";
 import { fieldClass } from "@/components/admin/ui/styles";
 import { ROLE_LABEL } from "@/lib/admin/roles";
 import type { RoleName } from "@/lib/auth/permissions";
@@ -81,7 +81,7 @@ export default function UsersToolbar({ view, roles, total }: { view: UserView; r
       className="flex flex-wrap items-center gap-2"
     >
       <div className="relative min-w-0 flex-1 basis-56">
-        <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Icon name="magnifier" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <label htmlFor="users-q" className="sr-only">
           Search users by name or email
         </label>
@@ -158,7 +158,7 @@ export default function UsersToolbar({ view, roles, total }: { view: UserView; r
       <span className="flex min-w-24 items-center gap-1.5 text-xs text-muted-foreground" aria-live="polite">
         {pending ? (
           <>
-            <Loader2 aria-hidden className="size-3.5 animate-spin motion-reduce:animate-none" />
+            <Icon lucideIconName="Loader2" className="size-3.5 animate-spin motion-reduce:animate-none" />
             Updating…
           </>
         ) : (

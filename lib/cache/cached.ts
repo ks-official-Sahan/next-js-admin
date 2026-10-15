@@ -1,6 +1,9 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import { unstable_cache } from "next/cache";
+
+import { noteCache } from "@/lib/observability/timing";
 
 import { kv } from "./redis";
 
@@ -32,30 +35,39 @@ function redisDataKey(keyParts: string[]): string {
   return cacheKey(...keyParts).join(":");
 }
 
-function redisTagIndexKey(tag: string): string {
-  return `tagindex:${tag}`;
-}
-
-/** Best-effort: records that `dataKey` was cached under `tag`, for purging later. */
-async function addToTagIndex(tag: string, dataKey: string): Promise<void> {
-  const existing = (await kv.get<string[]>(redisTagIndexKey(tag))) ?? [];
-  if (existing.includes(dataKey)) return;
-  await kv.set(redisTagIndexKey(tag), [...existing, dataKey], {
-    ttlSeconds: REDIS_CACHE_CAP_SECONDS * 2,
-  });
+function redisTagVersionKey(tag: string): string {
+  return `tagversion:${tag}`;
 }
 
 /**
- * Purges every Redis-cached key ever tagged `tag`. Called from
- * `invalidate()` so a publish clears this read-through layer too, not only
- * Next's own tag cache. Best-effort: a failure here just means the short
- * TTL above is the fallback.
+ * The Redis key for `keyParts` at the tags' current generations, or null when
+ * a generation could not be read. Reading a failed lookup as generation 0
+ * could match a value written before a purge, so the caller skips Redis for
+ * that call instead. The version GETs (one or two tags per read) run in
+ * parallel, so they cost one round trip of latency.
+ */
+async function redisDataKeyFor(keyParts: string[], tags: string[]): Promise<string | null> {
+  try {
+    const versions = await Promise.all(tags.map((tag) => kv.get<string>(redisTagVersionKey(tag))));
+    return redisDataKey([...keyParts, "tagversions", ...versions.map((version) => String(version ?? 0))]);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Starts a new Redis cache generation for `tag`. Old values expire naturally
+ * under the short data TTL; no shared read/modify/write index can grow without
+ * bound or lose concurrent cache-key registrations.
+ *
+ * The generation is a fresh random value, not a counter. A counter key that
+ * expires restarts at 1 and can match a value written under the earlier "1"
+ * before a purge, serving stale data. A random generation never repeats, and
+ * an expired one reads as "0", whose values are older than this key's TTL
+ * (twice the data TTL) and so already gone.
  */
 export async function purgeRedisTag(tag: string): Promise<void> {
-  const indexKey = redisTagIndexKey(tag);
-  const keys = (await kv.get<string[]>(indexKey)) ?? [];
-  if (keys.length > 0) await kv.del(...keys);
-  await kv.del(indexKey);
+  await kv.set(redisTagVersionKey(tag), randomUUID(), { ttlSeconds: REDIS_CACHE_CAP_SECONDS * 2 });
 }
 
 /**
@@ -69,24 +81,27 @@ export function cached<Args extends unknown[], Result>(
   options: { tags: string[]; revalidate?: number | false }
 ): (...args: Args) => Promise<Result> {
   const revalidate = options.revalidate ?? DEFAULT_REVALIDATE_SECONDS;
-  const dataKey = redisDataKey(keyParts);
   const redisTtl = revalidate === false ? undefined : Math.min(revalidate, REDIS_CACHE_CAP_SECONDS);
 
   return unstable_cache(
     async (...args: Args) => {
-      if (redisTtl) {
+      const dataKey = redisTtl ? await redisDataKeyFor(keyParts, options.tags) : null;
+      if (dataKey) {
         const hit = await kv.get<Result>(dataKey).catch(() => null);
-        if (hit !== null) return hit;
-      }
+        if (hit !== null) {
+          noteCache("redisHit");
+          return hit;
+        }
 
-      const result = await fn(...args);
-
-      if (redisTtl) {
+        noteCache("redisMiss");
+        noteCache("load");
+        const result = await fn(...args);
         await kv.set(dataKey, result, { ttlSeconds: redisTtl }).catch(() => {});
-        await Promise.all(options.tags.map((tag) => addToTagIndex(tag, dataKey).catch(() => {})));
+        return result;
       }
 
-      return result;
+      noteCache("load");
+      return fn(...args);
     },
     cacheKey(...keyParts),
     { tags: options.tags, revalidate }

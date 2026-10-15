@@ -1,4 +1,4 @@
-import { kv } from "@/lib/cache/redis";
+import { kv, kvBackend } from "@/lib/cache/redis";
 
 import { validateSetting, type SettingKey, type SettingValueOf } from "./schema";
 
@@ -36,25 +36,47 @@ const memo = (store.appKvSettingMemo ??= new Map<string, Entry>());
 
 export const kvSettingKey = (key: SettingKey) => `setting:${key}`;
 
+/**
+ * The stored value, or null when not set or corrupt. Throws when the mirror
+ * cannot be trusted: a KV error, or an empty answer while Redis is degraded
+ * and FailoverKv is serving its in-memory fallback, which never holds these
+ * keys. Reading either as "not set" would switch maintenance off and empty
+ * the allowlist during an outage.
+ */
 async function load<K extends KvMirroredSetting>(key: K): Promise<SettingValueOf<K> | null> {
+  const raw = await kv.get(kvSettingKey(key));
+  if (raw === null || raw === undefined) {
+    if (kvBackend() === "upstash-degraded") throw new Error("KV degraded");
+    return null;
+  }
   try {
-    const raw = await kv.get(kvSettingKey(key));
-    if (raw === null || raw === undefined) return null;
     return validateSetting(key, raw);
   } catch {
-    // A KV outage or a corrupt value reads as "not set"; the caller applies its safe default.
     return null;
   }
 }
 
-/** Starts one KV read for `key` and records its result as the newest settled value. */
+/**
+ * Starts one KV read for `key` and records its result as the newest settled
+ * value. When the read fails, the last known good value answers instead (and
+ * is kept as the settled value), so an outage never flips the setting; with
+ * no value known yet (a cold instance), it reads as "not set".
+ */
 function refresh(key: KvMirroredSetting, now: number, previous?: Entry): Promise<unknown> {
-  const entry: Entry = { at: now, value: load(key), settled: previous?.settled };
+  const entry: Entry = { at: now, value: Promise.resolve(null), settled: previous?.settled };
+  entry.value = load(key).then(
+    (value) => {
+      // A save on this instance may have replaced the entry meanwhile; never overwrite it.
+      if (memo.get(key) === entry) entry.settled = { at: now, value };
+      return value;
+    },
+    () => {
+      const known = entry.settled;
+      if (known && memo.get(key) === entry) entry.settled = { at: now, value: known.value };
+      return known?.value ?? null;
+    }
+  );
   memo.set(key, entry);
-  void entry.value.then((value) => {
-    // A save on this instance may have replaced the entry meanwhile; never overwrite it.
-    if (memo.get(key) === entry) entry.settled = { at: now, value };
-  });
   return entry.value;
 }
 

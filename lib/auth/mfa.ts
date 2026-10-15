@@ -1,16 +1,21 @@
 import "server-only";
 
-import { createMfa } from "@sahan-sac/auth-kit/mfa";
+import { createMfa, mfaMethodsFor, type MfaMethods } from "@sahan-sac/auth-kit/mfa";
 
-import { auditSafe } from "@/lib/admin/audit";
+import { audit, auditSafe } from "@/lib/admin/audit";
 import { limit } from "@/lib/cache/ratelimit";
+import { kv } from "@/lib/cache/redis";
 import { sendEmail } from "@/lib/email";
 import { mfaCode } from "@/lib/email/templates";
 
 import { AUTH_SECRET } from "./kit";
-import { authAdapter } from "@/lib/data";
+import { authKit } from "./kit-config";
+import { authAdapter, reposFor } from "@/lib/data";
 
-// Emailed one-time codes for sign-in, enabling and disabling MFA.
+// The second sign-in step and the factors behind it: emailed codes, an
+// authenticator app (TOTP), recovery codes, and passkeys (./passkeys.ts).
+// One instance, shared by the sign-in deps, the sign-in actions and the
+// account page.
 
 // auth-kit's deps are typed with the loose shape any app could have, but the
 // app's own `limit` and `sendEmail` are typed against its specific bucket
@@ -22,13 +27,40 @@ const sendEmailAdapter = (
   context: { actor: { id: string; email: string } }
 ) => sendEmail(message as Parameters<typeof sendEmail>[0], context);
 
-export const { issueChallenge, verifyChallenge, consumeChallenge, challengeOwner } = createMfa({
+export const mfa = createMfa({
   adapter: authAdapter,
   authSecret: AUTH_SECRET,
   limit: limitAdapter,
   sendEmail: sendEmailAdapter,
-  audit: auditSafe,
-  renderMfaCode: mfaCode,
+  audit: (event, tx) => (tx ? audit(event, reposFor(tx)) : auditSafe(event)),
+  // Passkey challenges are never emailed; only the code purposes reach the template.
+  renderMfaCode: (input) => mfaCode({ ...input, purpose: input.purpose === "PASSKEY_REGISTER" || input.purpose === "PASSKEY_SIGN_IN" ? undefined : input.purpose }),
+  // One authenticator-app code works once, across every instance (Redis SET NX).
+  claimOnce: (key, ttlSeconds) => kv.set(`${authKit.keyPrefix}${key}`, 1, { ttlSeconds, nx: true }),
+  setupLimit: (userId) => limit("mfa:setup:user", userId),
 });
 
-export type { IssueResult, MfaPurpose, VerifyResult } from "@sahan-sac/auth-kit/mfa";
+export const {
+  issueChallenge,
+  openTicket,
+  openVerifiedTicket,
+  verifyChallenge,
+  verifyTotp,
+  verifyRecoveryCode,
+  consumeChallenge,
+  challengeOwner,
+  factorsOf,
+  issueRecoveryCodes,
+  beginTotpSetup,
+  confirmTotpSetup,
+  removeTotp,
+  removeFactors,
+} = mfa;
+
+/** The second-step methods this user may use, or null when the user is gone. */
+export async function signInMethods(userId: string): Promise<MfaMethods | null> {
+  const factors = await factorsOf(userId);
+  return factors ? mfaMethodsFor(factors) : null;
+}
+
+export type { IssueResult, MfaMethods, MfaPurpose, VerifyResult } from "@sahan-sac/auth-kit/mfa";

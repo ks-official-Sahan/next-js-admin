@@ -1,6 +1,8 @@
 import nextConfig from "eslint-config-next";
+import { globalIgnores } from "eslint/config";
 
 const eslintConfig = [
+  globalIgnores(["**/.prisma-test/**"]),
   ...nextConfig,
   {
     // React Compiler alignment rules (new in eslint-plugin-react-hooks v7).

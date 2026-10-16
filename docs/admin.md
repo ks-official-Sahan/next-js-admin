@@ -22,8 +22,9 @@ built on, see `docs/SECURITY-RULES.md`.
    `DATABASE_URL` is set. `MAINTENANCE_BYPASS_SECRET`,
    `ADMIN_LOGIN_UNLOCK_SECRET`, `MEDIA_SIGNING_SECRET` and `CRON_SECRET` are
    optional: each feature is off while its secret is unset.
-4. Run migrations (`pnpm exec prisma migrate deploy`, or `migrate dev`
-   locally) — or `pnpm db:push` for a fresh database. The schema defaults to
+4. Run `pnpm db:migrate` (applies the committed migrations, never resets).
+   After a schema edit, `pnpm db:migration <name>` writes the next migration
+   for you to review and commit. The schema defaults to
    `public`; if you share one Postgres instance across projects, give this
    one its own schema and update `lib/db/url.ts`'s `ALLOWED_SCHEMAS`.
 

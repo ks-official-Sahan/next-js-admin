@@ -107,9 +107,14 @@ against). The schema defaults to `public` — only set `?schema=<name>` on
 projects (see `lib/db/url.ts`).
 
 ```sh
-pnpm db:push     # create tables (prisma db push, or drizzle-kit push on Drizzle)
-# or, on Prisma: pnpm exec prisma migrate deploy   # if you're using migrations
+pnpm db:migrate              # apply committed migrations (prisma migrate deploy, or drizzle-kit migrate)
+pnpm db:migration <name>     # after a schema edit: write the next migration, review it, commit it
 ```
+
+Migrations live in `prisma/migrations/` (Prisma) or `drizzle/` (Drizzle).
+`db:migrate` only applies pending migrations; it never resets. CI applies
+every migration to an empty Postgres and fails when the result differs from
+the schema.
 
 ## Owner bootstrap
 

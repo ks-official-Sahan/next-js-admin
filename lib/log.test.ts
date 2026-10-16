@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { AUDIT_SENSITIVE_KEY, REDACTED, redact } from "./log";
+import { AUDIT_SENSITIVE_KEY, errorText, redact, REDACTED } from "./log";
 
 test("redact hides sensitive keys at any depth", () => {
   const out = redact({
@@ -64,4 +64,14 @@ test("the broad matcher keeps well-known harmless keys, and still over-redacts t
   assert.equal(out.apiKey, REDACTED);
   assert.equal(out.mfaCode, REDACTED);
   assert.equal(out.codeHash, REDACTED);
+});
+
+test("errorText keeps a readable message for anything thrown", () => {
+  assert.equal(errorText(new Error("boom")), "boom");
+  assert.equal(errorText({ message: "socket closed", type: "error" }), "socket closed");
+  assert.equal(errorText({ code: 57 }), '{"code":57}');
+  assert.equal(errorText("plain"), "plain");
+  const circular: Record<string, unknown> = {};
+  circular.self = circular;
+  assert.equal(errorText(circular), "[object Object]");
 });

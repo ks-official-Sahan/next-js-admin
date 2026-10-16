@@ -15,12 +15,13 @@ export { dbConfigured, isBuildPhase };
 neonConfig.webSocketConstructor = ws;
 
 type Db = NeonDatabase<typeof schema>;
-const globalForDb = globalThis as unknown as { appDrizzle?: Db };
+const globalForDb = globalThis as unknown as { appDrizzle?: Db; appPool?: Pool };
 
 function createClient(): Db {
   const connectionString = runtimeConnectionString(process.env);
   if (!connectionString) throw new Error("DATABASE_URL is not set");
   const pool = new Pool({ connectionString });
+  globalForDb.appPool = pool;
   // runtimeSchema() only returns a name from lib/db/url.ts's allowlist.
   const schemaName = runtimeSchema(process.env);
   if (schemaName !== "public") {
@@ -35,6 +36,15 @@ function createClient(): Db {
 export function getDb(): Db {
   globalForDb.appDrizzle ??= createClient();
   return globalForDb.appDrizzle;
+}
+
+/**
+ * The Neon pool under the shared client, for code that needs one raw
+ * connection for a whole transaction (lib/data/drizzle/backup-db.ts).
+ */
+export function getPool(): Pool {
+  getDb();
+  return globalForDb.appPool!;
 }
 
 /**

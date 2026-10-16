@@ -7,7 +7,7 @@ import { staticTags, TAGS } from "@/lib/cache/tags";
 import { repos, withTx } from "@/lib/data";
 import { audit } from "@/lib/admin/audit";
 import type { AuthUser } from "@/lib/auth/dal";
-import { log } from "@/lib/log";
+import { errorText, log } from "@/lib/log";
 import {
   DEFAULT_SETTINGS,
   getSettingDefault,
@@ -69,7 +69,7 @@ async function orDefault<T>(read: () => Promise<T>, fallback: () => T, context: 
   try {
     return await read();
   } catch (err) {
-    log.error("Failed to read settings, using defaults", { ...context, error: String(err) });
+    log.error("Failed to read settings, using defaults", { ...context, error: errorText(err) });
     return fallback();
   }
 }

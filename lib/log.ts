@@ -53,6 +53,23 @@ function emit(level: Level, message: string, meta?: unknown): void {
   }
 }
 
+/**
+ * Readable text for anything thrown. String() turns a plain object (a
+ * WebSocket ErrorEvent from the database driver, say) into "[object Object]";
+ * this keeps an Error's message, or the object's own JSON.
+ */
+export function errorText(error: unknown): string {
+  if (error instanceof Error) return error.message || error.name;
+  if (typeof error !== "object" || error === null) return String(error);
+  const message = (error as { message?: unknown }).message;
+  if (typeof message === "string" && message) return message;
+  try {
+    return JSON.stringify(error) ?? String(error);
+  } catch {
+    return Object.prototype.toString.call(error);
+  }
+}
+
 export const log = {
   debug: (message: string, meta?: unknown) => emit("debug", message, meta),
   info: (message: string, meta?: unknown) => emit("info", message, meta),

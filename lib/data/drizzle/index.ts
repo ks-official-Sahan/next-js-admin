@@ -22,6 +22,7 @@ import { userSessionRepo } from "./user-sessions";
 import { userRepo } from "./users";
 import { webhookRepo } from "./webhooks";
 
+export { backupDb } from "./backup-db";
 export { isDbUnavailable } from "./errors";
 
 export function createRepos(client: DbClient): Repos {

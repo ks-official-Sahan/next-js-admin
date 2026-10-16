@@ -75,7 +75,7 @@ export async function restoreBackup(db: BackupDb, manifest: Manifest, data: Map<
       const target = await readSchema(query, schema);
       const names = manifest.tables.map((table) => table.name);
       const missing = names.filter((name) => !target.tables.has(name));
-      if (missing.length > 0) throw new Error(`Schema "${schema}" has no table ${missing.join(", ")}; create the schema first (prisma db push)`);
+      if (missing.length > 0) throw new Error(`Schema "${schema}" has no table ${missing.join(", ")}; create the schema first (pnpm db:migrate with DATABASE_URL set to ?schema=${schema})`);
 
       const droppedColumns: string[] = [];
       const plans = new Map<string, { columns: string[]; overriding: boolean }>();

@@ -44,7 +44,7 @@ export function directHost(host: string): string {
 }
 
 /**
- * URL for the Prisma CLI (`generate`, `db push`). DDL needs a direct
+ * URL for the Prisma CLI (`generate`, `migrate`). DDL needs a direct
  * connection, and the schema engine does not accept `channel_binding`. The
  * schema is always written explicitly and checked against the allowlist, so a
  * stray value can never point the CLI at another project's schema.

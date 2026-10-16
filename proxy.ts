@@ -29,6 +29,8 @@ import {
 import { CONFIRM_EMAIL_PATH, FORGOT_PASSWORD_PATH, LOCKED_PATH, LOGIN_PATH, SET_PASSWORD_PATH } from "@/lib/auth/constants";
 import { authKit } from "@/lib/auth/kit-config";
 import { hasSessionCookie } from "@/lib/auth/session-cookie";
+import { previewRequestAllowed } from "@/lib/blog/preview-gate";
+import { deriveShareKey } from "@/lib/blog/share-link";
 import { limit } from "@/lib/cache/ratelimit";
 import { log } from "@/lib/log";
 import { maintenancePageHtml, retryAfterSeconds, type MaintenanceNotice } from "@/lib/admin/maintenance-page";
@@ -204,6 +206,15 @@ export async function proxy(request: NextRequest) {
   // 1b. The break-glass unlock form, when ADMIN_UNLOCK_PATH is set.
   const unlockPath = unlockFormPath(process.env.ADMIN_UNLOCK_PATH);
   if (unlockPath && pathname === unlockPath) return unlockForm(request, unlockPath);
+
+  // 1c. Previews show drafts: a request with neither a session cookie nor a
+  // valid share token gets a real 404 here, before a prerendered shell could
+  // turn the page's own notFound() into a soft 200 (lib/blog/preview-gate.ts).
+  if (pathname === "/preview" || pathname.startsWith("/preview/")) {
+    const secret = process.env.AUTH_SECRET;
+    const allowed = previewRequestAllowed(pathname, searchParams.get("t"), await hasSessionCookie(request), secret ? deriveShareKey(secret) : null, Date.now());
+    if (allowed === false) return locked(request);
+  }
 
   const adminPage = isAdminPage(pathname);
   const adminApi = isAdminApi(pathname);

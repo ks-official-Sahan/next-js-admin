@@ -69,10 +69,10 @@ function lastModifiedReaderFor(page: CmsPage): () => Promise<string | null> {
     read = cached(
       async () => {
         const updatedAt = await repos.contentBlocks.lastPublishedUpdate(page);
-        // ISO string, not a Date: unstable_cache's data cache round-trips
+        // ISO string, not a Date: the Redis layer in cached() round-trips
         // through JSON, so a Date instance would come back a string on a
-        // cache hit anyway and a string on a miss — returning a string
-        // always keeps the type honest for callers.
+        // Redis hit anyway and a Date on a miss. Returning a string always
+        // keeps the type honest for callers.
         return updatedAt ? updatedAt.toISOString() : null;
       },
       ["cms", "page-updated-at", page],

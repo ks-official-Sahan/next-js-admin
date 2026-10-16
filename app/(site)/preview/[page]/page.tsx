@@ -17,12 +17,15 @@ import { getRecentPosts } from "@/lib/blog/queries";
 // the site's chrome, styles and CSP; the permission check keeps it private and
 // the noindex keeps it out of search results. It shows drafts, so it is never cached.
 
-export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Preview",
   robots: { index: false, follow: false },
 };
+
+// Drafts behind a signed token, rendered per request: allowed to block, with
+// no prerendered shell.
+export const instant = false;
 
 export default async function PreviewPage({ params }: { params: Promise<{ page: string }> }) {
   await requirePermission("editPages");

@@ -16,7 +16,6 @@ import { draftPost } from "@sahan-sac/blog-kit/helpers";
 // fenced as data by lib/ai/guard.ts before they reach a model
 // (design notes, Step 12).
 
-export const dynamic = "force-dynamic";
 // Vercel Hobby allows at most 60 s; the AI chain stops at 50 s (lib/ai/blog.ts).
 export const maxDuration = 60;
 

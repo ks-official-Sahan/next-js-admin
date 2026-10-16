@@ -35,7 +35,6 @@ import { log } from "@/lib/log";
 // the two switches default to on, and an image that is switched off is
 // never requested from the model or the image provider.
 
-export const dynamic = "force-dynamic";
 // Vercel Hobby allows at most 60 s. Text gets TEXT_BUDGET_MS (42 s, including
 // any repair); images run in parallel in what is left (FLUX takes ~6-9 s).
 export const maxDuration = 60;

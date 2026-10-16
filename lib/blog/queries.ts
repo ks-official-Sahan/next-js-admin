@@ -161,13 +161,14 @@ function toView(row: FullPostRow): BlogPostView {
   };
 }
 
-// The cached reads below look VISIBLE_AHEAD_MS ahead and drop rows not yet
-// due when served (lib/blog/visibility.ts), so a scheduled post appears at
-// its publishAt instead of when the cache next refills.
+// The cached reads below look VISIBLE_AHEAD_MS ahead, and their `select`
+// drops rows not yet due on every cache fill (lib/blog/visibility.ts), so a
+// Redis copy filled before a post was due still shows it once it is.
 function cachedPost(slug: string) {
   return cached((): Promise<FullPostRow | null> => repos.posts.findPublished(slug, visibleAhead()), ["blog", "post", slug, "v2"], {
     tags: [TAGS.blogPost(slug)],
     revalidate: 300,
+    select: (row) => (row && isDue(row) ? row : null),
   });
 }
 
@@ -178,6 +179,7 @@ function cachedPost(slug: string) {
 const cachedPublicSlugs = cached(() => repos.posts.listPublicSlugs(visibleAhead()), ["blog", "public-slugs", "v2"], {
   tags: [TAGS.blogList],
   revalidate: 300,
+  select: (rows) => rows.filter((row) => isDue(row)),
 });
 
 // Rows of any status. Drafts never touch the blog:list tag, so the first
@@ -259,7 +261,7 @@ async function getPostPage(
   const safeLimit = Math.max(1, Math.min(maxLimit, Math.trunc(limit)));
   const cursor = dbCursor(after);
   const read = cursor
-    ? () => repos.posts.listPublishedPage(safeLimit + 1, cursor, indexableOnly)
+    ? async () => (await repos.posts.listPublishedPage(safeLimit + 1, cursor, indexableOnly)).filter((row) => isDue(row))
     : cached(
         // Two reads at one instant: the page as it is now, and the posts that
         // become due within VISIBLE_AHEAD_MS (soonest first, so a crowd of
@@ -275,13 +277,11 @@ async function getPostPage(
           return [...upcoming.reverse(), ...due];
         },
         ["blog", "page", indexableOnly ? "indexable" : "all", String(safeLimit), "v2"],
-        { tags: [TAGS.blogList], revalidate: 300 }
+        { tags: [TAGS.blogList], revalidate: 300, select: (rows) => rows.filter((row) => isDue(row)) }
       );
-  const rows = (
-    await loadOrNull(read, {
-      onError: (error) => log.warn("blog page read failed during build, using defaults", { error: String(error) }),
-    })
-  )?.filter((row) => isDue(row));
+  const rows = await loadOrNull(read, {
+    onError: (error) => log.warn("blog page read failed during build, using defaults", { error: String(error) }),
+  });
   if (rows && rows.length === 0 && !cursor && (await storedPostsExist())) return { items: [], nextCursor: null };
   if (!rows || rows.length === 0) {
     return { items: cursor ? [] : defaultSummaries(safeLimit), nextCursor: null };
@@ -369,6 +369,19 @@ export async function getSitemapPostRefs(after?: PublicPostCursor): Promise<Post
   return rows.map((row) => ({ slug: row.slug, publishedAt: toIso(row.publishAt ?? row.publishedAt), updatedAt: toIso(row.updatedAt) }));
 }
 
+/** A slug isValidPostSlug() rejects, so its page is a 404 without a lookup. */
+const NO_POST_SLUG = "_";
+
+/**
+ * generateStaticParams for /updates/[slug]: the newest 50 public posts. Never
+ * empty: Cache Components fails the build on an empty list, so a database
+ * with only drafts gets one placeholder whose page is a 404.
+ */
+export async function postStaticParams(): Promise<{ slug: string }[]> {
+  const posts = await getRecentPosts(50);
+  return posts.length > 0 ? posts.map((post) => ({ slug: post.slug })) : [{ slug: NO_POST_SLUG }];
+}
+
 /** Up to 50 newest public posts in one cached read: article recommendations, previews, chat context. */
 export async function getRecentPosts(limit = 20): Promise<BlogPostSummary[]> {
   return (await getPublicPostPage(limit)).items;
@@ -407,12 +420,12 @@ export async function getPostBySlug(slug: string, defaults?: BlogPostView[]): Pr
   if (!slugs || (slugs.length === 0 && !(await storedPostsExist()))) {
     return (defaults ?? defaultPosts()).find((post) => post.slug === slug) ?? null;
   }
-  if (!slugs.some((entry) => entry.slug === slug && isDue(entry))) return null;
+  if (!slugs.some((entry) => entry.slug === slug)) return null;
 
   const row = await loadOrNull(cachedPost(slug), {
     onError: (error) => log.warn("blog post read failed", { slug, error: String(error) }),
   });
-  return row && isDue(row) ? toView(row) : null;
+  return row ? toView(row) : null;
 }
 
 // Old slugs left by renames (post_slug_redirects), with their posts' current

@@ -4,13 +4,11 @@ import { getPageLastModified } from "@/lib/cms/loaders";
 import type { CmsPage } from "@/lib/cms/registry";
 import type { MetadataRoute } from "next";
 
-// Revalidated on a fixed schedule instead of per request: lastModified now
-// comes from cached CMS reads (getPageLastModified) and getAllIndexablePosts() instead of
-// `new Date()` on every crawl, so there is no correctness reason left to force
-// dynamic rendering here. A publish still shows up within this window (or
-// sooner — lib/cache/plan.ts's forPost()/forPostList()/forCollection() already
-// revalidatePath("/sitemap.xml") on the relevant actions).
-export const revalidate = 300;
+// Prerendered, not built per request: lastModified comes from cached CMS
+// reads (getPageLastModified) and getAllIndexablePosts(), never `new Date()`,
+// so the sitemap refreshes with their 300 s cacheLife. A publish shows up
+// sooner: lib/cache/plan.ts's forPost()/forPostList()/forCollection()
+// revalidatePath("/sitemap.xml") on the relevant actions.
 
 const STATIC_ROUTES: Array<{ path: string; page: CmsPage | null }> = [
   { path: "", page: "home" },

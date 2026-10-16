@@ -11,7 +11,6 @@ import { isCrossSiteFetch } from "@/lib/security/fetch-site";
 // permissions (viewAuditLogs and exportData), answers 404 to everyone else, and
 // is itself audited (design notes, step 8).
 
-export const dynamic = "force-dynamic";
 
 const HEADERS = ["time (UTC)", "actor", "action", "entity type", "entity id", "ip", "user agent", "before", "after", "meta"];
 

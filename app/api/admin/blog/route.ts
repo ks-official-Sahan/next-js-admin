@@ -9,7 +9,6 @@ import { log } from "@/lib/log";
 // use-blog-posts.ts). Same query as the server render (lib/blog/admin-list.ts).
 // Unauthorized callers get the same bare 404 as any unknown admin path.
 
-export const dynamic = "force-dynamic";
 
 const NO_STORE = { "Cache-Control": "private, no-store" };
 

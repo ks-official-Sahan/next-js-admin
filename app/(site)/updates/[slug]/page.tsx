@@ -5,26 +5,24 @@ import FinalCta from "@/components/home/FinalCta";
 import PostArticle from "@/components/updates/PostArticle";
 import { SiteMetadata } from "@/config/site";
 import { getPageContent } from "@/lib/cms/loaders";
-import { getRecentPosts, getPostBySlug, getPostRedirect, relatedPosts, type BlogPostView } from "@/lib/blog/queries";
+import { getRecentPosts, getPostBySlug, postStaticParams, getPostRedirect, relatedPosts, type BlogPostView } from "@/lib/blog/queries";
 import { RSS_ALTERNATES } from "@/lib/metadata";
 import { jsonLdHtml } from "@/lib/seo/json-ld";
 
 // One full post per published slug (design notes, Step 12).
-// 300s revalidate matches /updates, so a newly published or scheduled post's
-// page appears within the same window.
-export const revalidate = 300;
-export const dynamicParams = true;
-// No loading.tsx may sit above this route (the home and /updates skeletons
-// live in the (home) and updates/(list) route groups for that reason): a
-// Suspense boundary starts streaming a 200 before notFound() below can run,
-// so an unknown slug would answer a soft 404 instead of a real one.
+// The post reads are cached for 300 s (lib/blog/queries.ts), the same window
+// as /updates, so a newly published or scheduled post appears within it.
+//
+// No Suspense boundary or loading.tsx may sit above this route (the home and
+// /updates skeletons live in the (home) and updates/(list) route groups for
+// that reason): it would start streaming a 200 before notFound() below can
+// run, so an unknown slug would answer a soft 404 instead of a real one.
+// `instant = false` lets the page await its params and block instead.
+export const instant = false;
 
-export async function generateStaticParams() {
-  // Older posts remain available through dynamicParams, while only the newest
-  // 50 are eagerly generated during builds.
-  const posts = await getRecentPosts(50);
-  return posts.map((post) => ({ slug: post.slug }));
-}
+// The newest 50 are prerendered at build time; any other public slug is
+// rendered on its first request and cached from then on.
+export const generateStaticParams = postStaticParams;
 
 function postUrl(post: BlogPostView): string {
   return `${SiteMetadata.siteUrl}/updates/${post.slug}`;

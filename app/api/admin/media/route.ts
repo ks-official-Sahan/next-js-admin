@@ -6,7 +6,6 @@ import { repos } from "@/lib/data";
 import type { MediaKind } from "@/lib/data/media";
 import { log } from "@/lib/log";
 
-export const dynamic = "force-dynamic";
 
 const NO_STORE = { "Cache-Control": "private, no-store" };
 const KINDS = new Set<MediaKind>(["IMAGE", "VIDEO", "DOCUMENT"]);

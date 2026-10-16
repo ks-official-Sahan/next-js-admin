@@ -2,7 +2,7 @@ import "server-only";
 
 import { createAuthDal, type AuthUser as PackageAuthUser } from "@sahan-sac/auth-kit/session";
 import { notFound, redirect } from "next/navigation";
-import { after } from "next/server";
+import { after, connection } from "next/server";
 
 import { checkPasswordFingerprint, sessionSource } from "./engine";
 import { authKit, type Permission, type RoleName } from "./kit-config";
@@ -11,8 +11,18 @@ import { getSessionState, touchSession } from "./session-store";
 
 // Data access layer: the one place that decides who is signed in.
 
+/**
+ * A session read is request data by definition. connection() marks it so
+ * before the engine runs: Better Auth initializes with Math.random(), which
+ * Cache Components rejects while prerendering anything outside a request.
+ */
+const requestSession = (async (...args: Parameters<typeof sessionSource>) => {
+  await connection();
+  return sessionSource(...args);
+}) as typeof sessionSource;
+
 const dal = createAuthDal({
-  auth: sessionSource,
+  auth: requestSession,
   checkPasswordFingerprint,
   getSessionState,
   touchSession,

@@ -10,7 +10,6 @@ import { assertAddress, EmailGuardError } from "@sahan-sac/email-kit/guards";
 // route checks the permission itself and never relies on that
 // (design notes, step 5).
 
-export const dynamic = "force-dynamic";
 // Two rounds of Brevo reads at up to 8 s each, plus the session check.
 export const maxDuration = 30;
 

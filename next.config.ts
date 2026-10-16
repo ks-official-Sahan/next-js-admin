@@ -27,6 +27,10 @@ const nextConfig: NextConfig = {
   // Version-skew protection for rolling container deploys (assets carry
   // ?dpl=<id>). Vercel sets its own when skew protection is on.
   ...(process.env.NEXT_DEPLOYMENT_ID ? { deploymentId: process.env.NEXT_DEPLOYMENT_ID } : {}),
+  // Cache Components: pages are dynamic unless cached with "use cache";
+  // cacheLife/cacheTag replace the revalidate segment config and
+  // unstable_cache (lib/cache/cached.ts).
+  cacheComponents: true,
   poweredByHeader: false,
   // Gzip in `next start` only. In dev it buys nothing on localhost, and its
   // per-response gzip stream is what raises MaxListenersExceededWarning [Gzip]

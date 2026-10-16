@@ -20,7 +20,11 @@ import { AdminQueryProvider } from "@/lib/cache/react-query";
 // MantineSyncProvider too (for the mobile nav Drawer), but that drawer is now
 // plain accessible markup with no Mantine dependency, so this is the only
 // place Mantine still loads.
-export const dynamic = "force-dynamic";
+
+// Every admin route is per-user and gated before it renders (an unauthorized
+// visitor gets a real 404, never a streamed shell), so the whole subtree is
+// allowed to block instead of prerendering a static shell.
+export const instant = false;
 
 export default async function AdminLayout({
   children,

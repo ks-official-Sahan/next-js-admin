@@ -3,7 +3,7 @@ import { ImageResponse } from "next/og";
 import { cloudinaryImageUrl } from "@sahan-sac/media-kit/delivery";
 
 import { SiteMetadata } from "@/config/site";
-import { getPostBySlug, getRecentPosts } from "@/lib/blog/queries";
+import { getPostBySlug, postStaticParams } from "@/lib/blog/queries";
 
 // Per-post social card. Not a page — a sibling file-convention image next to
 // app/(site)/updates/[slug]/page.tsx (that page is owned by another stream;
@@ -25,12 +25,8 @@ import { getPostBySlug, getRecentPosts } from "@/lib/blog/queries";
 export const alt = "Post cover image";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
-export const revalidate = 300;
 
-export async function generateStaticParams() {
-  const posts = await getRecentPosts(50);
-  return posts.map((post) => ({ slug: post.slug }));
-}
+export const generateStaticParams = postStaticParams;
 
 export default async function Image({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;

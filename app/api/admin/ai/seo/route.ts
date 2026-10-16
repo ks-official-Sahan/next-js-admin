@@ -17,7 +17,6 @@ import { generateSeoSuggestion } from "@sahan-sac/blog-kit/generate";
 // from the post's current title and body text — the "Suggest SEO" button,
 // distinct from the full-post generator.
 
-export const dynamic = "force-dynamic";
 // Vercel Hobby allows at most 60 s; the AI chain stops at 50 s (lib/ai/blog.ts).
 export const maxDuration = 60;
 

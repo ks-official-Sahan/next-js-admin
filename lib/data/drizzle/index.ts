@@ -60,6 +60,9 @@ export function transaction<T>(client: DbClient, fn: (tx: Repos) => Promise<T>, 
 /** Repositories on the shared client. `db` is a lazy proxy, so this does not connect. */
 export const repos: Repos = createRepos(db);
 
+/** Repositories bound to a transaction client handed out by withTx (same contract as the Prisma layer). */
+export const reposFor = (tx: unknown): Repos => createRepos(tx as DbClient);
+
 /** The database the auth engine uses (lib/auth/engine.ts): Better Auth reads it, next-auth ignores it. */
 export const authDatabase = { drizzle: db };
 

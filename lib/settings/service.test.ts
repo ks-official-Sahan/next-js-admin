@@ -6,7 +6,7 @@ import { strict as assert } from "node:assert";
 // That is exactly the "unconfigured database" path the service is written to
 // tolerate, so it doubles as the fixture: collectPublicSettings/collectAllSettings
 // run against defaults without a real database. cached()-wrapped entry points
-// (getPublicSettings, getAllSettings) are not exercised here: unstable_cache
+// (getPublicSettings, getAllSettings) are not exercised here: the "use cache" scope in cached()
 // requires a Next.js request scope this test runner does not provide.
 
 import { collectAllSettings, collectPublicSettings } from "./service";

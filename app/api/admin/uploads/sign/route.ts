@@ -25,7 +25,6 @@ import { candidatesFor, isBucket, mediaStorage } from "@/lib/media/storage";
 // type and size on the account itself before the asset is recorded.
 // Requires uploadMedia permission and passes origin checks.
 
-export const dynamic = "force-dynamic";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 const notFound = () => new NextResponse(null, { status: 404, headers: NO_STORE });

@@ -10,7 +10,6 @@ import { repos } from "@/lib/data";
 // Delivers signed media from Cloudinary with restricted widths and qualities.
 // Verifies the signature against MEDIA_SIGNING_SECRET before redirecting.
 
-export const dynamic = "force-dynamic";
 
 const notFound = () => new NextResponse(null, { status: 404 });
 

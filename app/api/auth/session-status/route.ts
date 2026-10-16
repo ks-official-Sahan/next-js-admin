@@ -9,7 +9,6 @@ import { getSessionStatus } from "@/lib/auth/dal";
 // 30 second state cache lapses, which is what makes an idle tab sign out
 // (design notes, section 6.3). No session data is returned.
 
-export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   // No cookie, no answer: a stranger gets the same bare 404 as for any unknown URL,

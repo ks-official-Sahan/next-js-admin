@@ -7,7 +7,6 @@ import { repos } from "@/lib/data";
 import { log } from "@/lib/log";
 import { isCrossSiteFetch } from "@/lib/security/fetch-site";
 
-export const dynamic = "force-dynamic";
 
 const HEADERS = [
   "ID",

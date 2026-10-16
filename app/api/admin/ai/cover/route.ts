@@ -17,7 +17,6 @@ import { suggestCover } from "@sahan-sac/blog-kit/helpers";
 // this step, so this never generates or stores a file itself
 // (design notes, Step 12).
 
-export const dynamic = "force-dynamic";
 // Vercel Hobby allows at most 60 s; the AI chain stops at 50 s (lib/ai/blog.ts).
 export const maxDuration = 60;
 

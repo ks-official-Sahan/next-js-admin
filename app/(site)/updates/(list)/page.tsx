@@ -7,7 +7,6 @@ import React from "react";
 // /updates: 300s revalidate (design notes, section 5.1), so a
 // post published by hand or by the scheduled-publish cron appears within
 // five minutes without a manual cache clear.
-export const revalidate = 300;
 
 const Updates = async () => {
   const [updates, home, postPage] = await Promise.all([

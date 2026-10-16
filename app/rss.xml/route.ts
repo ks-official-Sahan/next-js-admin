@@ -1,11 +1,13 @@
+import { cacheLife } from "next/cache";
+
 import { SiteMetadata } from "@/config/site";
 import { getRecentIndexablePosts } from "@/lib/blog/queries";
 
 // RSS 2.0 feed of the last 20 published posts (design notes,
-// Step 12). Same 300s window as /updates, since both read the same cached
-// blog:list loader.
-
-export const revalidate = 300;
+// Step 12). The feed is built in a "use cache" scope with the same 300 s
+// window as /updates (it reads the same blog:list loader, whose tag it
+// inherits), so a publish refreshes it and the render-time date below does not
+// make every request dynamic.
 
 const MAX_ITEMS = 20;
 
@@ -18,6 +20,16 @@ const escapeXml = (value: string): string =>
     .replace(/'/g, "&apos;");
 
 export async function GET() {
+  return new Response(await buildFeed(), {
+    headers: {
+      "Content-Type": "application/rss+xml; charset=utf-8",
+    },
+  });
+}
+
+async function buildFeed(): Promise<string> {
+  "use cache";
+  cacheLife({ stale: 300, revalidate: 300, expire: 86_400 });
   const posts = await getRecentIndexablePosts(MAX_ITEMS);
   const siteUrl = SiteMetadata.siteUrl;
   const now = new Date().toUTCString();
@@ -43,7 +55,7 @@ export async function GET() {
     })
     .join("\n");
 
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>${escapeXml(SiteMetadata.ogSiteName || "Updates")}</title>
@@ -55,10 +67,4 @@ export async function GET() {
 ${items}
   </channel>
 </rss>`;
-
-  return new Response(xml, {
-    headers: {
-      "Content-Type": "application/rss+xml; charset=utf-8",
-    },
-  });
 }

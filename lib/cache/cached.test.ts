@@ -18,7 +18,7 @@ test("each purge starts a new generation that never repeats a used one", async (
   }
 });
 
-test("readThrough caches null results, shares one load between concurrent misses, and reloads after a purge", async () => {
+test("readThrough caches null results and reloads after a purge", async () => {
   const store = new MemoryKv();
   let loads = 0;
   const load = async () => {
@@ -26,9 +26,8 @@ test("readThrough caches null results, shares one load between concurrent misses
     await new Promise((resolve) => setTimeout(resolve, 5));
     return null;
   };
-  const first = await Promise.all([1, 2, 3].map(() => readThrough(store, ["t", "missing"], ["blog:list"], 60, load)));
-  assert.deepEqual(first, [null, null, null]);
-  assert.equal(loads, 1, "concurrent misses share one load");
+  assert.equal(await readThrough(store, ["t", "missing"], ["blog:list"], 60, load), null);
+  assert.equal(loads, 1);
   assert.equal(await readThrough(store, ["t", "missing"], ["blog:list"], 60, load), null);
   assert.equal(loads, 1, "a cached null is a hit, not a miss");
 

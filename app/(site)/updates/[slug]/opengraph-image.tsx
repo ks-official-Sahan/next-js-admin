@@ -25,7 +25,6 @@ import { getPostBySlug, getRecentPosts } from "@/lib/blog/queries";
 export const alt = "Post cover image";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
-export const revalidate = 300;
 
 export async function generateStaticParams() {
   const posts = await getRecentPosts(50);

@@ -22,7 +22,7 @@ import { isKvMirrored, KV_MIRRORED_SETTINGS, writeKvSetting } from "./kv";
 
 // Service layer for settings: read, write, cache and validate. Design:
 // design notes, section 16. Settings are stored in the database
-// with Prisma, cached with unstable_cache and tags, and mirrored to KV so the
+// with Prisma, cached with cached() ("use cache" plus tags), and mirrored to KV so the
 // proxy (which does no database work) can read maintenance and the IP
 // allowlist. The KV mirror is written on every save; before the first save it
 // simply has no value, and getKvSetting then returns null, which every reader
@@ -90,7 +90,7 @@ export async function getSetting<K extends SettingKey>(key: K): Promise<SettingV
  * broadly. Never includes a key outside publicSettingKeys, even if a caller
  * adds a new key to DEFAULT_SETTINGS and forgets to classify it
  * (isPublicSetting is the single source of truth). Exported uncached so it
- * can be unit tested without going through unstable_cache.
+ * can be unit tested without going through cached().
  */
 export async function collectPublicSettings(): Promise<Partial<Record<SettingKey, unknown>>> {
   return readSettingsRaw(PUBLIC_KEYS);

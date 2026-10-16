@@ -1,7 +1,6 @@
 import ContactPageView from "@/components/pages/ContactPageView";
 import { getPageContent } from "@/lib/cms/loaders";
 
-export const revalidate = 3600;
 
 export async function generateMetadata() {
   return {

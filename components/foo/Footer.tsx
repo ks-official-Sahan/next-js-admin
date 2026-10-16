@@ -1,10 +1,21 @@
+import { cacheLife } from "next/cache";
 import React from "react";
 import WrapperBody from "@/components/wrappers/WrapperBody";
 import { TextHoverEffect } from "@/components/ui/text-hover-effect";
 import { Site } from "@/config/site";
 import FooterNav from "@/components/foo/FooterNav";
 
-const Footer = () => {
+// The year changes once a year: read the clock inside a cached scope, so the
+// footer stays part of every page's prerendered shell (a bare new Date()
+// during prerender is an error under Cache Components).
+async function copyrightYear(): Promise<number> {
+  "use cache";
+  cacheLife("days");
+  return new Date().getFullYear();
+}
+
+const Footer = async () => {
+  const year = await copyrightYear();
   return (
     <footer className="z-[1000] flex w-full flex-col items-center border-t border-[#0000001f] dark:border-[#ffffff1f] pt-[40px] pb-[80px] bg-[#f7f7f73f] dark:bg-[#1A1A1A] backdrop-blur-sm absolute bottom-0 px-4">
       <WrapperBody>
@@ -12,7 +23,7 @@ const Footer = () => {
           <div className="flex flex-col">
             <div className="text-xl font-bold uppercase">{Site.siteName}</div>
             <div className="text-[12px] font-medium pt-[60px] opacity-65">
-              &copy; {new Date().getFullYear()} {Site.org}
+              &copy; {year} {Site.org}
             </div>
           </div>
 

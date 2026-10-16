@@ -20,7 +20,6 @@ import { MEDIA_UPLOAD_FOLDER } from "@/lib/media/folder";
 // featured image directly (@sahan-sac/blog-kit's generateBlogImage into the
 // media library sink, the same path the streamed full-post generator uses).
 
-export const dynamic = "force-dynamic";
 // Vercel Hobby allows at most 60 s. FLUX on NVIDIA takes ~6-9 s; the signal
 // below leaves time to upload the result before the hard stop.
 export const maxDuration = 60;

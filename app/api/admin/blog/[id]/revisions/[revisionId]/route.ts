@@ -12,7 +12,6 @@ import { parseSnapshot, snapshotOf } from "@sahan-sac/blog-kit/revisions";
 // editor's History panel. Same gate as the edit page (editBlog); anything
 // else is a 404, so the route never confirms a post or revision exists.
 
-export const dynamic = "force-dynamic";
 
 const NO_STORE = { "Cache-Control": "private, no-store" };
 

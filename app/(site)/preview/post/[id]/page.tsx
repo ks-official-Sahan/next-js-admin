@@ -14,7 +14,6 @@ import { env } from "@/lib/env";
 // rendered per request, kept out of search results, and sends no Referer
 // (the token is in the URL).
 
-export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Post preview",
@@ -28,6 +27,10 @@ async function signedInEditor(): Promise<boolean> {
   const user = await getOptionalUser();
   return Boolean(user && !user.mustChangePassword && hasPermission(user, "editBlog"));
 }
+
+// Drafts behind a signed token, rendered per request: allowed to block, with
+// no prerendered shell.
+export const instant = false;
 
 export default async function PostPreviewPage({
   params,

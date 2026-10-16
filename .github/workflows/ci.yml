@@ -47,6 +47,64 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+  migrations:
+    name: Migrations — both ORMs match schema.prisma
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PG: postgresql://postgres:postgres@localhost:5432/postgres
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install
+
+      # Every Prisma migration applied to an empty schema must equal
+      # schema.prisma (exit code 2 on any difference).
+      - name: Prisma migrations
+        env:
+          DATABASE_URL: ${{ env.PG }}?schema=public_test
+        run: |
+          pnpm exec prisma migrate deploy
+          pnpm exec prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+
+      # The Drizzle migrations must build the same tables: compare the result
+      # with schema.prisma too, ignoring only Drizzle's own journal table.
+      - name: Drizzle migrations
+        env:
+          DATABASE_URL: ${{ env.PG }}?schema=admin-panel
+        run: |
+          psql "$PG" -c 'CREATE SCHEMA IF NOT EXISTS "admin-panel"'
+          pnpm exec drizzle-kit migrate
+          psql "$PG" -c 'DROP TABLE "admin-panel".__drizzle_migrations'
+          pnpm exec prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+
   variants:
     name: Variant — ${{ matrix.auth }} + ${{ matrix.orm }}
     runs-on: ubuntu-latest

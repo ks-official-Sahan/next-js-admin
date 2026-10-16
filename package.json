@@ -13,14 +13,17 @@
     "postinstall": "prisma generate",
     "test": "node --conditions=react-server --import tsx --test \"lib/**/*.test.ts\"",
     "db:generate": "prisma generate",
-    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:status": "prisma migrate status",
+    "db:migration": "node --import tsx scripts/db-migration.ts",
     "db:admin": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/db/admin-cli.ts",
     "db:seed": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/db/seed.ts",
     "db:seed-content": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/db/seed-content.ts",
     "db:seed-media": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/db/seed-media.ts",
     "db:seed-blog": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/db/seed-blog.ts",
     "db:backup": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/backup.ts",
-    "db:drizzle:push": "drizzle-kit push"
+    "db:drizzle:migrate": "drizzle-kit migrate",
+    "db:drizzle:migration": "node --import tsx scripts/drizzle-migration.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.71",

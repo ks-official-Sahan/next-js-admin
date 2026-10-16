@@ -7,7 +7,9 @@
 // Postgres instance across several projects, give each its own schema and
 // update lib/db/url.ts's ALLOWED_SCHEMAS accordingly.
 //
-// Use `prisma db push` only. Never `migrate reset` or `--force-reset`.
+// Change it through migrations: edit this file, `pnpm db:migration <name>`,
+// review and commit prisma/migrations/*, then `pnpm db:migrate`. Never
+// `db push`, `migrate dev` or `migrate reset` against a live database.
 
 generator client {
   provider = "prisma-client-js"

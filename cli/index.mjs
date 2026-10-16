@@ -181,7 +181,7 @@ function printNextSteps(targetDir, dirArg, args, generatedSecrets) {
   console.log(`  cd ${rel}`);
   if (!args.install) console.log(`  ${args.pm} install`);
   console.log("  # Fill in DATABASE_URL (and any provider keys you want) in .env.local");
-  console.log(`  ${args.pm} db:push        # create the database schema`);
+  console.log(`  ${args.pm} db:migrate     # create the database schema (committed migrations)`);
   console.log(`  ${args.pm} db:seed        # create the owner account (ADMIN_EMAIL/ADMIN_PASSWORD in .env.local)`);
   console.log(`  ${args.pm} dev            # start the dev server`);
   console.log("\nSee README.md and docs/admin.md for the full setup and owner bootstrap steps.");

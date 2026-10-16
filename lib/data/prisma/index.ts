@@ -19,6 +19,7 @@ import { userRepo } from "./users";
 import { webhookRepo } from "./webhooks";
 
 export { authAdapter } from "./auth-adapter";
+export { backupDb } from "./backup-db";
 export { isDbUnavailable } from "./errors";
 
 export function createRepos(client: DbClient): Repos {

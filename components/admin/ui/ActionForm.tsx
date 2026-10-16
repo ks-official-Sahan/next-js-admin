@@ -104,16 +104,18 @@ interface SubmitButtonProps {
   name?: string;
   value?: string;
   onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
+  /** Disabled regardless of the pending state (e.g. the action cannot run yet). */
+  disabled?: boolean;
 }
 
-export function SubmitButton({ children, pendingLabel, variant = "primary", className, name, value, onClick }: SubmitButtonProps) {
+export function SubmitButton({ children, pendingLabel, variant = "primary", className, name, value, onClick, disabled = false }: SubmitButtonProps) {
   const { pending } = useFormStatus();
   return (
     <button
       type="submit"
       name={name}
       value={value}
-      disabled={pending}
+      disabled={pending || disabled}
       onClick={onClick}
       className={cn(buttonVariants[variant], className)}
     >

@@ -5,6 +5,7 @@ import { unstable_cache } from "next/cache";
 
 import { noteCache } from "@/lib/observability/timing";
 
+import type { Kv } from "./memory";
 import { kv } from "./redis";
 
 // The only file that wraps Next's data cache. `unstable_cache` is documented as
@@ -40,19 +41,66 @@ function redisTagVersionKey(tag: string): string {
 }
 
 /**
- * The Redis key for `keyParts` at the tags' current generations, or null when
- * a generation could not be read. Reading a failed lookup as generation 0
- * could match a value written before a purge, so the caller skips Redis for
- * that call instead. The version GETs (one or two tags per read) run in
- * parallel, so they cost one round trip of latency.
+ * What the Redis layer stores: the value, plus the generation of each tag
+ * when it was read. A hit counts only when every generation still matches,
+ * so a purge invalidates every value under the tag without touching it. The
+ * envelope also lets a null or undefined result be cached (a bare null is
+ * indistinguishable from a missing key), so a lookup for something that does
+ * not exist stops reaching the database on every request.
  */
-async function redisDataKeyFor(keyParts: string[], tags: string[]): Promise<string | null> {
+interface Envelope<T> {
+  v: T;
+  g: string[];
+}
+
+const isEnvelope = <T,>(value: unknown): value is Envelope<T> =>
+  typeof value === "object" && value !== null && Array.isArray((value as Envelope<T>).g);
+
+const sameGenerations = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((value, index) => value === b[index]);
+
+/** Loads already running in this process, so concurrent misses share one database read. */
+const inflight = new Map<string, Promise<unknown>>();
+
+/**
+ * The Redis read-through behind cached(). The value and the tags'
+ * generations are read in parallel (one round trip: the Upstash client
+ * pipelines concurrent commands into one request). On a miss, concurrent
+ * callers in this process for the same key and generations share one load.
+ * A Redis failure is never an error: the value is loaded directly.
+ * Exported for tests; use cached() everywhere else.
+ */
+export async function readThrough<T>(store: Kv, keyParts: string[], tags: string[], ttlSeconds: number, load: () => Promise<T>): Promise<T> {
+  const dataKey = redisDataKey(keyParts);
+  let hit: unknown;
+  let generations: string[];
   try {
-    const versions = await Promise.all(tags.map((tag) => kv.get<string>(redisTagVersionKey(tag))));
-    return redisDataKey([...keyParts, "tagversions", ...versions.map((version) => String(version ?? 0))]);
+    const [value, ...versions] = await Promise.all([store.get<unknown>(dataKey), ...tags.map((tag) => store.get<string>(redisTagVersionKey(tag)))]);
+    hit = value;
+    generations = versions.map((version) => String(version ?? 0));
   } catch {
-    return null;
+    // Reading a failed generation lookup as "0" could match a value written
+    // before a purge, so skip Redis for this call instead.
+    noteCache("load");
+    return load();
   }
+  if (isEnvelope<T>(hit) && sameGenerations(hit.g, generations)) {
+    noteCache("redisHit");
+    return hit.v;
+  }
+  noteCache("redisMiss");
+
+  const flightKey = `${dataKey}|${generations.join(",")}`;
+  const running = inflight.get(flightKey);
+  if (running) return running as Promise<T>;
+  const loading = (async () => {
+    noteCache("load");
+    const value = await load();
+    const envelope: Envelope<T> = { v: value, g: generations };
+    await store.set(dataKey, envelope, { ttlSeconds }).catch(() => false);
+    return value;
+  })().finally(() => inflight.delete(flightKey));
+  inflight.set(flightKey, loading);
+  return loading;
 }
 
 /**
@@ -85,23 +133,11 @@ export function cached<Args extends unknown[], Result>(
 
   return unstable_cache(
     async (...args: Args) => {
-      const dataKey = redisTtl ? await redisDataKeyFor(keyParts, options.tags) : null;
-      if (dataKey) {
-        const hit = await kv.get<Result>(dataKey).catch(() => null);
-        if (hit !== null) {
-          noteCache("redisHit");
-          return hit;
-        }
-
-        noteCache("redisMiss");
+      if (!redisTtl) {
         noteCache("load");
-        const result = await fn(...args);
-        await kv.set(dataKey, result, { ttlSeconds: redisTtl }).catch(() => {});
-        return result;
+        return fn(...args);
       }
-
-      noteCache("load");
-      return fn(...args);
+      return readThrough(kv, keyParts, options.tags, redisTtl, () => fn(...args));
     },
     cacheKey(...keyParts),
     { tags: options.tags, revalidate }

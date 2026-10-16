@@ -369,6 +369,19 @@ export async function getSitemapPostRefs(after?: PublicPostCursor): Promise<Post
   return rows.map((row) => ({ slug: row.slug, publishedAt: toIso(row.publishAt ?? row.publishedAt), updatedAt: toIso(row.updatedAt) }));
 }
 
+/** A slug isValidPostSlug() rejects, so its page is a 404 without a lookup. */
+const NO_POST_SLUG = "_";
+
+/**
+ * generateStaticParams for /updates/[slug]: the newest 50 public posts. Never
+ * empty: Cache Components fails the build on an empty list, so a database
+ * with only drafts gets one placeholder whose page is a 404.
+ */
+export async function postStaticParams(): Promise<{ slug: string }[]> {
+  const posts = await getRecentPosts(50);
+  return posts.length > 0 ? posts.map((post) => ({ slug: post.slug })) : [{ slug: NO_POST_SLUG }];
+}
+
 /** Up to 50 newest public posts in one cached read: article recommendations, previews, chat context. */
 export async function getRecentPosts(limit = 20): Promise<BlogPostSummary[]> {
   return (await getPublicPostPage(limit)).items;

@@ -5,7 +5,7 @@ import FinalCta from "@/components/home/FinalCta";
 import PostArticle from "@/components/updates/PostArticle";
 import { SiteMetadata } from "@/config/site";
 import { getPageContent } from "@/lib/cms/loaders";
-import { getRecentPosts, getPostBySlug, getPostRedirect, relatedPosts, type BlogPostView } from "@/lib/blog/queries";
+import { getRecentPosts, getPostBySlug, postStaticParams, getPostRedirect, relatedPosts, type BlogPostView } from "@/lib/blog/queries";
 import { RSS_ALTERNATES } from "@/lib/metadata";
 import { jsonLdHtml } from "@/lib/seo/json-ld";
 
@@ -20,12 +20,9 @@ import { jsonLdHtml } from "@/lib/seo/json-ld";
 // `instant = false` lets the page await its params and block instead.
 export const instant = false;
 
-export async function generateStaticParams() {
-  // The newest 50 are prerendered at build time; any other public slug is
-  // rendered on its first request and cached from then on.
-  const posts = await getRecentPosts(50);
-  return posts.map((post) => ({ slug: post.slug }));
-}
+// The newest 50 are prerendered at build time; any other public slug is
+// rendered on its first request and cached from then on.
+export const generateStaticParams = postStaticParams;
 
 function postUrl(post: BlogPostView): string {
   return `${SiteMetadata.siteUrl}/updates/${post.slug}`;

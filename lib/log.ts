@@ -45,7 +45,9 @@ function emit(level: Level, message: string, meta?: unknown): void {
   const write = level === "error" ? console.error : level === "warn" ? console.warn : console.log;
 
   if (production) {
-    write(JSON.stringify({ ts: new Date().toISOString(), level, message, meta: safeMeta }));
+    // The clock through the timing API, not new Date(): a log line written
+    // while Cache Components prerenders a page would otherwise fail the build.
+    write(JSON.stringify({ ts: new Date(performance.timeOrigin + performance.now()).toISOString(), level, message, meta: safeMeta }));
   } else if (safeMeta === undefined) {
     write(`[${level}] ${message}`);
   } else {

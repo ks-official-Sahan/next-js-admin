@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { cacheLife, cacheTag } from "next/cache";
 
+import { dbConfigured } from "@/lib/db/state";
 import { noteCache } from "@/lib/observability/timing";
 
 import type { Kv } from "./memory";
@@ -169,5 +170,9 @@ export function cached<Args extends unknown[], Result>(
     revalidate: options.revalidate ?? DEFAULT_REVALIDATE_SECONDS,
     select: options.select as Entry["select"],
   });
-  return (...args: Args) => cachedRun(id, args) as Promise<Result>;
+  // Without a database every loader throws, and an error thrown inside a
+  // "use cache" fill fails the prerender even when the caller catches it. So
+  // the loader runs directly and its error reaches the caller's fallback
+  // (loadOrNull, orDefault) outside any cache scope.
+  return (...args: Args) => (dbConfigured() ? (cachedRun(id, args) as Promise<Result>) : fn(...args));
 }
